@@ -38,6 +38,7 @@ WHAT WE LEARNED THE HARD WAY (docs/long-form-waves.md has the full log)
     locking a full clip end to end has no edge.
 """
 
+import logging
 import torch
 
 import comfy.model_management
@@ -695,12 +696,42 @@ class H3MaskInpaint:
         video, aud = _av(latent["samples"])
         lt, lh, lw = video.shape[2], video.shape[3], video.shape[4]
 
-        z = vae.encode(source_images)                       # [1,24,T,h,w]
-        if z.shape[2] != lt or z.shape[3] != lh or z.shape[4] != lw:
+        # CONFORM RATHER THAN REFUSE. The latent's shape is set by the H3 node's
+        # width/height/length; the source is whatever clip you loaded. Requiring the
+        # two to be typed into agreement failed repeatedly in practice — the numbers
+        # live on two different nodes and nothing keeps them in step. Spatially,
+        # resampling the source to the latent's frame size is well defined, so do it
+        # and say so. Frame COUNT is not resamplable (it is on the VAE's 17n+5 grid
+        # and each latent frame spans several pixel frames), so that still errors.
+        sw, sh = source_images.shape[2], source_images.shape[1]
+        tw, th = lw * 16, lh * 16
+        if (sw, sh) != (tw, th):
+            ar_src, ar_dst = sw / max(1, sh), tw / max(1, th)
+            if max(ar_src, ar_dst) / min(ar_src, ar_dst) > 1.05:
+                logging.warning(
+                    "H3MaskInpaint: source is %dx%d (%.2f:1) but the latent is %dx%d "
+                    "(%.2f:1) — conforming will STRETCH the picture. Set the H3 node's "
+                    "width/height to the source's aspect (or crop the source first).",
+                    sw, sh, ar_src, tw, th, ar_dst)
+            else:
+                logging.info("H3MaskInpaint: conforming source %dx%d -> %dx%d to match "
+                             "the latent", sw, sh, tw, th)
+            src = Fn.interpolate(source_images.movedim(-1, 1), size=(th, tw),
+                                 mode="bicubic", align_corners=False,
+                                 antialias=True).clamp(0, 1).movedim(1, -1)
+            mask = Fn.interpolate(
+                (mask if mask.dim() == 3 else mask.unsqueeze(0)).unsqueeze(1),
+                size=(th, tw), mode="nearest").squeeze(1)
+        else:
+            src = source_images
+
+        z = vae.encode(src)                                 # [1,24,T,h,w]
+        if z.shape[2] != lt:
             raise ValueError(
-                f"source video encodes to {tuple(z.shape[2:])} but the latent is "
-                f"{(lt, lh, lw)} — the H3 node's width/height/length must match the "
-                f"source clip exactly.")
+                f"source is {src.shape[0]} frame(s) -> {z.shape[2]} latent frames, but "
+                f"the latent has {lt}. Frame count cannot be resampled: it sits on the "
+                f"VAE's 17n+5 grid. Set the H3 node's `length` to match the source, or "
+                f"put H3 Match Source Clip in front of it (it trims to a legal count).")
 
         m = mask
         if m.dim() == 2:
