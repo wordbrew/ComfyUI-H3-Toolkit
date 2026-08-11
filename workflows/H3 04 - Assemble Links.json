@@ -1,0 +1,452 @@
+{
+ "last_node_id": 50,
+ "last_link_id": 121,
+ "nodes": [
+  {
+   "id": 10,
+   "type": "VHS_LoadVideo",
+   "pos": [
+    30,
+    30
+   ],
+   "size": [
+    380,
+    300
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      100
+     ]
+    },
+    {
+     "name": "frame_count",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": null
+    },
+    {
+     "name": "video_info",
+     "type": "VHS_VIDEOINFO",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VHS_LoadVideo"
+   },
+   "widgets_values": [
+    "H3_longform_link_1.mp4",
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "title": "link 1"
+  },
+  {
+   "id": 11,
+   "type": "VHS_LoadVideo",
+   "pos": [
+    30,
+    280
+   ],
+   "size": [
+    380,
+    300
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      101
+     ]
+    },
+    {
+     "name": "frame_count",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": null
+    },
+    {
+     "name": "video_info",
+     "type": "VHS_VIDEOINFO",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VHS_LoadVideo"
+   },
+   "widgets_values": [
+    "H3_longform_link_2.mp4",
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "title": "link 2"
+  },
+  {
+   "id": 12,
+   "type": "VHS_LoadVideo",
+   "pos": [
+    30,
+    530
+   ],
+   "size": [
+    380,
+    300
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      102
+     ]
+    },
+    {
+     "name": "frame_count",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": null
+    },
+    {
+     "name": "video_info",
+     "type": "VHS_VIDEOINFO",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VHS_LoadVideo"
+   },
+   "widgets_values": [
+    "H3_longform_link_3.mp4",
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "title": "link 3"
+  },
+  {
+   "id": 13,
+   "type": "VHS_LoadVideo",
+   "pos": [
+    30,
+    780
+   ],
+   "size": [
+    380,
+    300
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      103
+     ]
+    },
+    {
+     "name": "frame_count",
+     "type": "INT",
+     "links": null
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": null
+    },
+    {
+     "name": "video_info",
+     "type": "VHS_VIDEOINFO",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VHS_LoadVideo"
+   },
+   "widgets_values": [
+    "H3_longform_link_4.mp4",
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "title": "link 4"
+  },
+  {
+   "id": 20,
+   "type": "LoadAudio",
+   "pos": [
+    30,
+    1060
+   ],
+   "size": [
+    380,
+    124
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "AUDIO",
+     "type": "AUDIO",
+     "links": [
+      110
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadAudio"
+   },
+   "widgets_values": [
+    "track60.wav",
+    null,
+    null
+   ],
+   "title": "the SAME track that was audio-locked into the links"
+  },
+  {
+   "id": 30,
+   "type": "H3Assemble",
+   "pos": [
+    470,
+    30
+   ],
+   "size": [
+    400,
+    300
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "link_1",
+     "type": "IMAGE",
+     "link": 100
+    },
+    {
+     "name": "link_2",
+     "type": "IMAGE",
+     "link": 101
+    },
+    {
+     "name": "link_3",
+     "type": "IMAGE",
+     "link": 102
+    },
+    {
+     "name": "link_4",
+     "type": "IMAGE",
+     "link": 103
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": 110
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [
+      120
+     ]
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "links": [
+      121
+     ]
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "H3Assemble"
+   },
+   "widgets_values": [
+    0
+   ],
+   "title": "H3 Assemble Links \u2014 trim_frames stays 0"
+  },
+  {
+   "id": 40,
+   "type": "VHS_VideoCombine",
+   "pos": [
+    930,
+    30
+   ],
+   "size": [
+    380,
+    520
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 120
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": 121
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "VHS_VideoCombine"
+   },
+   "widgets_values": {
+    "frame_rate": 24,
+    "loop_count": 0,
+    "filename_prefix": "H3/FULL_take",
+    "format": "video/h264-mp4",
+    "pix_fmt": "yuv420p",
+    "crf": 18,
+    "save_metadata": true,
+    "trim_to_audio": false,
+    "pingpong": false,
+    "save_output": true
+   },
+   "title": "the finished take"
+  },
+  {
+   "id": 50,
+   "type": "Note",
+   "pos": [
+    470,
+    380
+   ],
+   "size": [
+    400,
+    420
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "Note"
+   },
+   "widgets_values": [
+    "ASSEMBLE - run this AFTER rendering every link.\n\n1. Render links with H3_longform_chain.json, one per queue run.\n2. Copy the rendered mp4s into ComfyUI/input/ and pick them here, IN ORDER.\n3. Point LoadAudio at the SAME track you locked into the links.\n4. Queue. Output is one continuous file.\n\nMORE OR FEWER LINKS: H3 Assemble takes link_1..link_8. Delete the loaders you\ndo not need, or add more - only link_1 is required.\n\nWHY trim_frames = 0\n  The chain keyframes each link from the previous link's LAST frame, so the\n  links already butt together with no overlap to remove. Trimming would delete\n  the exact frame the next link was built from.\n\nWHY NO CROSSFADE\n  Blended joins were tested and rejected - CJ on the blended assembly:\n  'blended does not look good at all. It's dizzying. Trimming seems to be the\n  best bet.' A hard butt join on a keyframed chain is the correct assembly.\n\nAUDIO\n  One track for the whole take, trimmed or padded to the assembled length. If\n  each link generated its own audio instead, the music restarts at every join -\n  that is what audio lock exists to prevent.\n\nThe `info` output reports frames, duration and resolution. Mismatched link\nresolutions raise an error naming the offending link rather than producing a\ncorrupt file."
+   ],
+   "title": "Read me"
+  }
+ ],
+ "links": [
+  [
+   100,
+   10,
+   0,
+   30,
+   0,
+   "IMAGE"
+  ],
+  [
+   101,
+   11,
+   0,
+   30,
+   1,
+   "IMAGE"
+  ],
+  [
+   102,
+   12,
+   0,
+   30,
+   2,
+   "IMAGE"
+  ],
+  [
+   103,
+   13,
+   0,
+   30,
+   3,
+   "IMAGE"
+  ],
+  [
+   110,
+   20,
+   0,
+   30,
+   4,
+   "AUDIO"
+  ],
+  [
+   120,
+   30,
+   0,
+   40,
+   0,
+   "IMAGE"
+  ],
+  [
+   121,
+   30,
+   1,
+   40,
+   1,
+   "AUDIO"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}
