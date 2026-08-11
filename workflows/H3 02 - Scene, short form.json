@@ -1,0 +1,984 @@
+{
+ "last_node_id": 17,
+ "last_link_id": 26,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "CLIPLoader",
+   "pos": [
+    30,
+    30
+   ],
+   "size": [
+    400,
+    106
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      1
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPLoader"
+   },
+   "widgets_values": [
+    "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "minimax",
+    "default"
+   ]
+  },
+  {
+   "id": 2,
+   "type": "VAELoader",
+   "pos": [
+    30,
+    180
+   ],
+   "size": [
+    400,
+    58
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      2,
+      20
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "minimax_h3_video_vae_fp16.safetensors"
+   ]
+  },
+  {
+   "id": 3,
+   "type": "VAELoader",
+   "pos": [
+    30,
+    260
+   ],
+   "size": [
+    400,
+    58
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      3,
+      21
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAELoader"
+   },
+   "widgets_values": [
+    "minimax_h3_audio_vae_fp32.safetensors"
+   ]
+  },
+  {
+   "id": 4,
+   "type": "UNETLoader",
+   "pos": [
+    30,
+    340
+   ],
+   "size": [
+    400,
+    82
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      4
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "UNETLoader"
+   },
+   "widgets_values": [
+    "H3/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+    "default"
+   ]
+  },
+  {
+   "id": 5,
+   "type": "H3Character",
+   "pos": [
+    30,
+    470
+   ],
+   "size": [
+    400,
+    200
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "image_1",
+     "type": "IMAGE",
+     "links": [
+      10
+     ]
+    },
+    {
+     "name": "image_2",
+     "type": "IMAGE",
+     "links": [
+      11
+     ]
+    },
+    {
+     "name": "image_3",
+     "type": "IMAGE",
+     "links": [
+      12
+     ]
+    },
+    {
+     "name": "image_4",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "image_5",
+     "type": "IMAGE",
+     "links": null
+    },
+    {
+     "name": "voice",
+     "type": "AUDIO",
+     "links": [
+      13
+     ]
+    },
+    {
+     "name": "subject_def",
+     "type": "STRING",
+     "links": [
+      14
+     ]
+    },
+    {
+     "name": "retention",
+     "type": "STRING",
+     "links": [
+      15
+     ]
+    },
+    {
+     "name": "description",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "H3Character"
+   },
+   "widgets_values": [
+    "Ada",
+    3,
+    1,
+    0,
+    1
+   ],
+   "title": "H3 Character \u2014 save one first with H3 Character (save)"
+  },
+  {
+   "id": 6,
+   "type": "H3ScenePrompt",
+   "pos": [
+    470,
+    30
+   ],
+   "size": [
+    470,
+    640
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "subject_def_1",
+     "type": "STRING",
+     "link": 14
+    },
+    {
+     "name": "retention_1",
+     "type": "STRING",
+     "link": 15
+    }
+   ],
+   "outputs": [
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "links": [
+      16
+     ]
+    },
+    {
+     "name": "length",
+     "type": "INT",
+     "links": [
+      17
+     ]
+    },
+    {
+     "name": "lint",
+     "type": "STRING",
+     "links": null
+    },
+    {
+     "name": "plan",
+     "type": "STRING",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "H3ScenePrompt"
+   },
+   "widgets_values": [
+    "reference generation",
+    8.0,
+    "Realistic video, shallow depth of field, warm practical light, handheld stillness",
+    "A close-up of <Subject 1> at the window, rain running down the glass. Slow push in.\n> S1: I told you I would come back.\n0:04 | Wider. She turns from the window and crosses the room, and sits. The camera holds still.\n> S1: You did not have to wait up.\n",
+    "Rain on glass, a quiet room tone, distant traffic, the creak of a chair",
+    "N/A",
+    "English",
+    ""
+   ]
+  },
+  {
+   "id": 7,
+   "type": "MiniMaxH3ReferenceToVideo",
+   "pos": [
+    980,
+    30
+   ],
+   "size": [
+    430,
+    340
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 1
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 2
+    },
+    {
+     "name": "audio_vae",
+     "type": "VAE",
+     "link": 3
+    },
+    {
+     "name": "prompt",
+     "type": "STRING",
+     "link": 16,
+     "widget": {
+      "name": "prompt"
+     }
+    },
+    {
+     "name": "length",
+     "type": "INT",
+     "link": 17,
+     "widget": {
+      "name": "length"
+     }
+    },
+    {
+     "name": "ref_image_1",
+     "type": "IMAGE",
+     "link": 10
+    },
+    {
+     "name": "ref_image_2",
+     "type": "IMAGE",
+     "link": 11
+    },
+    {
+     "name": "ref_image_3",
+     "type": "IMAGE",
+     "link": 12
+    },
+    {
+     "name": "ref_audio_1",
+     "type": "AUDIO",
+     "link": 13
+    }
+   ],
+   "outputs": [
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "links": [
+      18
+     ]
+    },
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      19
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "MiniMaxH3ReferenceToVideo"
+   },
+   "widgets_values": [
+    640,
+    1120,
+    192,
+    "max"
+   ]
+  },
+  {
+   "id": 8,
+   "type": "MiniMaxH3SigmaShift",
+   "pos": [
+    980,
+    410
+   ],
+   "size": [
+    300,
+    82
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      5,
+      6
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "MiniMaxH3SigmaShift"
+   },
+   "widgets_values": [
+    12,
+    3
+   ]
+  },
+  {
+   "id": 9,
+   "type": "BasicGuider",
+   "pos": [
+    1450,
+    30
+   ],
+   "size": [
+    290,
+    58
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 5
+    },
+    {
+     "name": "conditioning",
+     "type": "CONDITIONING",
+     "link": 18
+    }
+   ],
+   "outputs": [
+    {
+     "name": "GUIDER",
+     "type": "GUIDER",
+     "links": [
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BasicGuider"
+   }
+  },
+  {
+   "id": 10,
+   "type": "KSamplerSelect",
+   "pos": [
+    1450,
+    120
+   ],
+   "size": [
+    290,
+    58
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "SAMPLER",
+     "type": "SAMPLER",
+     "links": [
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSamplerSelect"
+   },
+   "widgets_values": [
+    "res_multistep"
+   ]
+  },
+  {
+   "id": 11,
+   "type": "BasicScheduler",
+   "pos": [
+    1450,
+    210
+   ],
+   "size": [
+    290,
+    106
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "name": "SIGMAS",
+     "type": "SIGMAS",
+     "links": [
+      9
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BasicScheduler"
+   },
+   "widgets_values": [
+    "simple",
+    20,
+    1
+   ]
+  },
+  {
+   "id": 12,
+   "type": "RandomNoise",
+   "pos": [
+    1450,
+    350
+   ],
+   "size": [
+    290,
+    82
+   ],
+   "flags": {},
+   "order": 11,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "NOISE",
+     "type": "NOISE",
+     "links": [
+      22
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "RandomNoise"
+   },
+   "widgets_values": [
+    2024,
+    "fixed"
+   ]
+  },
+  {
+   "id": 13,
+   "type": "SamplerCustomAdvanced",
+   "pos": [
+    1780,
+    30
+   ],
+   "size": [
+    320,
+    240
+   ],
+   "flags": {},
+   "order": 12,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "noise",
+     "type": "NOISE",
+     "link": 22
+    },
+    {
+     "name": "guider",
+     "type": "GUIDER",
+     "link": 7
+    },
+    {
+     "name": "sampler",
+     "type": "SAMPLER",
+     "link": 8
+    },
+    {
+     "name": "sigmas",
+     "type": "SIGMAS",
+     "link": 9
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 19
+    }
+   ],
+   "outputs": [
+    {
+     "name": "output",
+     "type": "LATENT",
+     "links": [
+      23,
+      24
+     ]
+    },
+    {
+     "name": "denoised_output",
+     "type": "LATENT",
+     "links": null
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SamplerCustomAdvanced"
+   }
+  },
+  {
+   "id": 14,
+   "type": "VAEDecode",
+   "pos": [
+    2140,
+    30
+   ],
+   "size": [
+    280,
+    58
+   ],
+   "flags": {},
+   "order": 13,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 23
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 20
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      25
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   }
+  },
+  {
+   "id": 15,
+   "type": "VAEDecodeAudio",
+   "pos": [
+    2140,
+    120
+   ],
+   "size": [
+    280,
+    58
+   ],
+   "flags": {},
+   "order": 14,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 24
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 21
+    }
+   ],
+   "outputs": [
+    {
+     "name": "AUDIO",
+     "type": "AUDIO",
+     "links": [
+      26
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecodeAudio"
+   }
+  },
+  {
+   "id": 16,
+   "type": "VHS_VideoCombine",
+   "pos": [
+    2140,
+    220
+   ],
+   "size": [
+    340,
+    330
+   ],
+   "flags": {},
+   "order": 15,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 25
+    },
+    {
+     "name": "audio",
+     "type": "AUDIO",
+     "link": 26
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "VHS_VideoCombine"
+   },
+   "widgets_values": {
+    "frame_rate": 24,
+    "loop_count": 0,
+    "filename_prefix": "H3/scene",
+    "format": "video/h264-mp4",
+    "pix_fmt": "yuv420p",
+    "crf": 19,
+    "save_metadata": true,
+    "trim_to_audio": false,
+    "pingpong": false,
+    "save_output": true
+   }
+  },
+  {
+   "id": 17,
+   "type": "Note",
+   "pos": [
+    470,
+    700
+   ],
+   "size": [
+    470,
+    300
+   ],
+   "flags": {},
+   "order": 16,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "Note"
+   },
+   "widgets_values": [
+    "REFERENCE PROMPTING - short form\n\n1. Save a character first: add H3 Character (save), feed it 3 anchor images\n   and a CLEAN 5-10s voice sample, give it a name + description, run once.\n   Refresh the browser, then pick it in H3 Character.\n\n2. H3 Character emits the wording AND the media:\n     subject_def / retention  -> H3 Scene Prompt\n     image_1..3               -> ref_image_1..3\n     voice                    -> ref_audio_1\n   `info` tells you how many image slots that character actually has.\n\n3. Shot syntax in H3 Scene Prompt:\n     shot description on its own line\n     > S1: dialogue for that shot\n     0:04 | pinned shot at four seconds\n\n4. Check the `lint` output on the node body before queueing. Red = the model\n   will do something you did not ask for.\n\nSECOND CHARACTER: add another H3 Character, set subject_index=2 and\npicture_offset = the first character's anchor count, wire into subject_def_2 /\nretention_2 and ref_image_4.. / ref_audio_2.\n\n640x1120 is the working resolution: 768x1152 produced cuts in chained clips,\n640x1120 did not. ref_image_size 'max' is truer identity at ~1.78x the time."
+   ],
+   "title": "How to use"
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   7,
+   0,
+   "CLIP"
+  ],
+  [
+   2,
+   2,
+   0,
+   7,
+   1,
+   "VAE"
+  ],
+  [
+   3,
+   3,
+   0,
+   7,
+   2,
+   "VAE"
+  ],
+  [
+   4,
+   4,
+   0,
+   8,
+   0,
+   "MODEL"
+  ],
+  [
+   5,
+   8,
+   0,
+   9,
+   0,
+   "MODEL"
+  ],
+  [
+   6,
+   8,
+   0,
+   11,
+   0,
+   "MODEL"
+  ],
+  [
+   7,
+   9,
+   0,
+   13,
+   1,
+   "GUIDER"
+  ],
+  [
+   8,
+   10,
+   0,
+   13,
+   2,
+   "SAMPLER"
+  ],
+  [
+   9,
+   11,
+   0,
+   13,
+   3,
+   "SIGMAS"
+  ],
+  [
+   10,
+   5,
+   0,
+   7,
+   5,
+   "IMAGE"
+  ],
+  [
+   11,
+   5,
+   1,
+   7,
+   6,
+   "IMAGE"
+  ],
+  [
+   12,
+   5,
+   2,
+   7,
+   7,
+   "IMAGE"
+  ],
+  [
+   13,
+   5,
+   5,
+   7,
+   8,
+   "AUDIO"
+  ],
+  [
+   14,
+   5,
+   6,
+   6,
+   0,
+   "STRING"
+  ],
+  [
+   15,
+   5,
+   7,
+   6,
+   1,
+   "STRING"
+  ],
+  [
+   16,
+   6,
+   0,
+   7,
+   3,
+   "STRING"
+  ],
+  [
+   17,
+   6,
+   1,
+   7,
+   4,
+   "INT"
+  ],
+  [
+   18,
+   7,
+   0,
+   9,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   19,
+   7,
+   1,
+   13,
+   4,
+   "LATENT"
+  ],
+  [
+   20,
+   2,
+   0,
+   14,
+   1,
+   "VAE"
+  ],
+  [
+   21,
+   3,
+   0,
+   15,
+   1,
+   "VAE"
+  ],
+  [
+   22,
+   12,
+   0,
+   13,
+   0,
+   "NOISE"
+  ],
+  [
+   23,
+   13,
+   0,
+   14,
+   0,
+   "LATENT"
+  ],
+  [
+   24,
+   13,
+   0,
+   15,
+   0,
+   "LATENT"
+  ],
+  [
+   25,
+   14,
+   0,
+   16,
+   0,
+   "IMAGE"
+  ],
+  [
+   26,
+   15,
+   0,
+   16,
+   1,
+   "AUDIO"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}
