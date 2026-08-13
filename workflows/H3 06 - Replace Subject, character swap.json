@@ -1,1582 +1,1608 @@
 {
- "last_node_id": 41,
- "last_link_id": 68,
- "nodes": [
-  {
-   "id": 1,
-   "type": "VHS_LoadVideo",
-   "pos": [
-    20,
-    20
-   ],
-   "size": [
-    380,
-    300
-   ],
-   "flags": {},
-   "order": 0,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
+  "last_node_id": 41,
+  "last_link_id": 70,
+  "nodes": [
     {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
+      "id": 1,
+      "type": "VHS_LoadVideo",
+      "pos": [
+        20,
+        20
+      ],
+      "size": [
+        380,
+        300
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1,
+            2,
+            68
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            5
+          ]
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_LoadVideo"
+      },
+      "widgets_values": [
+        "source.mp4",
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "title": "the source clip"
+    },
+    {
+      "id": 2,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        20,
+        360
+      ],
+      "size": [
+        380,
+        106
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            10
+          ]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            11
+          ]
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": [
+        "sam3.1_multiplex_fp16.safetensors"
+      ],
+      "title": "SAM 3.1 (Comfy-Org/sam3.1)"
+    },
+    {
+      "id": 3,
+      "type": "CLIPTextEncode",
+      "pos": [
+        20,
+        500
+      ],
+      "size": [
+        380,
+        110
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "a man"
+      ],
+      "title": "① TARGET — what to find, in plain words"
+    },
+    {
+      "id": 4,
+      "type": "SAM3_VideoTrack",
+      "pos": [
+        440,
+        360
+      ],
+      "size": [
+        340,
+        130
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 1
+        },
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 10
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "track_data",
+          "type": "SAM3_TRACK_DATA",
+          "links": [
+            13,
+            14
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SAM3_VideoTrack"
+      },
+      "widgets_values": [
+        0.5,
+        4,
+        1
+      ]
+    },
+    {
+      "id": 5,
+      "type": "SAM3_TrackPreview",
+      "pos": [
+        440,
+        530
+      ],
+      "size": [
+        340,
+        220
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "track_data",
+          "type": "SAM3_TRACK_DATA",
+          "link": 13
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "SAM3_TrackPreview"
+      },
+      "widgets_values": [
+        0.5,
+        24.0
+      ],
+      "title": "run once, read the object index you want"
+    },
+    {
+      "id": 6,
+      "type": "SAM3_TrackToMask",
+      "pos": [
+        820,
+        360
+      ],
+      "size": [
+        300,
+        82
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "track_data",
+          "type": "SAM3_TRACK_DATA",
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "masks",
+          "type": "MASK",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SAM3_TrackToMask"
+      },
+      "widgets_values": [
+        "0"
+      ],
+      "title": "② WHICH one — index from the preview above"
+    },
+    {
+      "id": 7,
+      "type": "GrowMaskWithBlur",
+      "pos": [
+        820,
+        480
+      ],
+      "size": [
+        320,
+        240
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 15
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            16
+          ]
+        },
+        {
+          "name": "mask_inverted",
+          "type": "MASK",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GrowMaskWithBlur"
+      },
+      "widgets_values": [
+        24,
+        0,
+        true,
+        false,
+        6.0,
+        1,
+        1,
+        false
+      ],
+      "title": "grow + soften — err generous"
+    },
+    {
+      "id": 8,
+      "type": "CLIPLoader",
+      "pos": [
+        20,
+        660
+      ],
+      "size": [
+        380,
+        106
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            20
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader"
+      },
+      "widgets_values": [
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax",
+        "default"
+      ]
+    },
+    {
+      "id": 9,
+      "type": "VAELoader",
+      "pos": [
+        20,
+        800
+      ],
+      "size": [
+        380,
+        58
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            21,
+            22,
+            23
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "minimax_h3_video_vae_fp16.safetensors"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "VAELoader",
+      "pos": [
+        20,
+        880
+      ],
+      "size": [
+        380,
+        58
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            24,
+            25,
+            26
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "UNETLoader",
+      "pos": [
+        20,
+        960
+      ],
+      "size": [
+        380,
+        82
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            27
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "H3/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 20,
+      "type": "H3Character",
+      "pos": [
+        440,
+        780
+      ],
+      "size": [
+        380,
+        200
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "image_1",
+          "type": "IMAGE",
+          "links": [
+            30
+          ]
+        },
+        {
+          "name": "image_2",
+          "type": "IMAGE",
+          "links": [
+            31
+          ]
+        },
+        {
+          "name": "image_3",
+          "type": "IMAGE",
+          "links": [
+            32
+          ]
+        },
+        {
+          "name": "image_4",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "image_5",
+          "type": "IMAGE",
+          "links": null
+        },
+        {
+          "name": "voice",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "subject_def",
+          "type": "STRING",
+          "links": [
+            60
+          ]
+        },
+        {
+          "name": "retention",
+          "type": "STRING",
+          "links": [
+            61
+          ]
+        },
+        {
+          "name": "description",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3Character"
+      },
+      "widgets_values": [
+        "Ada",
+        3,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": 12,
+      "type": "MiniMaxH3ReferenceToVideo",
+      "pos": [
+        1180,
+        20
+      ],
+      "size": [
+        420,
+        300
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 20
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 21
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 24
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": 62,
+          "widget": {
+            "name": "prompt"
+          }
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 64,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 65,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "link": 66,
+          "widget": {
+            "name": "length"
+          }
+        },
+        {
+          "name": "ref_image_1",
+          "type": "IMAGE",
+          "link": 30
+        },
+        {
+          "name": "ref_image_2",
+          "type": "IMAGE",
+          "link": 31
+        },
+        {
+          "name": "ref_image_3",
+          "type": "IMAGE",
+          "link": 32
+        },
+        {
+          "name": "ref_video_1",
+          "type": "IMAGE",
+          "link": 69
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            40
+          ]
+        },
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            41
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3ReferenceToVideo"
+      },
+      "widgets_values": [
+        "Realistic video. A woman with curly copper-red hair, freckled fair skin and a curvy figure stands where the mask is, in a dim club room with dark walls and warm amber light from the left. A single continuous take from one locked-off tripod; the camera holds the same framing throughout and the take runs unbroken.",
+        640,
+        1120,
+        121,
+        "max"
+      ],
+      "title": "③ RESULT — prompt comes from H3 Scene Prompt"
+    },
+    {
+      "id": 13,
+      "type": "H3MaskInpaint",
+      "pos": [
+        1180,
+        360
+      ],
+      "size": [
+        400,
+        240
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 41
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 22
+        },
+        {
+          "name": "source_images",
+          "type": "IMAGE",
+          "link": 63
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 70
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 25
+        },
+        {
+          "name": "source_audio",
+          "type": "AUDIO",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            42
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3MaskInpaint"
+      },
+      "widgets_values": [
+        2,
+        0.35,
+        false,
+        true
+      ],
+      "title": "white = regenerate, the rest is pinned to the source"
+    },
+    {
+      "id": 14,
+      "type": "MiniMaxH3SigmaShift",
+      "pos": [
+        1180,
+        640
+      ],
+      "size": [
+        300,
+        82
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 27
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            43,
+            44
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3SigmaShift"
+      },
+      "widgets_values": [
+        12,
+        3
+      ]
+    },
+    {
+      "id": 15,
+      "type": "BasicGuider",
+      "pos": [
+        1640,
+        20
+      ],
+      "size": [
+        290,
+        58
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 43
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 40
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            45
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicGuider"
+      }
+    },
+    {
+      "id": 16,
+      "type": "KSamplerSelect",
+      "pos": [
+        1640,
+        110
+      ],
+      "size": [
+        290,
+        58
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            46
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerSelect"
+      },
+      "widgets_values": [
+        "res_multistep"
+      ]
+    },
+    {
+      "id": 17,
+      "type": "BasicScheduler",
+      "pos": [
+        1640,
+        200
+      ],
+      "size": [
+        290,
+        106
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 44
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            47
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicScheduler"
+      },
+      "widgets_values": [
+        "simple",
+        20,
+        0.7
+      ],
+      "title": "denoise 0.7 — NOT 1.0, see note"
+    },
+    {
+      "id": 18,
+      "type": "RandomNoise",
+      "pos": [
+        1640,
+        340
+      ],
+      "size": [
+        290,
+        82
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            48
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "RandomNoise"
+      },
+      "widgets_values": [
+        2024,
+        "fixed"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "SamplerCustomAdvanced",
+      "pos": [
+        1970,
+        20
+      ],
+      "size": [
+        320,
+        240
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "noise",
+          "type": "NOISE",
+          "link": 48
+        },
+        {
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 45
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 46
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 47
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 42
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            49,
+            50
+          ]
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustomAdvanced"
+      }
+    },
+    {
+      "id": 21,
+      "type": "VAEDecode",
+      "pos": [
+        2330,
+        20
+      ],
+      "size": [
+        280,
+        58
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 49
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            51
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 22,
+      "type": "VAEDecodeAudio",
+      "pos": [
+        2330,
+        110
+      ],
+      "size": [
+        280,
+        58
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 50
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 26
+        }
+      ],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            52
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecodeAudio"
+      }
+    },
+    {
+      "id": 23,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        2330,
+        200
+      ],
+      "size": [
+        340,
+        330
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 51
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 52
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "H3/swap_sam3",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true
+      }
+    },
+    {
+      "id": 30,
+      "type": "Note",
+      "pos": [
+        440,
+        1020
+      ],
+      "size": [
+        740,
+        420
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Note"
+      },
+      "widgets_values": [
+        "REPLACE A SUBJECT — swap in a character.\n\nTHREE THINGS TO SET, in order:\n  1. TARGET   CLIPTextEncode: what SAM3 should find - 'a man', 'the red car',\n              'the woman in the black dress'. Plain words, no syntax.\n  2. WHICH    Queue once and look at SAM3_TrackPreview. It numbers every object\n              it found. Put the one you want in SAM3_TrackToMask's\n              object_indices - '0', or '0,2' for two of them.\n  3. RESULT   H3 Scene Prompt: describe who stands there instead, and what they\n              do. Edit the shot line THERE, not on the conditioning node.\n              subject_def_1 takes EITHER a wire from H3 Character (a saved cast\n              member) OR plain typed text like 'a woman with curly copper-red\n              hair'. Typed prose is expanded into the <Subject N> syntax for you,\n              and pictures_1 says how many anchors it has so the <Picture N>\n              numbering lines up. Leave retention_1 empty and it is written for\n              you, bound to the subject.\n              Unwire H3 Character entirely if you just want to type someone.\n\nTHE SOURCE IS ALSO <Video 1>\n  H3 Match Source feeds the trimmed clip into ref_video_1 as well as into the\n  inpaint. That is what makes the replacement CONFORM: the model can see the pose,\n  the framing and the contact with the ropes, instead of being told about them.\n  The task type is [video editing] - the guide's own definition is 'an existing\n  source video is directly modified'. That prefix is wrong for CONTINUATION (it\n  re-renders the same action instead of continuing it) and right for exactly this.\n  A reference video also acts as a DESTINATION, which is a defect when chaining but\n  is what you want here: outside the mask the target genuinely should match.\n  If it costs too much time, feed a shorter clip - the reference rides every step.\n\nSAM3 ONLY - no Florence2, no SAM2\n  SAM3 has a text encoder built into the checkpoint\n  (detector.backbone.language_backbone.*), so CLIPTextEncode IS the prompt and\n  it tracks the subject across frames itself. The older SAM2 route needed\n  Florence2 to turn text into boxes first, because SAM2 understands no\n  language - two models, an extra failure point, and no tracking.\n\nMODEL FILE\n  sam3.1_multiplex_fp16.safetensors, from Comfy-Org/sam3.1, in models/checkpoints.\n  sam3.safetensors (SAM 3.0) also loads; ComfyUI detects both. If the dropdown\n  does not list it, refresh node definitions (R) - the list is read at startup.\n\nMASK MARGIN\n  GrowMaskWithBlur errs generous on purpose. Too tight leaves slivers of the\n  original at the edges of fast motion; too loose only costs a little extra\n  regeneration.\n\nSIZE AND LENGTH — handled by H3 Match Source\n  width, height and length are wired from the source clip, so they cannot drift\n  out of step. H3MaskInpaint pins the source's own pixels outside the mask, so a\n  mismatch is fatal:\n    source video encodes to (12, 22, 40) but the latent is (12, 70, 40)\n  which is a 640x352 clip against a node still set to 640x1120.\n  The clip is also TRIMMED to the 17n+5 frame grid the VAE needs, and the trimmed\n  frames are what the mask is matched against.\n  If the source is not a multiple of 32 on both sides it errors and tells you the\n  nearest size — resize the clip first, so the mask stays pixel-aligned.\n\nWHY A SPATIAL MASK IS SAFER THAN A TEMPORAL ONE\n  Every join cut chased over nine waves sat at a TEMPORAL mask edge and no amount\n  of feathering moved it. A spatial edge is a different problem - inpainting\n  handles those routinely, because the model sees both sides of the boundary at\n  once instead of inventing what comes after a wall in time.\n\nDENOISE — the setting that decides whether this works at all\n  BasicScheduler denoise is 0.7, deliberately. At 1.0 the sampler starts\n  at sigma 1 and the masked-denoising formula\n      x_known(sigma) = (1 - sigma) * source + sigma * noise\n  makes the pinned surroundings PURE NOISE on the first steps. The model\n  commits to a composition before the room is visible, so the masked area\n  fills with a self-consistent but unrelated clip. Symptom: correct mask,\n  contents ignoring everything around them.\n  Starting below 1.0 means the source is legible from step one.\n\n    1.0   ignores the surroundings entirely\n    0.75  respects the scene, lots of freedom in the masked region\n    0.7   default here\n    0.6   follows the source closely, INCLUDING the removed subject's\n          pose and silhouette — usually what a swap wants, since a pose\n          like a body suspended sideways in rope will not come from a\n          prompt\n    0.4   barely changes anything\n\n  Too low and the original identity bleeds through; too high and it stops\n  seeing the scene. Move in 0.05 steps."
+      ],
+      "title": "Read me"
+    },
+    {
+      "id": 40,
+      "type": "H3ScenePrompt",
+      "pos": [
+        820,
+        780
+      ],
+      "size": [
+        430,
+        600
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "properties": {
+        "Node name for S&R": "H3ScenePrompt"
+      },
+      "title": "③ RESULT — who replaces her; <Video 1> supplies the pose",
+      "widgets_values": [
+        "video editing",
+        5.0,
+        "Realistic video, the same dim club room, dark walls and warm amber light spilling from the left, faint haze in the air",
+        "<Subject 1> is in exactly the position, pose and framing that the woman occupies in <Video 1> — the same body angle, the same contact with the ropes and the same place in frame. Everything else in the shot is unchanged from <Video 1>: the same room, the same lighting, the same locked-off camera, the same ropes and rigging. Only who she is differs.",
+        "Room tone, faint low music, no speech",
+        "N/A",
+        "English",
+        ""
+      ],
+      "inputs": [
+        {
+          "name": "subject_def_1",
+          "type": "STRING",
+          "link": 60
+        },
+        {
+          "name": "retention_1",
+          "type": "STRING",
+          "link": 61
+        }
+      ],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            62
+          ]
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "lint",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "plan",
+          "type": "STRING",
+          "links": null
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "H3MatchSource",
+      "pos": [
+        440,
+        180
+      ],
+      "size": [
+        340,
+        130
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "properties": {
+        "Node name for S&R": "H3MatchSource"
+      },
+      "title": "reads the clip's real size — wire w/h/length from here",
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 68
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 16,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            63,
+            69
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            70
+          ],
+          "slot_index": 1
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            64
+          ],
+          "slot_index": 2
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            65
+          ],
+          "slot_index": 3
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "links": [
+            66
+          ],
+          "slot_index": 4
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": null,
+          "slot_index": 5
+        }
+      ],
+      "widgets_values": [
+        false
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      4,
+      0,
+      "IMAGE"
+    ],
+    [
+      2,
+      1,
+      0,
+      5,
+      0,
+      "IMAGE"
+    ],
+    [
+      5,
       1,
       2,
-      3,
-      67,
-      68
-     ]
-    },
-    {
-     "name": "frame_count",
-     "type": "INT",
-     "links": null
-    },
-    {
-     "name": "audio",
-     "type": "AUDIO",
-     "links": [
-      5
-     ]
-    },
-    {
-     "name": "video_info",
-     "type": "VHS_VIDEOINFO",
-     "links": null
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VHS_LoadVideo"
-   },
-   "widgets_values": [
-    "source.mp4",
-    0,
-    0,
-    0,
-    0,
-    0,
-    1
-   ],
-   "title": "the source clip"
-  },
-  {
-   "id": 2,
-   "type": "CheckpointLoaderSimple",
-   "pos": [
-    20,
-    360
-   ],
-   "size": [
-    380,
-    106
-   ],
-   "flags": {},
-   "order": 1,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      10
-     ]
-    },
-    {
-     "name": "CLIP",
-     "type": "CLIP",
-     "links": [
-      11
-     ]
-    },
-    {
-     "name": "VAE",
-     "type": "VAE",
-     "links": null
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "CheckpointLoaderSimple"
-   },
-   "widgets_values": [
-    "sam3.1_multiplex_fp16.safetensors"
-   ],
-   "title": "SAM 3.1 (Comfy-Org/sam3.1)"
-  },
-  {
-   "id": 3,
-   "type": "CLIPTextEncode",
-   "pos": [
-    20,
-    500
-   ],
-   "size": [
-    380,
-    110
-   ],
-   "flags": {},
-   "order": 2,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "clip",
-     "type": "CLIP",
-     "link": 11
-    }
-   ],
-   "outputs": [
-    {
-     "name": "CONDITIONING",
-     "type": "CONDITIONING",
-     "links": [
-      12
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "CLIPTextEncode"
-   },
-   "widgets_values": [
-    "a man"
-   ],
-   "title": "\u2460 TARGET \u2014 what to find, in plain words"
-  },
-  {
-   "id": 4,
-   "type": "SAM3_VideoTrack",
-   "pos": [
-    440,
-    360
-   ],
-   "size": [
-    340,
-    130
-   ],
-   "flags": {},
-   "order": 3,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 1
-    },
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 10
-    },
-    {
-     "name": "conditioning",
-     "type": "CONDITIONING",
-     "link": 12
-    }
-   ],
-   "outputs": [
-    {
-     "name": "track_data",
-     "type": "SAM3_TRACK_DATA",
-     "links": [
       13,
-      14
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "SAM3_VideoTrack"
-   },
-   "widgets_values": [
-    0.5,
-    4,
-    1
-   ]
-  },
-  {
-   "id": 5,
-   "type": "SAM3_TrackPreview",
-   "pos": [
-    440,
-    530
-   ],
-   "size": [
-    340,
-    220
-   ],
-   "flags": {},
-   "order": 4,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 2
-    },
-    {
-     "name": "track_data",
-     "type": "SAM3_TRACK_DATA",
-     "link": 13
-    }
-   ],
-   "outputs": [],
-   "properties": {
-    "Node name for S&R": "SAM3_TrackPreview"
-   },
-   "widgets_values": [
-    0.5,
-    24.0
-   ],
-   "title": "run once, read the object index you want"
-  },
-  {
-   "id": 6,
-   "type": "SAM3_TrackToMask",
-   "pos": [
-    820,
-    360
-   ],
-   "size": [
-    300,
-    82
-   ],
-   "flags": {},
-   "order": 5,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "track_data",
-     "type": "SAM3_TRACK_DATA",
-     "link": 14
-    }
-   ],
-   "outputs": [
-    {
-     "name": "masks",
-     "type": "MASK",
-     "links": [
-      15
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "SAM3_TrackToMask"
-   },
-   "widgets_values": [
-    "0"
-   ],
-   "title": "\u2461 WHICH one \u2014 index from the preview above"
-  },
-  {
-   "id": 7,
-   "type": "GrowMaskWithBlur",
-   "pos": [
-    820,
-    480
-   ],
-   "size": [
-    320,
-    240
-   ],
-   "flags": {},
-   "order": 6,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 15
-    }
-   ],
-   "outputs": [
-    {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      16
-     ]
-    },
-    {
-     "name": "mask_inverted",
-     "type": "MASK",
-     "links": null
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "GrowMaskWithBlur"
-   },
-   "widgets_values": [
-    24,
-    0,
-    true,
-    false,
-    6.0,
-    1,
-    1,
-    false
-   ],
-   "title": "grow + soften \u2014 err generous"
-  },
-  {
-   "id": 8,
-   "type": "CLIPLoader",
-   "pos": [
-    20,
-    660
-   ],
-   "size": [
-    380,
-    106
-   ],
-   "flags": {},
-   "order": 7,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "CLIP",
-     "type": "CLIP",
-     "links": [
-      20
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "CLIPLoader"
-   },
-   "widgets_values": [
-    "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-    "minimax",
-    "default"
-   ]
-  },
-  {
-   "id": 9,
-   "type": "VAELoader",
-   "pos": [
-    20,
-    800
-   ],
-   "size": [
-    380,
-    58
-   ],
-   "flags": {},
-   "order": 8,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "VAE",
-     "type": "VAE",
-     "links": [
+      5,
+      "AUDIO"
+    ],
+    [
+      10,
+      2,
+      0,
+      4,
+      1,
+      "MODEL"
+    ],
+    [
+      11,
+      2,
+      1,
+      3,
+      0,
+      "CLIP"
+    ],
+    [
+      12,
+      3,
+      0,
+      4,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      13,
+      4,
+      0,
+      5,
+      1,
+      "SAM3_TRACK_DATA"
+    ],
+    [
+      14,
+      4,
+      0,
+      6,
+      0,
+      "SAM3_TRACK_DATA"
+    ],
+    [
+      15,
+      6,
+      0,
+      7,
+      0,
+      "MASK"
+    ],
+    [
+      16,
+      7,
+      0,
+      41,
+      1,
+      "MASK"
+    ],
+    [
+      20,
+      8,
+      0,
+      12,
+      0,
+      "CLIP"
+    ],
+    [
       21,
-      22,
-      23
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VAELoader"
-   },
-   "widgets_values": [
-    "minimax_h3_video_vae_fp16.safetensors"
-   ]
-  },
-  {
-   "id": 10,
-   "type": "VAELoader",
-   "pos": [
-    20,
-    880
-   ],
-   "size": [
-    380,
-    58
-   ],
-   "flags": {},
-   "order": 9,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "VAE",
-     "type": "VAE",
-     "links": [
+      9,
+      0,
+      12,
+      1,
+      "VAE"
+    ],
+    [
       24,
+      10,
+      0,
+      12,
+      2,
+      "VAE"
+    ],
+    [
+      22,
+      9,
+      0,
+      13,
+      1,
+      "VAE"
+    ],
+    [
       25,
-      26
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VAELoader"
-   },
-   "widgets_values": [
-    "minimax_h3_audio_vae_fp32.safetensors"
-   ]
-  },
-  {
-   "id": 11,
-   "type": "UNETLoader",
-   "pos": [
-    20,
-    960
-   ],
-   "size": [
-    380,
-    82
-   ],
-   "flags": {},
-   "order": 10,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      27
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "UNETLoader"
-   },
-   "widgets_values": [
-    "H3/minimax_h3_ref2va_pruned_int8_convrot.safetensors",
-    "default"
-   ]
-  },
-  {
-   "id": 20,
-   "type": "H3Character",
-   "pos": [
-    440,
-    780
-   ],
-   "size": [
-    380,
-    200
-   ],
-   "flags": {},
-   "order": 11,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "image_1",
-     "type": "IMAGE",
-     "links": [
-      30
-     ]
-    },
-    {
-     "name": "image_2",
-     "type": "IMAGE",
-     "links": [
-      31
-     ]
-    },
-    {
-     "name": "image_3",
-     "type": "IMAGE",
-     "links": [
-      32
-     ]
-    },
-    {
-     "name": "image_4",
-     "type": "IMAGE",
-     "links": null
-    },
-    {
-     "name": "image_5",
-     "type": "IMAGE",
-     "links": null
-    },
-    {
-     "name": "voice",
-     "type": "AUDIO",
-     "links": null
-    },
-    {
-     "name": "subject_def",
-     "type": "STRING",
-     "links": [
-      60
-     ]
-    },
-    {
-     "name": "retention",
-     "type": "STRING",
-     "links": [
-      61
-     ]
-    },
-    {
-     "name": "description",
-     "type": "STRING",
-     "links": null
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": null
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "H3Character"
-   },
-   "widgets_values": [
-    "Ada",
-    3,
-    1,
-    0,
-    1
-   ]
-  },
-  {
-   "id": 12,
-   "type": "MiniMaxH3ReferenceToVideo",
-   "pos": [
-    1180,
-    20
-   ],
-   "size": [
-    420,
-    300
-   ],
-   "flags": {},
-   "order": 12,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "clip",
-     "type": "CLIP",
-     "link": 20
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 21
-    },
-    {
-     "name": "audio_vae",
-     "type": "VAE",
-     "link": 24
-    },
-    {
-     "name": "prompt",
-     "type": "STRING",
-     "link": 62,
-     "widget": {
-      "name": "prompt"
-     }
-    },
-    {
-     "name": "width",
-     "type": "INT",
-     "link": 64,
-     "widget": {
-      "name": "width"
-     }
-    },
-    {
-     "name": "height",
-     "type": "INT",
-     "link": 65,
-     "widget": {
-      "name": "height"
-     }
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "link": 66,
-     "widget": {
-      "name": "length"
-     }
-    },
-    {
-     "name": "ref_image_1",
-     "type": "IMAGE",
-     "link": 30
-    },
-    {
-     "name": "ref_image_2",
-     "type": "IMAGE",
-     "link": 31
-    },
-    {
-     "name": "ref_image_3",
-     "type": "IMAGE",
-     "link": 32
-    }
-   ],
-   "outputs": [
-    {
-     "name": "positive",
-     "type": "CONDITIONING",
-     "links": [
-      40
-     ]
-    },
-    {
-     "name": "LATENT",
-     "type": "LATENT",
-     "links": [
-      41
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "MiniMaxH3ReferenceToVideo"
-   },
-   "widgets_values": [
-    "Realistic video. A woman with curly copper-red hair, freckled fair skin and a curvy figure stands where the mask is, in a dim club room with dark walls and warm amber light from the left. A single continuous take from one locked-off tripod; the camera holds the same framing throughout and the take runs unbroken.",
-    640,
-    1120,
-    121,
-    "max"
-   ],
-   "title": "\u2462 RESULT \u2014 prompt comes from H3 Scene Prompt"
-  },
-  {
-   "id": 13,
-   "type": "H3MaskInpaint",
-   "pos": [
-    1180,
-    360
-   ],
-   "size": [
-    400,
-    240
-   ],
-   "flags": {},
-   "order": 13,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "latent",
-     "type": "LATENT",
-     "link": 41
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 22
-    },
-    {
-     "name": "source_images",
-     "type": "IMAGE",
-     "link": 63
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 16
-    },
-    {
-     "name": "audio_vae",
-     "type": "VAE",
-     "link": 25
-    },
-    {
-     "name": "source_audio",
-     "type": "AUDIO",
-     "link": 5
-    }
-   ],
-   "outputs": [
-    {
-     "name": "LATENT",
-     "type": "LATENT",
-     "links": [
-      42
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "H3MaskInpaint"
-   },
-   "widgets_values": [
-    2,
-    0.35,
-    false,
-    true
-   ],
-   "title": "white = regenerate, the rest is pinned to the source"
-  },
-  {
-   "id": 14,
-   "type": "MiniMaxH3SigmaShift",
-   "pos": [
-    1180,
-    640
-   ],
-   "size": [
-    300,
-    82
-   ],
-   "flags": {},
-   "order": 14,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 27
-    }
-   ],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
+      10,
+      0,
+      13,
+      4,
+      "VAE"
+    ],
+    [
+      27,
+      11,
+      0,
+      14,
+      0,
+      "MODEL"
+    ],
+    [
+      40,
+      12,
+      0,
+      15,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      41,
+      12,
+      1,
+      13,
+      0,
+      "LATENT"
+    ],
+    [
+      42,
+      13,
+      0,
+      19,
+      4,
+      "LATENT"
+    ],
+    [
       43,
-      44
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "MiniMaxH3SigmaShift"
-   },
-   "widgets_values": [
-    12,
-    3
-   ]
-  },
-  {
-   "id": 15,
-   "type": "BasicGuider",
-   "pos": [
-    1640,
-    20
-   ],
-   "size": [
-    290,
-    58
-   ],
-   "flags": {},
-   "order": 15,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 43
-    },
-    {
-     "name": "conditioning",
-     "type": "CONDITIONING",
-     "link": 40
-    }
-   ],
-   "outputs": [
-    {
-     "name": "GUIDER",
-     "type": "GUIDER",
-     "links": [
-      45
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "BasicGuider"
-   }
-  },
-  {
-   "id": 16,
-   "type": "KSamplerSelect",
-   "pos": [
-    1640,
-    110
-   ],
-   "size": [
-    290,
-    58
-   ],
-   "flags": {},
-   "order": 16,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "SAMPLER",
-     "type": "SAMPLER",
-     "links": [
-      46
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "KSamplerSelect"
-   },
-   "widgets_values": [
-    "res_multistep"
-   ]
-  },
-  {
-   "id": 17,
-   "type": "BasicScheduler",
-   "pos": [
-    1640,
-    200
-   ],
-   "size": [
-    290,
-    106
-   ],
-   "flags": {},
-   "order": 17,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 44
-    }
-   ],
-   "outputs": [
-    {
-     "name": "SIGMAS",
-     "type": "SIGMAS",
-     "links": [
-      47
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "BasicScheduler"
-   },
-   "widgets_values": [
-    "simple",
-    20,
-    0.7
-   ],
-   "title": "denoise 0.7 \u2014 NOT 1.0, see note"
-  },
-  {
-   "id": 18,
-   "type": "RandomNoise",
-   "pos": [
-    1640,
-    340
-   ],
-   "size": [
-    290,
-    82
-   ],
-   "flags": {},
-   "order": 18,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "NOISE",
-     "type": "NOISE",
-     "links": [
-      48
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "RandomNoise"
-   },
-   "widgets_values": [
-    2024,
-    "fixed"
-   ]
-  },
-  {
-   "id": 19,
-   "type": "SamplerCustomAdvanced",
-   "pos": [
-    1970,
-    20
-   ],
-   "size": [
-    320,
-    240
-   ],
-   "flags": {},
-   "order": 19,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "noise",
-     "type": "NOISE",
-     "link": 48
-    },
-    {
-     "name": "guider",
-     "type": "GUIDER",
-     "link": 45
-    },
-    {
-     "name": "sampler",
-     "type": "SAMPLER",
-     "link": 46
-    },
-    {
-     "name": "sigmas",
-     "type": "SIGMAS",
-     "link": 47
-    },
-    {
-     "name": "latent_image",
-     "type": "LATENT",
-     "link": 42
-    }
-   ],
-   "outputs": [
-    {
-     "name": "output",
-     "type": "LATENT",
-     "links": [
+      14,
+      0,
+      15,
+      0,
+      "MODEL"
+    ],
+    [
+      44,
+      14,
+      0,
+      17,
+      0,
+      "MODEL"
+    ],
+    [
+      45,
+      15,
+      0,
+      19,
+      1,
+      "GUIDER"
+    ],
+    [
+      46,
+      16,
+      0,
+      19,
+      2,
+      "SAMPLER"
+    ],
+    [
+      47,
+      17,
+      0,
+      19,
+      3,
+      "SIGMAS"
+    ],
+    [
+      48,
+      18,
+      0,
+      19,
+      0,
+      "NOISE"
+    ],
+    [
       49,
-      50
-     ]
-    },
-    {
-     "name": "denoised_output",
-     "type": "LATENT",
-     "links": null
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "SamplerCustomAdvanced"
-   }
-  },
-  {
-   "id": 21,
-   "type": "VAEDecode",
-   "pos": [
-    2330,
-    20
-   ],
-   "size": [
-    280,
-    58
-   ],
-   "flags": {},
-   "order": 20,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "samples",
-     "type": "LATENT",
-     "link": 49
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 23
-    }
-   ],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      51
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VAEDecode"
-   }
-  },
-  {
-   "id": 22,
-   "type": "VAEDecodeAudio",
-   "pos": [
-    2330,
-    110
-   ],
-   "size": [
-    280,
-    58
-   ],
-   "flags": {},
-   "order": 21,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "samples",
-     "type": "LATENT",
-     "link": 50
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 26
-    }
-   ],
-   "outputs": [
-    {
-     "name": "AUDIO",
-     "type": "AUDIO",
-     "links": [
-      52
-     ]
-    }
-   ],
-   "properties": {
-    "Node name for S&R": "VAEDecodeAudio"
-   }
-  },
-  {
-   "id": 23,
-   "type": "VHS_VideoCombine",
-   "pos": [
-    2330,
-    200
-   ],
-   "size": [
-    340,
-    330
-   ],
-   "flags": {},
-   "order": 22,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 51
-    },
-    {
-     "name": "audio",
-     "type": "AUDIO",
-     "link": 52
-    }
-   ],
-   "outputs": [],
-   "properties": {
-    "Node name for S&R": "VHS_VideoCombine"
-   },
-   "widgets_values": {
-    "frame_rate": 24,
-    "loop_count": 0,
-    "filename_prefix": "H3/swap_sam3",
-    "format": "video/h264-mp4",
-    "pix_fmt": "yuv420p",
-    "crf": 19,
-    "save_metadata": true,
-    "trim_to_audio": false,
-    "pingpong": false,
-    "save_output": true
-   }
-  },
-  {
-   "id": 30,
-   "type": "Note",
-   "pos": [
-    440,
-    1020
-   ],
-   "size": [
-    740,
-    420
-   ],
-   "flags": {},
-   "order": 23,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [],
-   "properties": {
-    "Node name for S&R": "Note"
-   },
-   "widgets_values": [
-    "REPLACE A SUBJECT \u2014 swap in a character.\n\nTHREE THINGS TO SET, in order:\n  1. TARGET   CLIPTextEncode: what SAM3 should find - 'a man', 'the red car',\n              'the woman in the black dress'. Plain words, no syntax.\n  2. WHICH    Queue once and look at SAM3_TrackPreview. It numbers every object\n              it found. Put the one you want in SAM3_TrackToMask's\n              object_indices - '0', or '0,2' for two of them.\n  3. RESULT   H3 Scene Prompt: describe who stands there instead, and what they\n              do. Edit the shot line THERE, not on the conditioning node.\n              subject_def_1 takes EITHER a wire from H3 Character (a saved cast\n              member) OR plain typed text like 'a woman with curly copper-red\n              hair'. Typed prose is expanded into the <Subject N> syntax for you,\n              and pictures_1 says how many anchors it has so the <Picture N>\n              numbering lines up. Leave retention_1 empty and it is written for\n              you, bound to the subject.\n              Unwire H3 Character entirely if you just want to type someone.\n\nSAM3 ONLY - no Florence2, no SAM2\n  SAM3 has a text encoder built into the checkpoint\n  (detector.backbone.language_backbone.*), so CLIPTextEncode IS the prompt and\n  it tracks the subject across frames itself. The older SAM2 route needed\n  Florence2 to turn text into boxes first, because SAM2 understands no\n  language - two models, an extra failure point, and no tracking.\n\nMODEL FILE\n  sam3.1_multiplex_fp16.safetensors, from Comfy-Org/sam3.1, in models/checkpoints.\n  sam3.safetensors (SAM 3.0) also loads; ComfyUI detects both. If the dropdown\n  does not list it, refresh node definitions (R) - the list is read at startup.\n\nMASK MARGIN\n  GrowMaskWithBlur errs generous on purpose. Too tight leaves slivers of the\n  original at the edges of fast motion; too loose only costs a little extra\n  regeneration.\n\nSIZE AND LENGTH \u2014 handled by H3 Match Source\n  width, height and length are wired from the source clip, so they cannot drift\n  out of step. H3MaskInpaint pins the source's own pixels outside the mask, so a\n  mismatch is fatal:\n    source video encodes to (12, 22, 40) but the latent is (12, 70, 40)\n  which is a 640x352 clip against a node still set to 640x1120.\n  The clip is also TRIMMED to the 17n+5 frame grid the VAE needs, and the trimmed\n  frames are what the mask is matched against.\n  If the source is not a multiple of 32 on both sides it errors and tells you the\n  nearest size \u2014 resize the clip first, so the mask stays pixel-aligned.\n\nWHY A SPATIAL MASK IS SAFER THAN A TEMPORAL ONE\n  Every join cut chased over nine waves sat at a TEMPORAL mask edge and no amount\n  of feathering moved it. A spatial edge is a different problem - inpainting\n  handles those routinely, because the model sees both sides of the boundary at\n  once instead of inventing what comes after a wall in time.\n\nDENOISE \u2014 the setting that decides whether this works at all\n  BasicScheduler denoise is 0.7, deliberately. At 1.0 the sampler starts\n  at sigma 1 and the masked-denoising formula\n      x_known(sigma) = (1 - sigma) * source + sigma * noise\n  makes the pinned surroundings PURE NOISE on the first steps. The model\n  commits to a composition before the room is visible, so the masked area\n  fills with a self-consistent but unrelated clip. Symptom: correct mask,\n  contents ignoring everything around them.\n  Starting below 1.0 means the source is legible from step one.\n\n    1.0   ignores the surroundings entirely\n    0.75  respects the scene, lots of freedom in the masked region\n    0.7   default here\n    0.6   follows the source closely, INCLUDING the removed subject's\n          pose and silhouette \u2014 usually what a swap wants, since a pose\n          like a body suspended sideways in rope will not come from a\n          prompt\n    0.4   barely changes anything\n\n  Too low and the original identity bleeds through; too high and it stops\n  seeing the scene. Move in 0.05 steps."
-   ],
-   "title": "Read me"
-  },
-  {
-   "id": 40,
-   "type": "H3ScenePrompt",
-   "pos": [
-    820,
-    780
-   ],
-   "size": [
-    430,
-    600
-   ],
-   "flags": {},
-   "order": 11,
-   "mode": 0,
-   "properties": {
-    "Node name for S&R": "H3ScenePrompt"
-   },
-   "title": "\u2462 RESULT \u2014 type a description here, or wire H3 Character",
-   "widgets_values": [
-    "reference generation",
-    5.0,
-    "Realistic video, the same dim club room, dark walls and warm amber light spilling from the left, faint haze in the air",
-    "<Subject 1> stands where the masked figure was, at the floor-to-ceiling chrome pole, weight on one hip, turning slowly. The camera holds the same locked-off framing for the whole take and the take runs unbroken.",
-    "Room tone, faint low music, no speech",
-    "N/A",
-    "English",
-    ""
-   ],
-   "inputs": [
-    {
-     "name": "subject_def_1",
-     "type": "STRING",
-     "link": 60
-    },
-    {
-     "name": "retention_1",
-     "type": "STRING",
-     "link": 61
-    }
-   ],
-   "outputs": [
-    {
-     "name": "prompt",
-     "type": "STRING",
-     "links": [
-      62
-     ]
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "links": null
-    },
-    {
-     "name": "lint",
-     "type": "STRING",
-     "links": null
-    },
-    {
-     "name": "plan",
-     "type": "STRING",
-     "links": null
-    }
-   ]
-  },
-  {
-   "id": 41,
-   "type": "H3MatchSource",
-   "pos": [
-    440,
-    180
-   ],
-   "size": [
-    340,
-    130
-   ],
-   "flags": {},
-   "order": 1,
-   "mode": 0,
-   "properties": {
-    "Node name for S&R": "H3MatchSource"
-   },
-   "title": "reads the clip's real size \u2014 wire w/h/length from here",
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 68
-    }
-   ],
-   "outputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "links": [
-      63
-     ]
-    },
-    {
-     "name": "width",
-     "type": "INT",
-     "links": [
-      64
-     ]
-    },
-    {
-     "name": "height",
-     "type": "INT",
-     "links": [
-      65
-     ]
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "links": [
-      66
-     ]
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": null
-    }
-   ]
-  }
- ],
- "links": [
-  [
-   1,
-   1,
-   0,
-   4,
-   0,
-   "IMAGE"
+      19,
+      0,
+      21,
+      0,
+      "LATENT"
+    ],
+    [
+      50,
+      19,
+      0,
+      22,
+      0,
+      "LATENT"
+    ],
+    [
+      23,
+      9,
+      0,
+      21,
+      1,
+      "VAE"
+    ],
+    [
+      26,
+      10,
+      0,
+      22,
+      1,
+      "VAE"
+    ],
+    [
+      51,
+      21,
+      0,
+      23,
+      0,
+      "IMAGE"
+    ],
+    [
+      52,
+      22,
+      0,
+      23,
+      1,
+      "AUDIO"
+    ],
+    [
+      30,
+      20,
+      0,
+      12,
+      7,
+      "IMAGE"
+    ],
+    [
+      31,
+      20,
+      1,
+      12,
+      8,
+      "IMAGE"
+    ],
+    [
+      32,
+      20,
+      2,
+      12,
+      9,
+      "IMAGE"
+    ],
+    [
+      60,
+      20,
+      6,
+      40,
+      0,
+      "STRING"
+    ],
+    [
+      61,
+      20,
+      7,
+      40,
+      1,
+      "STRING"
+    ],
+    [
+      62,
+      40,
+      0,
+      12,
+      3,
+      "STRING"
+    ],
+    [
+      63,
+      41,
+      0,
+      13,
+      2,
+      "IMAGE"
+    ],
+    [
+      64,
+      41,
+      2,
+      12,
+      4,
+      "INT"
+    ],
+    [
+      65,
+      41,
+      3,
+      12,
+      5,
+      "INT"
+    ],
+    [
+      66,
+      41,
+      4,
+      12,
+      6,
+      "INT"
+    ],
+    [
+      68,
+      1,
+      0,
+      41,
+      0,
+      "IMAGE"
+    ],
+    [
+      69,
+      41,
+      0,
+      12,
+      10,
+      "IMAGE"
+    ],
+    [
+      70,
+      41,
+      1,
+      13,
+      3,
+      "MASK"
+    ]
   ],
-  [
-   2,
-   1,
-   0,
-   5,
-   0,
-   "IMAGE"
-  ],
-  [
-   3,
-   1,
-   0,
-   13,
-   2,
-   "IMAGE"
-  ],
-  [
-   5,
-   1,
-   2,
-   13,
-   5,
-   "AUDIO"
-  ],
-  [
-   10,
-   2,
-   0,
-   4,
-   1,
-   "MODEL"
-  ],
-  [
-   11,
-   2,
-   1,
-   3,
-   0,
-   "CLIP"
-  ],
-  [
-   12,
-   3,
-   0,
-   4,
-   2,
-   "CONDITIONING"
-  ],
-  [
-   13,
-   4,
-   0,
-   5,
-   1,
-   "SAM3_TRACK_DATA"
-  ],
-  [
-   14,
-   4,
-   0,
-   6,
-   0,
-   "SAM3_TRACK_DATA"
-  ],
-  [
-   15,
-   6,
-   0,
-   7,
-   0,
-   "MASK"
-  ],
-  [
-   16,
-   7,
-   0,
-   13,
-   3,
-   "MASK"
-  ],
-  [
-   20,
-   8,
-   0,
-   12,
-   0,
-   "CLIP"
-  ],
-  [
-   21,
-   9,
-   0,
-   12,
-   1,
-   "VAE"
-  ],
-  [
-   24,
-   10,
-   0,
-   12,
-   2,
-   "VAE"
-  ],
-  [
-   22,
-   9,
-   0,
-   13,
-   1,
-   "VAE"
-  ],
-  [
-   25,
-   10,
-   0,
-   13,
-   4,
-   "VAE"
-  ],
-  [
-   27,
-   11,
-   0,
-   14,
-   0,
-   "MODEL"
-  ],
-  [
-   40,
-   12,
-   0,
-   15,
-   1,
-   "CONDITIONING"
-  ],
-  [
-   41,
-   12,
-   1,
-   13,
-   0,
-   "LATENT"
-  ],
-  [
-   42,
-   13,
-   0,
-   19,
-   4,
-   "LATENT"
-  ],
-  [
-   43,
-   14,
-   0,
-   15,
-   0,
-   "MODEL"
-  ],
-  [
-   44,
-   14,
-   0,
-   17,
-   0,
-   "MODEL"
-  ],
-  [
-   45,
-   15,
-   0,
-   19,
-   1,
-   "GUIDER"
-  ],
-  [
-   46,
-   16,
-   0,
-   19,
-   2,
-   "SAMPLER"
-  ],
-  [
-   47,
-   17,
-   0,
-   19,
-   3,
-   "SIGMAS"
-  ],
-  [
-   48,
-   18,
-   0,
-   19,
-   0,
-   "NOISE"
-  ],
-  [
-   49,
-   19,
-   0,
-   21,
-   0,
-   "LATENT"
-  ],
-  [
-   50,
-   19,
-   0,
-   22,
-   0,
-   "LATENT"
-  ],
-  [
-   23,
-   9,
-   0,
-   21,
-   1,
-   "VAE"
-  ],
-  [
-   26,
-   10,
-   0,
-   22,
-   1,
-   "VAE"
-  ],
-  [
-   51,
-   21,
-   0,
-   23,
-   0,
-   "IMAGE"
-  ],
-  [
-   52,
-   22,
-   0,
-   23,
-   1,
-   "AUDIO"
-  ],
-  [
-   30,
-   20,
-   0,
-   12,
-   7,
-   "IMAGE"
-  ],
-  [
-   31,
-   20,
-   1,
-   12,
-   8,
-   "IMAGE"
-  ],
-  [
-   32,
-   20,
-   2,
-   12,
-   9,
-   "IMAGE"
-  ],
-  [
-   60,
-   20,
-   6,
-   40,
-   0,
-   "STRING"
-  ],
-  [
-   61,
-   20,
-   7,
-   40,
-   1,
-   "STRING"
-  ],
-  [
-   62,
-   40,
-   0,
-   12,
-   3,
-   "STRING"
-  ],
-  [
-   63,
-   41,
-   0,
-   13,
-   2,
-   "IMAGE"
-  ],
-  [
-   64,
-   41,
-   1,
-   12,
-   4,
-   "INT"
-  ],
-  [
-   65,
-   41,
-   2,
-   12,
-   5,
-   "INT"
-  ],
-  [
-   66,
-   41,
-   3,
-   12,
-   6,
-   "INT"
-  ],
-  [
-   67,
-   1,
-   0,
-   41,
-   0,
-   "IMAGE"
-  ],
-  [
-   68,
-   1,
-   0,
-   41,
-   0,
-   "IMAGE"
-  ]
- ],
- "groups": [],
- "config": {},
- "extra": {},
- "version": 0.4
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
 }

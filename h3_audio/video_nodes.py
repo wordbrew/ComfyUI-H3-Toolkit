@@ -44,6 +44,8 @@ import torch
 import comfy.model_management
 import node_helpers
 
+from .geometry import cover_crop
+
 CATEGORY = "MiniMax H3/video"
 
 
@@ -251,8 +253,9 @@ class H3KeyframeTimeline:
         req = {
             "conditioning": ("CONDITIONING",),
             "vae": ("VAE",),
-            "length": ("INT", {"default": 124, "min": 5, "max": 3600, "step": 17,
-                               "tooltip": "Must match the H3 conditioning node's length."}),
+            "length": ("INT", {"default": 141, "min": 5, "max": 3600, "step": 17,
+                               "tooltip": "Must match the H3 conditioning node's length. "
+                                          "141 = 5.875 s, an AV-aligned run."}),
             "image_1": ("IMAGE",),
             "time_1": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 150.0, "step": 0.1,
                                  "tooltip": "Seconds. 0 = first frame. -1 disables."}),
@@ -527,9 +530,14 @@ class H3ReferenceToVideoLongForm:
             "prompt": ("STRING", {"multiline": True, "dynamicPrompts": True}),
             "width": ("INT", {"default": 640, "min": 32, "max": 4096, "step": 32}),
             "height": ("INT", {"default": 1120, "min": 32, "max": 4096, "step": 32}),
-            "length": ("INT", {"default": 362, "min": 5, "max": 3600, "step": 17,
-                               "tooltip": "Frames at 24 fps. 362 = 15.08 s, the top of "
-                                          "the trained range."}),
+            "length": ("INT", {"default": 345, "min": 5, "max": 3600, "step": 17,
+                               "tooltip": "Frames at 24 fps. 345 = 14.375 s — the longest "
+                                          "run inside the trained range that lands exactly "
+                                          "on BOTH clocks, 24 fps video and the 40 Hz audio "
+                                          "latent. 362 (15.08 s) is a legal video run but "
+                                          "rounds the audio, which accumulates across a "
+                                          "chain. Aligned runs: 39, 90, 141, 192, 243, "
+                                          "294, 345."}),
             "ref_image_size": (["match", "max"], {"default": "max",
                                "tooltip": "'match' shrinks anchors to the render's pixel "
                                           "area; 'max' keeps them near full size for "
@@ -696,34 +704,48 @@ class H3MaskInpaint:
         video, aud = _av(latent["samples"])
         lt, lh, lw = video.shape[2], video.shape[3], video.shape[4]
 
-        # CONFORM RATHER THAN REFUSE. The latent's shape is set by the H3 node's
-        # width/height/length; the source is whatever clip you loaded. Requiring the
-        # two to be typed into agreement failed repeatedly in practice — the numbers
-        # live on two different nodes and nothing keeps them in step. Spatially,
-        # resampling the source to the latent's frame size is well defined, so do it
-        # and say so. Frame COUNT is not resamplable (it is on the VAE's 17n+5 grid
-        # and each latent frame spans several pixel frames), so that still errors.
+        # CONFORM RATHER THAN REFUSE, BUT NEVER STRETCH. The latent's shape is set by
+        # the H3 node's width/height/length; the source is whatever clip you loaded,
+        # and the two numbers live on different nodes with nothing keeping them in
+        # step — so refusing just moves the problem. But how we conform matters:
+        #
+        #   crop   changes framing, leaves every retained pixel untouched
+        #   scale  keeps framing, resamples every pixel
+        #   stretch  distorts anatomy AND resamples          <- never
+        #
+        # In an inpaint most of the output IS the source: everything outside the mask
+        # is pinned from these exact pixels. So we centre-crop to the target ASPECT
+        # first (free — no resampling), and only then rescale if the size still
+        # differs. An earlier version here stretched to fit, which is the worst of the
+        # three: it softens the pixels you are keeping and hands the model a squashed
+        # body to match, fighting everything it knows about anatomy.
+        #
+        # Frame COUNT is not resamplable (17n+5 grid, several pixel frames per latent
+        # frame), so that still errors.
         sw, sh = source_images.shape[2], source_images.shape[1]
         tw, th = lw * 16, lh * 16
+        src = source_images
+        m3 = mask if mask.dim() == 3 else mask.unsqueeze(0)
         if (sw, sh) != (tw, th):
-            ar_src, ar_dst = sw / max(1, sh), tw / max(1, th)
-            if max(ar_src, ar_dst) / min(ar_src, ar_dst) > 1.05:
+            x0, y0, cw, chh = cover_crop(sw, sh, tw, th)
+            if (cw, chh) != (sw, sh):
+                src = src[:, y0:y0 + chh, x0:x0 + cw, :]
+                m3 = m3[..., y0:y0 + chh, x0:x0 + cw]
                 logging.warning(
-                    "H3MaskInpaint: source is %dx%d (%.2f:1) but the latent is %dx%d "
-                    "(%.2f:1) — conforming will STRETCH the picture. Set the H3 node's "
-                    "width/height to the source's aspect (or crop the source first).",
-                    sw, sh, ar_src, tw, th, ar_dst)
-            else:
-                logging.info("H3MaskInpaint: conforming source %dx%d -> %dx%d to match "
-                             "the latent", sw, sh, tw, th)
-            src = Fn.interpolate(source_images.movedim(-1, 1), size=(th, tw),
-                                 mode="bicubic", align_corners=False,
-                                 antialias=True).clamp(0, 1).movedim(1, -1)
-            mask = Fn.interpolate(
-                (mask if mask.dim() == 3 else mask.unsqueeze(0)).unsqueeze(1),
-                size=(th, tw), mode="nearest").squeeze(1)
-        else:
-            src = source_images
+                    "H3MaskInpaint: source %dx%d (%.2f:1) does not match the latent's "
+                    "aspect %dx%d (%.2f:1) — centre-cropped to %dx%d rather than "
+                    "stretching. Content outside that crop is GONE; set the H3 node's "
+                    "width/height to the source's aspect to keep the full frame.",
+                    sw, sh, sw / max(1, sh), tw, th, tw / max(1, th), cw, chh)
+            if (cw, chh) != (tw, th):
+                logging.info("H3MaskInpaint: rescaling source %dx%d -> %dx%d (aspect "
+                             "preserved)", cw, chh, tw, th)
+                src = Fn.interpolate(src.movedim(-1, 1), size=(th, tw), mode="bicubic",
+                                     align_corners=False,
+                                     antialias=True).clamp(0, 1).movedim(1, -1)
+                m3 = Fn.interpolate(m3.unsqueeze(1), size=(th, tw),
+                                    mode="nearest").squeeze(1)
+        mask = m3
 
         z = vae.encode(src)                                 # [1,24,T,h,w]
         if z.shape[2] != lt:

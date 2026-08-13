@@ -9,7 +9,10 @@ import re
 
 import torch
 
-FPS = 24
+from .geometry import crop_to_multiple
+from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
+                     is_av_aligned, snap_av_aligned)
+
 # measured on the chain recipe with everything else held constant
 RESOLUTIONS = [
     "640x1120  (chain default — clean joins)",
@@ -20,13 +23,6 @@ RESOLUTIONS = [
     "1344x768  landscape (every reference workflow)",
     "custom",
 ]
-
-
-def align_frames(seconds):
-    n = max(5, round(seconds * FPS))
-    while n % 17 != 5:
-        n += 1
-    return n
 
 
 class H3Assemble:
@@ -104,8 +100,17 @@ class H3AudioSlice:
             "required": {
                 "link_index": ("INT", {"default": 0, "min": 0, "max": 63,
                                "tooltip": "Same value as on H3 Long-form Links."}),
-                "seconds_per_link": ("FLOAT", {"default": 15.0, "min": 1.0, "max": 120.0,
-                                     "step": 0.5}),
+                "seconds_per_link": ("FLOAT", {"default": 14.375, "min": 1.0, "max": 120.0,
+                                     "step": 0.5,
+                                     "tooltip": "14.375 s = 345 frames, the AV-aligned run "
+                                                "nearest the 15 s we used to use."}),
+                "av_aligned": ("BOOLEAN", {"default": True,
+                               "tooltip": "Snap the link length to a run that lands exactly "
+                                          "on BOTH the 24 fps video grid and the 40 Hz "
+                                          "audio grid (39, 90, 141, 192, 243, 294, 345...). "
+                                          "Off-grid lengths round the audio latent, so each "
+                                          "link's audio is a fraction of a step out and the "
+                                          "error accumulates down the chain."}),
             },
             "optional": {
                 "audio": ("AUDIO", {"tooltip": "Optional — only to check the track is long "
@@ -119,15 +124,22 @@ class H3AudioSlice:
     CATEGORY = "MiniMax H3/long-form"
     DESCRIPTION = ("offset_seconds for H3 Audio Lock, from the link index. Doing this "
                    "arithmetic by hand silently gives the wrong link the wrong music. "
-                   "The frame count is snapped to the 17n+5 grid, so the offset matches "
-                   "what the clip will ACTUALLY be, not what you asked for.")
+                   "The frame count is snapped to the 17n+5 grid — and, with av_aligned "
+                   "on, to a run whose end also lands exactly on the 40 Hz audio grid, so "
+                   "the offsets do not drift away from the picture over a long chain.")
 
-    def go(self, link_index, seconds_per_link, audio=None):
+    def go(self, link_index, seconds_per_link, av_aligned=True, audio=None):
         frames = align_frames(seconds_per_link)
-        actual = frames / FPS                    # 15.0 asked -> 15.083 rendered
+        if av_aligned:
+            frames = snap_av_aligned(frames)
+        actual = frames / FPS                    # 14.375 asked -> 14.375 rendered
         offset = link_index * actual
-        info = (f"link {link_index}: offset {offset:.3f}s, {frames} frames "
-                f"({actual:.3f}s each)")
+        info = f"link {link_index}: offset {offset:.3f}s | " + describe(frames)
+        if not is_av_aligned(frames):
+            info += ("\nWARNING: this length is off the audio grid, so the offset above "
+                     "drifts from the picture a little further on every link. Turn "
+                     "av_aligned on, or pick from: "
+                     + ", ".join(str(n) for n in av_aligned_runs_through(400)))
         if audio is not None:
             sr = int(audio.get("sample_rate", 32000))
             total = audio["waveform"].shape[-1] / sr
@@ -233,38 +245,76 @@ class H3MatchSource:
     Frame count is snapped DOWN to the 17n+5 grid the video VAE requires, and the
     images are trimmed to match, so the mask and the source stay frame-aligned.
     Trimming the tail is safe; padding would invent frames the mask does not cover.
+
+    Dimensions are CROPPED to a multiple of 32, never resized. In an inpaint most
+    of the output IS the source — everything outside the mask is pinned from these
+    exact pixels — so resampling would soften the whole frame to accommodate a
+    region that gets regenerated anyway. Cropping leaves the retained pixels
+    untouched, and costs a sliver of frame edge instead. (An earlier version of
+    this node refused non-/32 input outright, which just moved the problem.)
     """
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"images": ("IMAGE", {"tooltip": "The source clip."})}}
+        return {"required": {
+            "images": ("IMAGE", {"tooltip": "The source clip."}),
+        }, "optional": {
+            "av_aligned": ("BOOLEAN", {"default": False,
+                           "tooltip": "Also trim to a run that lands exactly on the 40 Hz "
+                                      "audio grid. Costs up to 51 more frames, so it is "
+                                      "off by default — worth it when this clip is a link "
+                                      "in a chain, not when you are masking a one-off."}),
+            "mask": ("MASK", {"tooltip": "Optional — cropped and trimmed identically, so "
+                                         "it stays pixel-aligned with the frames."}),
+        }}
 
-    RETURN_TYPES = ("IMAGE", "INT", "INT", "INT", "STRING")
-    RETURN_NAMES = ("images", "width", "height", "length", "info")
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING")
+    RETURN_NAMES = ("images", "mask", "width", "height", "length", "info")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/long-form"
-    DESCRIPTION = ("Read a source clip's width, height and a legal frame count, and trim "
-                   "the clip to that count. Wire all three into the H3 conditioning node "
-                   "so an inpaint can never be shape-mismatched.")
+    DESCRIPTION = ("Read a source clip's width, height and a legal frame count, cropping "
+                   "to /32 and trimming to the frame grid. Wire all three into the H3 "
+                   "conditioning node so an inpaint can never be shape-mismatched.")
 
-    def go(self, images):
+    def go(self, images, av_aligned=False, mask=None):
         n, h, w = images.shape[0], images.shape[1], images.shape[2]
-        if w % 32 or h % 32:
-            raise ValueError(
-                f"source is {w}x{h}; H3 needs both dimensions to be multiples of 32. "
-                f"Resize the clip first (nearest is {round(w / 32) * 32}x"
-                f"{round(h / 32) * 32}) — this node will not resize for you, because "
-                f"the mask has to stay pixel-aligned with the frames.")
+        notes = []
+
+        try:
+            x0, y0, cw, ch = crop_to_multiple(w, h, 32)
+        except ValueError:
+            raise ValueError(f"source is {w}x{h}; H3 needs at least 32x32 after cropping "
+                             f"to a multiple of 32.")
+        if (cw, ch) != (w, h):
+            images = images[:, y0:y0 + ch, x0:x0 + cw, :]
+            if mask is not None:
+                mask = mask[..., y0:y0 + ch, x0:x0 + cw]
+            notes.append(f"centre-cropped {w}x{h} -> {cw}x{ch} (no resample)")
+
         length = n
         while length > 5 and length % 17 != 5:
             length -= 1
         if length < 5:
             raise ValueError(f"only {n} frame(s); the smallest legal clip is 5.")
-        info = f"{w}x{h}, {length} frames ({length / FPS:.2f}s)"
+        if av_aligned:
+            aligned = snap_av_aligned(length, "down")
+            if aligned <= length:
+                length = aligned
+            else:
+                notes.append("too short for any AV-aligned run; left on the video grid")
         if length != n:
-            info += f" — trimmed {n - length} frame(s) to reach the 17n+5 grid"
+            notes.append(f"trimmed {n - length} frame(s)")
+        images = images[:length]
+        if mask is not None:
+            mask = mask[:length]
+
+        info = f"{cw}x{ch}, " + describe(length)
+        if notes:
+            info += " — " + "; ".join(notes)
+        if mask is None:
+            mask = torch.zeros(length, ch, cw)
         return {"ui": {"h3char": [info]},
-                "result": (images[:length], w, h, length, info)}
+                "result": (images, mask, cw, ch, length, info)}
 
 
 NODE_CLASS_MAPPINGS = {"H3MatchSource": H3MatchSource, "H3Assemble": H3Assemble, "H3AudioSlice": H3AudioSlice,
