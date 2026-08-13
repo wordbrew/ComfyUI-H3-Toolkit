@@ -50,7 +50,7 @@ speaker, which is what the retention wording is trying to avoid.
 
 import re
 
-FPS = 24
+from .timing import FPS, align_frames, describe, snap_av_aligned
 
 # how long each section wants, relative to the others
 SECTION_WEIGHT = {
@@ -73,14 +73,6 @@ LEAD_IN = {
 _ORD = ["first", "second", "third", "fourth"]
 LANGUAGES = ["English", "Chinese", "Japanese", "Korean", "Spanish", "French",
              "German", "Portuguese", "Italian", "Russian"]
-
-
-def align_frames(seconds):
-    """The video VAE needs frame counts on a 17n+5 grid; out-of-grid snaps down."""
-    n = max(5, round(seconds * FPS))
-    while n % 17 != 5:
-        n += 1
-    return n
 
 
 def stamp(t):
@@ -551,17 +543,27 @@ class H3AudioLength:
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"seconds": ("FLOAT", {"default": 15.0, "min": 1.0,
-                                                   "max": 120.0, "step": 0.5})}}
-    RETURN_TYPES = ("INT", "FLOAT")
-    RETURN_NAMES = ("length", "actual_seconds")
+        return {"required": {
+            "seconds": ("FLOAT", {"default": 14.375, "min": 1.0, "max": 120.0,
+                                  "step": 0.5}),
+            "av_aligned": ("BOOLEAN", {"default": True,
+                           "tooltip": "Snap to a run that lands exactly on both clocks — "
+                                      "24 fps video and the 40 Hz audio latent. "
+                                      "39, 90, 141, 192, 243, 294, 345, 396..."}),
+        }}
+    RETURN_TYPES = ("INT", "FLOAT", "STRING")
+    RETURN_NAMES = ("length", "actual_seconds", "info")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/audio"
-    DESCRIPTION = "Snap a duration up to the video VAE's 17n+5 frame grid."
+    DESCRIPTION = ("Snap a duration to the video VAE's 17n+5 frame grid, and optionally to "
+                   "a run whose end also falls exactly on the 40 Hz audio grid — off-grid "
+                   "lengths round the audio latent, which accumulates across a chain.")
 
-    def go(self, seconds):
+    def go(self, seconds, av_aligned=True):
         n = align_frames(seconds)
-        return (n, n / FPS)
+        if av_aligned:
+            n = snap_av_aligned(n)
+        return (n, n / FPS, describe(n))
 
 
 NODE_CLASS_MAPPINGS = {

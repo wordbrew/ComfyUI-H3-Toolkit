@@ -21,6 +21,12 @@ timing, masking shape rules, and the settings that were measured rather than gue
 **long-form** — `H3MatchSource`, `H3Assemble`, `H3AudioSlice`, `H3Take`,
 `H3Resolution`
 
+Supporting modules with no nodes of their own: `timing.py` (the two clocks and the
+runs where they agree) and `geometry.py` (the crop rules). Both are torch-free so
+they can be tested — `python3 test_geometry.py`. `python3 validate_workflows.py
+workflows/*.json` checks the example graphs, which is worth doing after any hand
+edit; every workflow bug this pack has shipped was a silent structural one.
+
 **video** — `H3ReferenceToVideoLongForm`, `H3KeyframeTimeline`, `H3AudioLock`,
 `H3ChainFrame`, `H3LatentPin`, `H3MaskInpaint`
 
@@ -38,3 +44,14 @@ timing, masking shape rules, and the settings that were measured rather than gue
   restarts the music; pinning the same slice into every link loops it.
 - Masking pins the source's own pixels, so the generated latent must match the
   source clip's shape exactly. `H3MatchSource` derives it.
+- A clip's length has to be legal on BOTH clocks. The video VAE takes 17n+5 frames;
+  the audio latent runs at 40 Hz, and `audio_t = round(frames / 24 * 40)` only comes
+  out exact when the frame count is also divisible by 3. That is every third video
+  run — 39, 90, 141, 192, 243, 294, 345, 396, spaced 51 apart. Off-grid lengths
+  round, and the error accumulates across a chain. Our long-form work used 362,
+  which is a legal video run and is a third of an audio step out; 345 is the aligned
+  run nearest it. (Rule from `seitanism/ComfyUI-H3-Motion-Context-MultiRef`.)
+- Conform by CROPPING, never by stretching. In an inpaint most of the output *is*
+  the source, so resampling softens pixels that were going to be kept verbatim, and
+  a non-uniform resize additionally hands the model a distorted body to match.
+  Crop to the target aspect first, and only rescale if the size still differs.
