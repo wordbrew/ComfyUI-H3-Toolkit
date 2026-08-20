@@ -9,7 +9,7 @@ import re
 
 import torch
 
-from .geometry import crop_to_multiple
+from .geometry import cover_crop, crop_to_multiple
 from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
                      is_av_aligned, snap_av_aligned)
 
@@ -246,50 +246,172 @@ class H3MatchSource:
     images are trimmed to match, so the mask and the source stay frame-aligned.
     Trimming the tail is safe; padding would invent frames the mask does not cover.
 
-    Dimensions are CROPPED to a multiple of 32, never resized. In an inpaint most
-    of the output IS the source — everything outside the mask is pinned from these
-    exact pixels — so resampling would soften the whole frame to accommodate a
-    region that gets regenerated anyway. Cropping leaves the retained pixels
-    untouched, and costs a sliver of frame edge instead. (An earlier version of
-    this node refused non-/32 input outright, which just moved the problem.)
+    HOW IT CONFORMS IS YOUR CHOICE. An earlier version only ever cropped to /32,
+    on the argument that an inpaint keeps most of the source verbatim so
+    resampling spends sharpness on pixels that were going to survive. That
+    argument is real but it is not the whole picture: crop-to-/32 cannot make a
+    1920x1080 source into anything H3 will render. 1920x1056 is 2 MP against a
+    768x1344 cap, so real footage needs a downscale, and once you are resampling
+    anyway the only question left is HOW. So:
+
+      crop to /32   trim to the nearest multiple of 32. No resampling at all, and
+                    no scaling — only useful when the source is already close to
+                    a canvas H3 can render.
+      fill          centre-crop to the target's aspect, then scale. No distortion,
+                    no bars, loses the edges that do not fit. The usual choice.
+      stretch       scale straight to the target. Keeps the whole frame and
+                    distorts it. What ImageResizeKJv2's 'resize' does.
+      pad           scale to fit inside the target, bars for the remainder. Keeps
+                    everything undistorted, but the model will try to generate
+                    into the bars, so expect to crop them off afterwards.
+      none          pass through untouched; errors if the clip is not already
+                    legal. For when something upstream already conformed it.
     """
+
+    MODES = ["crop to /32", "fill", "stretch", "pad", "none"]
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
             "images": ("IMAGE", {"tooltip": "The source clip."}),
+            "mode": (cls.MODES, {"default": "fill",
+                     "tooltip": "How to conform the clip to the target. 'fill' keeps "
+                                "the aspect and loses the edges; 'stretch' keeps "
+                                "everything and distorts; 'pad' keeps everything and "
+                                "adds bars the model will try to paint into; "
+                                "'crop to /32' does not scale at all."}),
+            "target_width": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
+                             "tooltip": "0 = derive from the source. Set both to "
+                                        "downscale a big clip to something H3 can "
+                                        "render — the short edge wants to be around "
+                                        "768 and the area cap is 768x1344."}),
+            "target_height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32}),
+            "target_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 4.0,
+                                  "step": 0.05,
+                                  "tooltip": "0 = off. Sets a pixel BUDGET and keeps "
+                                             "the source's shape — the dimensions are "
+                                             "derived from the source aspect at this "
+                                             "area, so there is no aspect conflict and "
+                                             "the mode does not matter. H3's cap is "
+                                             "1.03 MP (768x1344); 0.72 is 640x1120. "
+                                             "Ignored if target_width/height are set, "
+                                             "because those already fix the shape."}),
         }, "optional": {
             "av_aligned": ("BOOLEAN", {"default": False,
                            "tooltip": "Also trim to a run that lands exactly on the 40 Hz "
                                       "audio grid. Costs up to 51 more frames, so it is "
                                       "off by default — worth it when this clip is a link "
                                       "in a chain, not when you are masking a one-off."}),
-            "mask": ("MASK", {"tooltip": "Optional — cropped and trimmed identically, so "
-                                         "it stays pixel-aligned with the frames."}),
+            "mask": ("MASK", {"tooltip": "Optional — conformed and trimmed identically, "
+                                         "so it stays pixel-aligned with the frames."}),
         }}
 
     RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING")
     RETURN_NAMES = ("images", "mask", "width", "height", "length", "info")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/long-form"
-    DESCRIPTION = ("Read a source clip's width, height and a legal frame count, cropping "
-                   "to /32 and trimming to the frame grid. Wire all three into the H3 "
+    DESCRIPTION = ("Conform a source clip to a canvas H3 can render and report the "
+                   "width, height and legal frame count. Wire all three into the H3 "
                    "conditioning node so an inpaint can never be shape-mismatched.")
 
-    def go(self, images, av_aligned=False, mask=None):
+    def go(self, images, mode="fill", target_width=0, target_height=0,
+           target_megapixels=0.0, av_aligned=False, mask=None):
+        import math
+        import torch.nn.functional as Fn
         n, h, w = images.shape[0], images.shape[1], images.shape[2]
         notes = []
 
-        try:
-            x0, y0, cw, ch = crop_to_multiple(w, h, 32)
-        except ValueError:
-            raise ValueError(f"source is {w}x{h}; H3 needs at least 32x32 after cropping "
-                             f"to a multiple of 32.")
-        if (cw, ch) != (w, h):
-            images = images[:, y0:y0 + ch, x0:x0 + cw, :]
+        if mask is not None and mask.dim() == 2:
+            mask = mask.unsqueeze(0)
+
+        def scale(img, msk, tw, th):
+            img = Fn.interpolate(img.movedim(-1, 1), size=(th, tw), mode="bicubic",
+                                 align_corners=False,
+                                 antialias=True).clamp(0, 1).movedim(1, -1)
+            if msk is not None:
+                msk = Fn.interpolate(msk.unsqueeze(1), size=(th, tw),
+                                     mode="nearest").squeeze(1)
+            return img, msk
+
+        tw = (int(target_width) // 32) * 32
+        th = (int(target_height) // 32) * 32
+        want_target = tw >= 32 and th >= 32
+
+        if float(target_megapixels) > 0:
+            if want_target:
+                notes.append("target_megapixels ignored — width/height already fix "
+                             "the canvas")
+            else:
+                # keep the source's shape and hit the area budget. Both axes still
+                # land on 32, so the ratio moves a little and the area is close
+                # rather than exact.
+                area = float(target_megapixels) * 1e6
+                ar = w / float(h)
+                tw = max(32, int(round(math.sqrt(area * ar) / 32)) * 32)
+                th = max(32, int(round(math.sqrt(area / ar) / 32)) * 32)
+                want_target = True
+                notes.append(f"{target_megapixels:.2f} MP at the source's "
+                             f"{ar:.2f}:1 -> {tw}x{th}")
+                if mode in ("fill", "stretch", "pad"):
+                    # the derived canvas already matches the source's shape, so
+                    # there is no conflict for the mode to resolve
+                    mode = "fill"
+
+        if mode == "none":
+            if w % 32 or h % 32:
+                raise ValueError(
+                    f"mode 'none' but the clip is {w}x{h}, which is not a multiple of "
+                    f"32. Pick another mode, or conform it upstream.")
+            cw, ch = w, h
+        elif mode == "crop to /32" or not want_target:
+            if want_target:
+                notes.append("target ignored — 'crop to /32' does not scale")
+            try:
+                x0, y0, cw, ch = crop_to_multiple(w, h, 32)
+            except ValueError:
+                raise ValueError(f"source is {w}x{h}; H3 needs at least 32x32 after "
+                                 f"cropping to a multiple of 32.")
+            if (cw, ch) != (w, h):
+                images = images[:, y0:y0 + ch, x0:x0 + cw, :]
+                if mask is not None:
+                    mask = mask[..., y0:y0 + ch, x0:x0 + cw]
+                notes.append(f"centre-cropped {w}x{h} -> {cw}x{ch} (no resample)")
+            if mode != "crop to /32" and not want_target:
+                notes.append(f"no target set, so '{mode}' fell back to a /32 crop")
+        elif mode == "fill":
+            x0, y0, cw0, ch0 = cover_crop(w, h, tw, th)
+            if (cw0, ch0) != (w, h):
+                images = images[:, y0:y0 + ch0, x0:x0 + cw0, :]
+                if mask is not None:
+                    mask = mask[..., y0:y0 + ch0, x0:x0 + cw0]
+                notes.append(f"cropped to {tw}:{th} aspect ({cw0}x{ch0})")
+            images, mask = scale(images, mask, tw, th)
+            cw, ch = tw, th
+            notes.append(f"scaled to {tw}x{th}")
+        elif mode == "stretch":
+            images, mask = scale(images, mask, tw, th)
+            cw, ch = tw, th
+            ar_s, ar_t = w / max(1, h), tw / max(1, th)
+            notes.append(f"stretched {w}x{h} -> {tw}x{th}")
+            if max(ar_s, ar_t) / min(ar_s, ar_t) > 1.05:
+                notes.append(f"WARNING: {ar_s:.2f}:1 into {ar_t:.2f}:1 distorts the "
+                             f"picture — the model will be asked to match a squashed "
+                             f"body. 'fill' avoids this")
+        elif mode == "pad":
+            s = min(tw / w, th / h)
+            iw, ih = max(32, int(round(w * s))), max(32, int(round(h * s)))
+            images, mask = scale(images, mask, iw, ih)
+            px, py = (tw - iw) // 2, (th - ih) // 2
+            images = Fn.pad(images.movedim(-1, 1), (px, tw - iw - px, py, th - ih - py)
+                            ).movedim(1, -1)
             if mask is not None:
-                mask = mask[..., y0:y0 + ch, x0:x0 + cw]
-            notes.append(f"centre-cropped {w}x{h} -> {cw}x{ch} (no resample)")
+                mask = Fn.pad(mask, (px, tw - iw - px, py, th - ih - py))
+            cw, ch = tw, th
+            notes.append(f"scaled to {iw}x{ih} and padded to {tw}x{th}")
+            notes.append("WARNING: the model generates into the bars — crop them off "
+                         "after, or use 'fill'")
+        else:
+            raise ValueError(f"unknown mode {mode!r}")
 
         length = n
         while length > 5 and length % 17 != 5:
@@ -308,9 +430,14 @@ class H3MatchSource:
         if mask is not None:
             mask = mask[:length]
 
-        info = f"{cw}x{ch}, " + describe(length)
+        mp = cw * ch / 1e6
+        info = f"{cw}x{ch} ({mp:.2f} MP), " + describe(length)
         if notes:
             info += " — " + "; ".join(notes)
+        if mp > 1.05:
+            info += ("\nWARNING: past the 768x1344 area cap. Set target_width/height "
+                     "to something H3 renders — a bigger canvas measured no better and "
+                     "costs superlinearly.")
         if mask is None:
             mask = torch.zeros(length, ch, cw)
         return {"ui": {"h3char": [info]},

@@ -224,7 +224,97 @@ class H3SubjectUncrop:
         return torch.minimum(ay.unsqueeze(1), ax.unsqueeze(0))
 
 
+class H3ApplyCrop:
+    """Cut a DERIVED stream with the same boxes the subject crop used.
+
+    Anything computed from the source frames — a depth pass, pose, canny, a
+    second copy at another scale — has to travel the same path or it stops
+    describing the frames it is paired with.
+
+    It will not error if you skip this: a reference video gets its own latent
+    block at its own size, so a full-frame depth pass against a cropped target
+    runs happily. It is simply wrong. The whole value of a depth reference is
+    spatial correspondence with what is being rendered, and cropping one side of
+    that pairing and not the other is precisely what breaks it.
+
+    Streams computed at a different scale to the source are handled: the boxes
+    are scaled to match, so a half-resolution depth pass crops correctly.
+
+    THE OTHER WAY ROUND IS OFTEN BETTER. Putting H3 Subject Crop BEFORE the depth
+    model means depth is computed on the crop and cannot be misaligned at all —
+    and it is cheaper, because the depth model sees fewer pixels. The difference
+    is that estimators normalise relative depth per image, so depth-of-a-crop is
+    not the same as a-crop-of-depth: the range spreads across the subject instead
+    of the whole room. That is usually an improvement. Use this node when you want
+    the full-scene normalisation preserved, or when the stream cannot be recomputed.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE", {"tooltip": "A stream derived from the same source "
+                                            "frames — depth, pose, canny, a rescaled "
+                                            "copy."}),
+            "crop_data": ("H3_CROP", {"tooltip": "From H3 Subject Crop."}),
+        }, "optional": {
+            "mask": ("MASK",),
+        }}
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("images", "mask", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    DESCRIPTION = ("Apply an existing subject crop to another stream, so a depth or "
+                   "pose pass keeps describing the frames it is paired with.")
+
+    def go(self, images, crop_data, mask=None):
+        boxes = crop_data["boxes"]
+        iw, ih = crop_data["image_width"], crop_data["image_height"]
+        n, h, w = images.shape[0], images.shape[1], images.shape[2]
+
+        if len(boxes) < n:
+            raise ValueError(
+                f"the crop plan covers {len(boxes)} frame(s) but this stream has "
+                f"{n}. Both have to come from the same clip.")
+
+        sx, sy = w / float(iw), h / float(ih)
+        if abs(sx - sy) > 0.02:
+            raise ValueError(
+                f"this stream is {w}x{h} against the cropped clip's {iw}x{ih} — the "
+                f"aspect differs, so it is not a rescaled copy of the same frames "
+                f"and the boxes cannot be mapped onto it.")
+
+        def sc(v, s, limit):
+            return max(0, min(int(round(v * s)), limit))
+
+        bw = sc(boxes[0]["width"], sx, w) or 1
+        bh = sc(boxes[0]["height"], sy, h) or 1
+        out_i = torch.empty((n, bh, bw, images.shape[3]), dtype=images.dtype,
+                            device=images.device)
+        out_m = None
+        if mask is not None:
+            m = mask if mask.dim() == 3 else mask.unsqueeze(0)
+            out_m = torch.empty((n, bh, bw), dtype=m.dtype, device=m.device)
+        for i in range(n):
+            b = boxes[i]
+            x = min(sc(b["x"], sx, w), w - bw)
+            y = min(sc(b["y"], sy, h), h - bh)
+            out_i[i] = images[i, y:y + bh, x:x + bw, :]
+            if out_m is not None:
+                out_m[i] = m[i, y:y + bh, x:x + bw]
+        if out_m is None:
+            out_m = torch.zeros((n, bh, bw))
+
+        info = f"{w}x{h} -> {bw}x{bh}"
+        if abs(sx - 1.0) > 0.01:
+            info += f" (stream is {sx:.2f}x the cropped clip; boxes scaled to match)"
+        logging.info("H3ApplyCrop: %s", info)
+        return {"ui": {"h3char": [info]}, "result": (out_i, out_m, info)}
+
+
 NODE_CLASS_MAPPINGS = {"H3SubjectCrop": H3SubjectCrop,
-                       "H3SubjectUncrop": H3SubjectUncrop}
+                       "H3SubjectUncrop": H3SubjectUncrop,
+                       "H3ApplyCrop": H3ApplyCrop}
 NODE_DISPLAY_NAME_MAPPINGS = {"H3SubjectCrop": "H3 Subject Crop",
-                              "H3SubjectUncrop": "H3 Subject Uncrop"}
+                              "H3SubjectUncrop": "H3 Subject Uncrop",
+                              "H3ApplyCrop": "H3 Apply Crop (depth / pose / etc)"}
