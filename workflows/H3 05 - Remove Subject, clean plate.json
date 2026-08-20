@@ -1061,6 +1061,10 @@
         }
       ],
       "widgets_values": [
+        "fill",
+        0,
+        0,
+        0.72,
         false
       ]
     }
