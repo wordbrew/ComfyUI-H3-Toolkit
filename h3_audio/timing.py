@@ -36,6 +36,30 @@ audio-context coordinate trick is already credited in the engine's packed_kf.py.
 FPS = 24
 AUDIO_LATENT_HZ = 40
 
+# Pixel frames covered by video latent step k is FRAME_PER_TOKEN[k % 5]. The
+# coverage is POSITIONAL and NOT uniform: every fifth latent frame covers a single
+# pixel frame and the other four cover four each (1+4+4+4+4 = 17, the grid step).
+FRAME_PER_TOKEN = (1, 4, 4, 4, 4)
+
+
+def video_latent_t(frame_count):
+    """Latent frames for a legal video run."""
+    n = int(frame_count)
+    return 2 if n <= 5 else ((n - 5) // 17) * 5 + 2
+
+
+def frame_groups(latent_t):
+    """Pixel frames belonging to each latent frame, in order.
+
+    The list a mask reduction has to split on. Anything that divides the pixel
+    frames into `latent_t` EQUAL buckets — `adaptive_max_pool3d`, a trilinear
+    resize — is wrong here: it shifts every mask boundary by up to two frames
+    (83 ms at 24 fps) and hands the single-frame tokens four or five frames of
+    unioned mask instead of one. The error is cyclic rather than accumulating,
+    so it shows up as intermittent misalignment, worst on fast motion.
+    """
+    return [FRAME_PER_TOKEN[k % 5] for k in range(int(latent_t))]
+
 
 def align_frames(seconds):
     """Seconds -> the next legal video run (17n+5). Ignores the audio grid."""
