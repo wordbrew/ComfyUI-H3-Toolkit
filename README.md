@@ -19,13 +19,24 @@ timing, masking shape rules, and the settings that were measured rather than gue
 **character** — `H3Character`, `H3CharacterSave`
 
 **long-form** — `H3MatchSource`, `H3Assemble`, `H3AudioSlice`, `H3Take`,
-`H3Resolution`
+`H3Resolution`, `H3SubjectCrop`, `H3SubjectUncrop`
 
-Supporting modules with no nodes of their own: `timing.py` (the two clocks and the
-runs where they agree) and `geometry.py` (the crop rules). Both are torch-free so
-they can be tested — `python3 test_geometry.py`. `python3 validate_workflows.py
-workflows/*.json` checks the example graphs, which is worth doing after any hand
-edit; every workflow bug this pack has shipped was a silent structural one.
+Supporting modules with no nodes of their own: `timing.py` (the two clocks, and
+the VAE's frame grouping), `geometry.py` (the crop-don't-stretch rules) and
+`cropplan.py` (where to cut a subject out of a clip). All three are torch-free so
+they can be tested — `python3 test_geometry.py`, `python3 test_cropplan.py`.
+`python3 validate_workflows.py workflows/*.json` checks the example graphs, which
+is worth doing after any hand edit; every workflow bug this pack has shipped was a
+silent structural one.
+
+`H3SubjectCrop` exists because H3 denoises every token every step, so a full-frame
+render pays for scenery that is pinned anyway. How much it buys depends entirely
+on framing — a full-body subject on a portrait canvas already fills the height, so
+the crop only gains horizontally. Its info output reports the actual saving.
+The approach (stable whole-clip planning rather than per-frame boxes, because the
+model reads crop wobble as camera motion) is from drozbay/MaskVidExperiments;
+the implementation is ours and much simpler — see `cropplan.py` for what that
+costs.
 
 **video** — `H3ReferenceToVideoLongForm`, `H3KeyframeTimeline`, `H3AudioLock`,
 `H3ChainFrame`, `H3LatentPin`, `H3MaskInpaint`

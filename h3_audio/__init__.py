@@ -18,14 +18,16 @@ from .tools import (NODE_CLASS_MAPPINGS as _TOOL_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _TOOL_NAMES)
 from .rewriter import (NODE_CLASS_MAPPINGS as _RW_CLASSES,
                        NODE_DISPLAY_NAME_MAPPINGS as _RW_NAMES)
+from .crop import (NODE_CLASS_MAPPINGS as _CROP_CLASSES,
+                   NODE_DISPLAY_NAME_MAPPINGS as _CROP_NAMES)
 
 # long-form video nodes share the pack; audio and video keep separate categories
 NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **_VID_CLASSES, **_LINT_CLASSES,
                        **_CHAR_CLASSES, **_SCENE_CLASSES, **_LINK_CLASSES,
-                       **_TOOL_CLASSES, **_RW_CLASSES}
+                       **_TOOL_CLASSES, **_RW_CLASSES, **_CROP_CLASSES}
 NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **_VID_NAMES, **_LINT_NAMES,
                               **_CHAR_NAMES, **_SCENE_NAMES, **_LINK_NAMES,
-                              **_TOOL_NAMES, **_RW_NAMES}
+                              **_TOOL_NAMES, **_RW_NAMES, **_CROP_NAMES}
 
 # serves the widget-hiding / preset / plan-display extension
 WEB_DIRECTORY = "./web"

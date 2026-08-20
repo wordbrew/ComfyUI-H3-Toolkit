@@ -45,6 +45,7 @@ import comfy.model_management
 import node_helpers
 
 from .geometry import cover_crop
+from .timing import frame_groups
 
 CATEGORY = "MiniMax H3/video"
 
@@ -762,8 +763,26 @@ class H3MaskInpaint:
         if invert:
             m = 1.0 - m
 
-        # UNION, not resample: any pixel frame contributing to a latent frame counts
-        m = Fn.adaptive_max_pool3d(m, (lt, lh, lw))
+        # UNION, not resample: any pixel frame contributing to a latent frame counts.
+        #
+        # Spatially that is an exact 16x16 block — the source was conformed to
+        # lh*16 x lw*16 above, so the blocks divide evenly.
+        m = Fn.max_pool3d(m, kernel_size=(1, 16, 16), stride=(1, 16, 16))
+        #
+        # TEMPORALLY IT IS NOT EVEN, and this used to be wrong. `adaptive_max_pool3d`
+        # splits T pixel frames into lt EQUAL buckets, but the VAE's grouping is
+        # FRAME_PER_TOKEN = (1,4,4,4,4): every fifth latent frame covers ONE pixel
+        # frame and the rest cover four. Equal buckets put 4-5 frames of unioned mask
+        # onto the single-frame tokens and shift every boundary by up to two frames
+        # (83 ms at 24 fps), cyclically. Fast-moving occluders smeared across their
+        # own path on exactly the tokens that should have been sharpest.
+        sizes = frame_groups(lt)
+        if sum(sizes) != m.shape[2]:
+            raise ValueError(
+                f"mask has {m.shape[2]} frame(s) but {lt} latent frames need "
+                f"{sum(sizes)}. The mask must be the same length as the source clip "
+                f"— put H3 Match Source Clip in front of both.")
+        m = torch.stack([g.amax(dim=2) for g in torch.split(m, sizes, dim=2)], dim=2)
 
         if dilate > 0:
             k = dilate * 2 + 1

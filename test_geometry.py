@@ -87,6 +87,20 @@ eq(t.align_frames(14.375), 345, "14.375 s is exactly 345 frames")
 eq(t.align_frames(29.25), 702, "29.25 s is exactly 702 frames")
 eq(round(t.av_error_steps(362), 3), 0.333, "362 is a third of a step out")
 
+# --- frame grouping (the mask reduction depends on this being exact) --------
+eq(t.frame_groups(7), [1, 4, 4, 4, 4, 1, 4], "the (1,4,4,4,4) cycle")
+for n in range(5, 5000, 17):                       # every legal video run
+    lt = t.video_latent_t(n)
+    g = t.frame_groups(lt)
+    if sum(g) != n:
+        fails.append(f"frame_groups({lt}) sums to {sum(g)}, but the run is {n} frames")
+        break
+eq(t.video_latent_t(345), 102, "345 frames -> 102 latent frames")
+eq(sum(t.frame_groups(102)), 345, "102 latent frames cover exactly 345")
+# equal buckets are what adaptive_max_pool3d would give, and they are NOT this
+eq(t.frame_groups(102)[:5] == [345 // 102] * 5, False,
+   "the grouping must not be uniform")
+
 if fails:
     print(f"{len(fails)} FAILURE(S)")
     for f in fails:
