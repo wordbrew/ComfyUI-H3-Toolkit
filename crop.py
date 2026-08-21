@@ -391,6 +391,11 @@ class H3PreviewMaskCrop:
                     face. Blue outside green is being thrown away; blue on skin is
                     what wrecks the face.
 
+    DRAWN LAST, on top of the others. The first version painted it first, which
+    made it invisible: a forget mask lives INSIDE the subject mask, so the green
+    covered every pixel of it. Blue has to win the overlap or the node cannot
+    answer the only question it was added for.
+
     Only the primary mask gets a latent overlay. The second one reduces differently
     where it is used — H3 Mask Inpaint takes a MEAN over each frame group for the
     forget mask, against the MAX it uses for the main one — so drawing them in the
@@ -451,22 +456,6 @@ class H3PreviewMaskCrop:
             col = torch.tensor(rgb, device=out.device, dtype=out.dtype)
             out.mul_(1.0 - s).add_(s * col)
 
-        if mask_2 is not None:
-            m2 = (mask_2 if mask_2.dim() == 3 else mask_2.unsqueeze(0)).float()
-            if m2.shape[-2:] != (ih, iw):
-                raise ValueError(f"mask_2 is {m2.shape[-1]}x{m2.shape[-2]} but the clip "
-                                 f"is {iw}x{ih}.")
-            tint(m2, (0.2, 0.4, 1.0))
-            notes.append(f"mask_2 covers {float(m2.mean()) * 100:.1f}% (blue)")
-            if mask is not None:
-                mm = (mask if mask.dim() == 3 else mask.unsqueeze(0)).float()
-                if mm.shape == m2.shape:
-                    outside = float(((m2 > 0.5) & (mm <= 0.5)).float().mean())
-                    if outside > 0.001:
-                        notes.append(f"WARNING: {outside * 100:.1f}% of the frame has "
-                                     f"mask_2 OUTSIDE mask — that part is discarded "
-                                     f"where the two are intersected")
-
         if mask is not None:
             m = (mask if mask.dim() == 3 else mask.unsqueeze(0)).float()
             if m.shape[-2:] != (ih, iw):
@@ -502,6 +491,22 @@ class H3PreviewMaskCrop:
             if show_mask:
                 tint(m, (0.15, 1.0, 0.35))
                 notes.append(f"pixel mask covers {float(m.mean()) * 100:.1f}%")
+
+        if mask_2 is not None:
+            m2 = (mask_2 if mask_2.dim() == 3 else mask_2.unsqueeze(0)).float()
+            if m2.shape[-2:] != (ih, iw):
+                raise ValueError(f"mask_2 is {m2.shape[-1]}x{m2.shape[-2]} but the clip "
+                                 f"is {iw}x{ih}.")
+            tint(m2, (0.2, 0.4, 1.0))
+            notes.append(f"mask_2 covers {float(m2.mean()) * 100:.1f}% (blue)")
+            if mask is not None:
+                mm = (mask if mask.dim() == 3 else mask.unsqueeze(0)).float()
+                if mm.shape == m2.shape:
+                    outside = float(((m2 > 0.5) & (mm <= 0.5)).float().mean())
+                    if outside > 0.001:
+                        notes.append(f"WARNING: {outside * 100:.1f}% of the frame has "
+                                     f"mask_2 OUTSIDE mask — that part is discarded "
+                                     f"where the two are intersected")
 
         if crop_data is not None and show_crop_box:
             boxes = crop_data["boxes"]
