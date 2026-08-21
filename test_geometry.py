@@ -10,12 +10,12 @@ import sys
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
-    "h3geom", os.path.join(_here, "h3_toolkit", "geometry.py"))
+    "h3geom", os.path.join(_here, "geometry.py"))
 g = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(g)
 
 _spec = importlib.util.spec_from_file_location(
-    "h3timing", os.path.join(_here, "h3_toolkit", "timing.py"))
+    "h3timing", os.path.join(_here, "timing.py"))
 t = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(t)
 

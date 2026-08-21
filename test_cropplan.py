@@ -10,7 +10,7 @@ import sys
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location(
-    "cropplan", os.path.join(_here, "h3_toolkit", "cropplan.py"))
+    "cropplan", os.path.join(_here, "cropplan.py"))
 cp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cp)
 
