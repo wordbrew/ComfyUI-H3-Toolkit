@@ -45,7 +45,7 @@ Every mechanism that could carry velocity is a reference, and references converg
 
 import re
 
-from .lint import lint
+from .prompt_lint import lint
 
 FPS = 24
 RELATIVE_HINT = re.compile(

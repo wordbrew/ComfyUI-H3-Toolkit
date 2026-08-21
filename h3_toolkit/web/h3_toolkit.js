@@ -54,7 +54,7 @@ async function applyPreset(node) {
   const w = node.widgets?.find((x) => x.name === "preset");
   if (!w || !w.value || w.value.startsWith("custom")) return;
   try {
-    const r = await fetch("/h3_audio/preset?name=" + encodeURIComponent(w.value));
+    const r = await fetch("/h3_toolkit/preset?name=" + encodeURIComponent(w.value));
     if (!r.ok) return;
     const data = await r.json();
     for (const f of PRESET_FIELDS) {

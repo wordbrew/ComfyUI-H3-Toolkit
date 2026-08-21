@@ -20,7 +20,7 @@ import torch.nn.functional as Fn
 
 from .cropplan import plan
 
-CATEGORY = "MiniMax H3/long-form"
+CATEGORY = "MiniMax H3/mask"
 
 
 def _bboxes(mask, threshold=0.5):
