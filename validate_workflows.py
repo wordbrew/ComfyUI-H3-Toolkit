@@ -59,9 +59,15 @@ def check(path):
                 errs.append(f"link {lid}: {t['type']}#{dst} input "
                             f"'{tins[dslot].get('name')}' points at {got}")
             it = tins[dslot].get("type")
-            if it and ty and it != ty and "*" not in (it, ty):
-                errs.append(f"link {lid}: {ty} into a {it} input "
-                            f"({t['type']}#{dst}.{tins[dslot].get('name')})")
+            # an input type may be a UNION — "IMAGE,MASK", "FLOAT,INT,BOOLEAN" —
+            # so membership, not equality. Comparing these with != flagged five
+            # perfectly good links in a real workflow.
+            if it and ty and "*" not in (it, ty):
+                accepted = {p.strip() for p in str(it).split(",")}
+                offered = {p.strip() for p in str(ty).split(",")}
+                if not (accepted & offered):
+                    errs.append(f"link {lid}: {ty} into a {it} input "
+                                f"({t['type']}#{dst}.{tins[dslot].get('name')})")
 
     declared = {l[0] for l in links}
     for n in d.get("nodes", []):
