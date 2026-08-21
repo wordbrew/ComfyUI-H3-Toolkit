@@ -1,6 +1,6 @@
 {
-  "last_node_id": 56,
-  "last_link_id": 88,
+  "last_node_id": 58,
+  "last_link_id": 93,
   "nodes": [
     {
       "id": 1,
@@ -24,7 +24,8 @@
           "links": [
             1,
             2,
-            68
+            68,
+            90
           ]
         },
         {
@@ -79,14 +80,16 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            10
+            10,
+            91
           ]
         },
         {
           "name": "CLIP",
           "type": "CLIP",
           "links": [
-            11
+            11,
+            89
           ]
         },
         {
@@ -137,7 +140,7 @@
         "Node name for S&R": "CLIPTextEncode"
       },
       "widgets_values": [
-        "a woman and her hair"
+        "a woman"
       ],
       "title": "① TARGET — what to find, in plain words"
     },
@@ -178,8 +181,7 @@
           "type": "SAM3_TRACK_DATA",
           "links": [
             13,
-            14,
-            76
+            14
           ]
         }
       ],
@@ -1109,7 +1111,7 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "FORGET A SOURCE ATTRIBUTE — when masking alone is not enough.\n\nTHE PROBLEM\n  Masking a region does not make it start blank. The sampler builds its\n  starting point as  x = sigma*noise + (1-sigma)*source  over the WHOLE\n  frame, before any mask is applied. So below denoise 1.0 the free region\n  still starts holding part of the source -- 9% at denoise 0.45.\n\n  Hue survives denoising better than structure does, so that 9% is enough\n  to carry the original hair colour through no matter what the prompt says.\n\nTHE FIX\n  forget_mask says how much each area FORGETS what it started from.\n  Black = remember it fully (the default). White = start from noise.\n  Paint the hair white: it loses its colour memory while the rest of the\n  mask keeps the residual that holds pose and framing.\n\nTWO MASKS, ONE PATH\n  SAM3 is asked for \"a woman and her hair\", so one track gives both:\n  index 0 is the subject, index 1 is the hair. The hair mask rides\n  mask_2 through H3 Match Source Clip and H3 Subject Crop, so it gets\n  the identical conform, scale, TRIM and crop the subject mask gets.\n\n  Rebuilding that from stock resize nodes looks equivalent and is not:\n  those scale but do not shorten, so the second mask ends up longer than\n  the clip and H3 Mask Inpaint rejects it.\n\n  Check SAM3 Track Preview for which index is which — it depends on the\n  clip, not on the order you wrote the prompt.\n\nWIRE sigmas FROM THE SCHEDULER\n  It lets the fill be variance-corrected for the sigma sampling actually\n  starts at. Without it the forgotten region is under-noised, and the\n  model answers that by over-sharpening.\n\nTEST IT AS A STRICT A/B\n  forget_strength 0 is bit-identical to not using this at all. Run 0, then\n  1, same seed, nothing else changed. If 0 differs from your usual result,\n  something is wired wrong and that is the first thing you learn."
+        "FORGET A SOURCE ATTRIBUTE — when masking alone is not enough.\n\nTHE PROBLEM\n  Masking a region does not make it start blank. The sampler builds its\n  starting point as  x = sigma*noise + (1-sigma)*source  over the WHOLE\n  frame, before any mask is applied. So below denoise 1.0 the free region\n  still starts holding part of the source -- 9% at denoise 0.45.\n\n  Hue survives denoising better than structure does, so that 9% is enough\n  to carry the original hair colour through no matter what the prompt says.\n\nTHE FIX\n  forget_mask says how much each area FORGETS what it started from.\n  Black = remember it fully (the default). White = start from noise.\n  Paint the hair white: it loses its colour memory while the rest of the\n  mask keeps the residual that holds pose and framing.\n\nWHY TWO SAM3 TRACKS\n  object_indices selects among INSTANCES of one text query -- if a frame\n  has two women, those are 0 and 1. It does NOT split a phrase into\n  concepts, so \"a woman and her hair\" gives one object, not two. A second\n  concept needs its own detection pass, which is what the lower SAM3\n  Video Track is for.\n\nTWO MASKS, ONE PATH\n  The hair mask rides mask_2 through H3 Match Source Clip and H3 Subject\n  Crop, so it gets the identical conform, scale, TRIM and crop the subject\n  mask gets. Rebuilding that from stock resize nodes looks equivalent and\n  is not: those scale but do not shorten, so the second mask ends up\n  longer than the clip and H3 Mask Inpaint rejects it.\n\nWIRE sigmas FROM THE SCHEDULER\n  It lets the fill be variance-corrected for the sigma sampling actually\n  starts at. Without it the forgotten region is under-noised, and the\n  model answers that by over-sharpening.\n\nTEST IT AS A STRICT A/B\n  forget_strength 0 is bit-identical to not using this at all. Run 0, then\n  1, same seed, nothing else changed. If 0 differs from your usual result,\n  something is wired wrong and that is the first thing you learn."
       ],
       "title": "Read me"
     },
@@ -1453,7 +1455,7 @@
         {
           "name": "track_data",
           "type": "SAM3_TRACK_DATA",
-          "link": 76
+          "link": 93
         }
       ],
       "outputs": [
@@ -1470,7 +1472,96 @@
         "Node name for S&R": "SAM3_TrackToMask"
       },
       "widgets_values": [
-        "1"
+        "0"
+      ]
+    },
+    {
+      "id": 57,
+      "type": "CLIPTextEncode",
+      "pos": [
+        20,
+        760
+      ],
+      "size": [
+        380,
+        110
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 89
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            92
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "hair"
+      ],
+      "title": "① TARGET — what to find, in plain words"
+    },
+    {
+      "id": 58,
+      "type": "SAM3_VideoTrack",
+      "pos": [
+        440,
+        620
+      ],
+      "size": [
+        340,
+        130
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 90
+        },
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 91
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 92
+        }
+      ],
+      "outputs": [
+        {
+          "name": "track_data",
+          "type": "SAM3_TRACK_DATA",
+          "links": [
+            93
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SAM3_VideoTrack"
+      },
+      "widgets_values": [
+        0.5,
+        4,
+        1
       ]
     }
   ],
@@ -1860,14 +1951,6 @@
       "H3_CROP"
     ],
     [
-      76,
-      4,
-      0,
-      52,
-      0,
-      "SAM3_TRACK_DATA"
-    ],
-    [
       85,
       17,
       0,
@@ -1898,6 +1981,46 @@
       13,
       6,
       "MASK"
+    ],
+    [
+      89,
+      2,
+      1,
+      57,
+      0,
+      "CLIP"
+    ],
+    [
+      90,
+      1,
+      0,
+      58,
+      0,
+      "IMAGE"
+    ],
+    [
+      91,
+      2,
+      0,
+      58,
+      1,
+      "MODEL"
+    ],
+    [
+      92,
+      57,
+      0,
+      58,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      93,
+      58,
+      0,
+      52,
+      0,
+      "SAM3_TRACK_DATA"
     ]
   ],
   "groups": [],
