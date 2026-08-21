@@ -199,28 +199,52 @@ class H3SubjectUncrop:
                                  align_corners=False,
                                  antialias=True).clamp(0, 1).movedim(1, -1)
 
-        alpha = self._alpha(h, w, feather, images.device, out.dtype)
-        a = alpha.unsqueeze(-1)
+        iw = crop_data.get("image_width", source_images.shape[2])
+        ih = crop_data.get("image_height", source_images.shape[1])
+        cache = {}
         for i in range(n):
             b = boxes[i]
             y, x = b["y"], b["x"]
+            # which sides actually have a seam to hide
+            key = (x > 0, y > 0, x + w < iw, y + h < ih)
+            if key not in cache:
+                cache[key] = self._alpha(h, w, feather, key,
+                                         images.device, out.dtype).unsqueeze(-1)
+            a = cache[key]
             region = out[i, y:y + h, x:x + w, :]
             out[i, y:y + h, x:x + w, :] = (gen[i].to(out.dtype) * a
                                            + region * (1.0 - a))
         return (out,)
 
     @staticmethod
-    def _alpha(h, w, feather, device, dtype):
-        """1 in the middle, ramping to 0 over `feather` pixels at each edge."""
+    def _alpha(h, w, feather, sides, device, dtype):
+        """1 in the middle, ramping to 0 only on sides that have a seam.
+
+        `sides` is (left, top, right, bottom): True where the crop box is INSIDE
+        the frame and there is a real boundary between generated and kept pixels.
+
+        Feathering a side that is flush with the image edge is not a no-op, it is
+        a defect: there is nothing to blend into, so the ramp mixes VAE-decoded
+        output with raw source over `feather` pixels. Those two differ in
+        sharpness and level, so the result is a soft brighter band ringing the
+        picture — which is exactly what a full-frame crop produced before this.
+        """
         f = int(feather)
-        if f <= 0:
+        if f <= 0 or not any(sides):
             return torch.ones((h, w), device=device, dtype=dtype)
         f = min(f, max(1, min(h, w) // 2))
         ramp = (torch.arange(f, device=device, dtype=dtype) + 1.0) / (f + 1.0)
+        left, top, right, bottom = sides
         ay = torch.ones(h, device=device, dtype=dtype)
         ax = torch.ones(w, device=device, dtype=dtype)
-        ay[:f], ay[-f:] = ramp, ramp.flip(0)
-        ax[:f], ax[-f:] = ramp, ramp.flip(0)
+        if top:
+            ay[:f] = ramp
+        if bottom:
+            ay[-f:] = ramp.flip(0)
+        if left:
+            ax[:f] = ramp
+        if right:
+            ax[-f:] = ramp.flip(0)
         return torch.minimum(ay.unsqueeze(1), ax.unsqueeze(0))
 
 
