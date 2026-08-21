@@ -102,13 +102,11 @@ class H3SubjectCrop:
                                            "anything that has to stay aligned with the "
                                            "crop — a forget mask, an occluder mask. Only "
                                            "the primary mask decides where to cut."}),
-            "mask_3": ("MASK", {"tooltip": "A third, same treatment."}),
         }}
 
     # appended, not inserted — see the note in H3MatchSource
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "H3_CROP", "STRING", "MASK", "MASK")
-    RETURN_NAMES = ("images", "mask", "width", "height", "crop_data", "info",
-                    "mask_2", "mask_3")
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "H3_CROP", "STRING", "MASK")
+    RETURN_NAMES = ("images", "mask", "width", "height", "crop_data", "info", "mask_2")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Crop a clip to its subject and report the size to render at. "
@@ -116,7 +114,7 @@ class H3SubjectCrop:
                    "into H3 Subject Uncrop. crop_scale 0 disables it.")
 
     def go(self, images, mask, mode, crop_scale, aspect_ratio=0.0,
-           smooth_window=16, divisible_by=32, mask_2=None, mask_3=None):
+           smooth_window=16, divisible_by=32, mask_2=None):
         n, ih, iw = images.shape[0], images.shape[1], images.shape[2]
         m = mask if mask.dim() == 3 else mask.unsqueeze(0)
         if m.shape[0] != n:
@@ -134,7 +132,7 @@ class H3SubjectCrop:
 
         # every mask is cut by the same boxes; only the primary one chose them
         extras = []
-        for extra in (mask_2, mask_3):
+        for extra in (mask_2,):
             if extra is None:
                 extras.append(None)
                 continue
@@ -143,7 +141,7 @@ class H3SubjectCrop:
                 raise ValueError(
                     f"an extra mask is {e.shape[0]} frame(s) at {e.shape[-1]}x"
                     f"{e.shape[-2]}, but the clip is {n} at {iw}x{ih}. Run it through "
-                    f"H3 Match Source Clip's mask_2 / mask_3 so it gets the same "
+                    f"H3 Match Source Clip's mask_2 so it gets the same "
                     f"conform and trim.")
             extras.append(e)
 
@@ -165,7 +163,6 @@ class H3SubjectCrop:
         out_i = cut(images, False)
         out_m = cut(m, True)
         out_m2 = cut(extras[0], True)
-        out_m3 = cut(extras[1], True)
 
         saved = 1.0 - (w * h) / float(iw * ih)
         text = (f"{info['mode']}: {iw}x{ih} -> {w}x{h} ({info.get('aspect', 0)}:1), "
@@ -183,13 +180,11 @@ class H3SubjectCrop:
         crop_data = {"boxes": boxes, "image_width": iw, "image_height": ih,
                      "frames": n}
         blank = torch.zeros((n, h, w), dtype=out_m.dtype, device=out_m.device)
-        got = sum(1 for e in extras if e is not None)
-        if got:
-            text += f" | {got} extra mask(s) cut by the same box"
+        if out_m2 is not None:
+            text += " | a second mask cut by the same box"
         return {"ui": {"h3char": [text]},
                 "result": (out_i, out_m, int(w), int(h), crop_data, text,
-                           blank if out_m2 is None else out_m2,
-                           blank if out_m3 is None else out_m3)}
+                           blank if out_m2 is None else out_m2)}
 
 
 class H3SubjectUncrop:

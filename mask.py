@@ -449,15 +449,13 @@ class H3MatchSource:
                                            "equivalent and is not: it misses the frame "
                                            "trim, so the mask ends up longer than the "
                                            "clip."}),
-            "mask_3": ("MASK", {"tooltip": "A third, same treatment."}),
         }}
 
-    # mask_2/mask_3 are APPENDED, not inserted next to mask. Slot indices are what
-    # saved workflows store, so inserting in the middle silently rewires every graph
-    # that already uses this node.
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING", "MASK", "MASK")
-    RETURN_NAMES = ("images", "mask", "width", "height", "length", "info",
-                    "mask_2", "mask_3")
+    # mask_2 is APPENDED, not inserted next to mask. Slot indices are what saved
+    # workflows store, so inserting in the middle silently rewires every graph that
+    # already uses this node.
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING", "MASK")
+    RETURN_NAMES = ("images", "mask", "width", "height", "length", "info", "mask_2")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/mask"
     DESCRIPTION = ("Conform a source clip to a canvas H3 can render and report the "
@@ -465,8 +463,7 @@ class H3MatchSource:
                    "conditioning node so an inpaint can never be shape-mismatched.")
 
     def go(self, images, mode="fill", target_width=0, target_height=0,
-           target_megapixels=0.0, av_aligned=False, mask=None, mask_2=None,
-           mask_3=None):
+           target_megapixels=0.0, av_aligned=False, mask=None, mask_2=None):
         import math
         import torch.nn.functional as Fn
         n, h, w = images.shape[0], images.shape[1], images.shape[2]
@@ -476,7 +473,7 @@ class H3MatchSource:
         # variables through five mode branches is how the second one quietly stops
         # matching the first.
         masks = [m if m is None or m.dim() == 3 else m.unsqueeze(0)
-                 for m in (mask, mask_2, mask_3)]
+                 for m in (mask, mask_2)]
 
         def crop_all(ms, y0, ch, x0, cw):
             return [None if m is None else m[..., y0:y0 + ch, x0:x0 + cw] for m in ms]
@@ -597,12 +594,11 @@ class H3MatchSource:
         # an unconnected mask output is an empty one, so downstream nodes get a
         # well-formed tensor rather than None
         blank = torch.zeros(length, ch, cw)
-        m1, m2, m3 = [blank if m is None else m for m in masks]
-        got = sum(1 for m in masks if m is not None)
-        if got > 1:
-            info += f" | {got} masks conformed together"
+        m1, m2 = [blank if m is None else m for m in masks]
+        if masks[1] is not None:
+            info += " | 2 masks conformed together"
         return {"ui": {"h3char": [info]},
-                "result": (images, m1, cw, ch, length, info, m2, m3)}
+                "result": (images, m1, cw, ch, length, info, m2)}
 
 
 NODE_CLASS_MAPPINGS = {

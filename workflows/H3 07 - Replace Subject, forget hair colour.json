@@ -1,6 +1,6 @@
 {
-  "last_node_id": 58,
-  "last_link_id": 93,
+  "last_node_id": 59,
+  "last_link_id": 95,
   "nodes": [
     {
       "id": 1,
@@ -1111,7 +1111,7 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "FORGET A SOURCE ATTRIBUTE — when masking alone is not enough.\n\nTHE PROBLEM\n  Masking a region does not make it start blank. The sampler builds its\n  starting point as  x = sigma*noise + (1-sigma)*source  over the WHOLE\n  frame, before any mask is applied. So below denoise 1.0 the free region\n  still starts holding part of the source -- 9% at denoise 0.45.\n\n  Hue survives denoising better than structure does, so that 9% is enough\n  to carry the original hair colour through no matter what the prompt says.\n\nTHE FIX\n  forget_mask says how much each area FORGETS what it started from.\n  Black = remember it fully (the default). White = start from noise.\n  Paint the hair white: it loses its colour memory while the rest of the\n  mask keeps the residual that holds pose and framing.\n\nWHY TWO SAM3 TRACKS\n  object_indices selects among INSTANCES of one text query -- if a frame\n  has two women, those are 0 and 1. It does NOT split a phrase into\n  concepts, so \"a woman and her hair\" gives one object, not two. A second\n  concept needs its own detection pass, which is what the lower SAM3\n  Video Track is for.\n\nTWO MASKS, ONE PATH\n  The hair mask rides mask_2 through H3 Match Source Clip and H3 Subject\n  Crop, so it gets the identical conform, scale, TRIM and crop the subject\n  mask gets. Rebuilding that from stock resize nodes looks equivalent and\n  is not: those scale but do not shorten, so the second mask ends up\n  longer than the clip and H3 Mask Inpaint rejects it.\n\nWIRE sigmas FROM THE SCHEDULER\n  It lets the fill be variance-corrected for the sigma sampling actually\n  starts at. Without it the forgotten region is under-noised, and the\n  model answers that by over-sharpening.\n\nTEST IT AS A STRICT A/B\n  forget_strength 0 is bit-identical to not using this at all. Run 0, then\n  1, same seed, nothing else changed. If 0 differs from your usual result,\n  something is wired wrong and that is the first thing you learn."
+        "FORGET A SOURCE ATTRIBUTE — when masking alone is not enough.\n\nTHE PROBLEM\n  Masking a region does not make it start blank. The sampler builds its\n  starting point as  x = sigma*noise + (1-sigma)*source  over the WHOLE\n  frame, before any mask is applied. So below denoise 1.0 the free region\n  still starts holding part of the source -- 9% at denoise 0.45.\n\n  Hue survives denoising better than structure does, so that 9% is enough\n  to carry the original hair colour through no matter what the prompt says.\n\nTHE FIX\n  forget_mask says how much each area FORGETS what it started from.\n  Black = remember it fully (the default). White = start from noise.\n  Paint the hair white: it loses its colour memory while the rest of the\n  mask keeps the residual that holds pose and framing.\n\n  IT IS GREYSCALE, and the blur on the hair mask is why. Grey 0.5 means\n  half the memory. A hard edge would put a step from \"no memory\" to \"full\n  memory\" right where hair meets skin, which is a discontinuity in the\n  starting latent; a ramp lets the hairline fall off instead. Widen the\n  blur for a softer transition, and use forget_strength to dial the whole\n  thing without re-authoring the mask.\n\nWHY TWO SAM3 TRACKS\n  object_indices selects among INSTANCES of one text query -- if a frame\n  has two women, those are 0 and 1. It does NOT split a phrase into\n  concepts, so \"a woman and her hair\" gives one object, not two. A second\n  concept needs its own detection pass, which is what the lower SAM3\n  Video Track is for.\n\nTWO MASKS, ONE PATH\n  The hair mask rides mask_2 through H3 Match Source Clip and H3 Subject\n  Crop, so it gets the identical conform, scale, TRIM and crop the subject\n  mask gets. Rebuilding that from stock resize nodes looks equivalent and\n  is not: those scale but do not shorten, so the second mask ends up\n  longer than the clip and H3 Mask Inpaint rejects it.\n\nWIRE sigmas FROM THE SCHEDULER\n  It lets the fill be variance-corrected for the sigma sampling actually\n  starts at. Without it the forgotten region is under-noised, and the\n  model answers that by over-sharpening.\n\nTEST IT AS A STRICT A/B\n  forget_strength 0 is bit-identical to not using this at all. Run 0, then\n  1, same seed, nothing else changed. If 0 differs from your usual result,\n  something is wired wrong and that is the first thing you learn."
       ],
       "title": "Read me"
     },
@@ -1213,7 +1213,7 @@
         {
           "name": "mask_2",
           "type": "MASK",
-          "link": 86,
+          "link": 95,
           "shape": 7
         }
       ],
@@ -1268,12 +1268,6 @@
             87
           ],
           "slot_index": 6
-        },
-        {
-          "name": "mask_3",
-          "type": "MASK",
-          "links": null,
-          "slot_index": 7
         }
       ],
       "widgets_values": [
@@ -1370,12 +1364,6 @@
             88
           ],
           "slot_index": 6
-        },
-        {
-          "name": "mask_3",
-          "type": "MASK",
-          "links": null,
-          "slot_index": 7
         }
       ],
       "properties": {
@@ -1463,7 +1451,7 @@
           "name": "masks",
           "type": "MASK",
           "links": [
-            86
+            94
           ],
           "slot_index": 0
         }
@@ -1563,6 +1551,58 @@
         4,
         1
       ]
+    },
+    {
+      "id": 59,
+      "type": "GrowMaskWithBlur",
+      "pos": [
+        260,
+        700
+      ],
+      "size": [
+        320,
+        240
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 94
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            95
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "mask_inverted",
+          "type": "MASK",
+          "links": null,
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GrowMaskWithBlur"
+      },
+      "widgets_values": [
+        4,
+        0,
+        true,
+        false,
+        24.0,
+        1,
+        1,
+        false
+      ],
+      "title": "grow + soften — err generous"
     }
   ],
   "links": [
@@ -1959,14 +1999,6 @@
       "SIGMAS"
     ],
     [
-      86,
-      52,
-      0,
-      41,
-      2,
-      "MASK"
-    ],
-    [
       87,
       41,
       6,
@@ -2021,6 +2053,22 @@
       52,
       0,
       "SAM3_TRACK_DATA"
+    ],
+    [
+      94,
+      52,
+      0,
+      59,
+      0,
+      "MASK"
+    ],
+    [
+      95,
+      59,
+      0,
+      41,
+      2,
+      "MASK"
     ]
   ],
   "groups": [],
