@@ -632,7 +632,7 @@
         "Node name for S&R": "MiniMaxH3ReferenceToVideo"
       },
       "widgets_values": [
-        "Realistic video. A woman with curly copper-red hair, freckled fair skin and a curvy figure stands where the mask is, in a dim club room with dark walls and warm amber light from the left. A single continuous take from one locked-off tripod; the camera holds the same framing throughout and the take runs unbroken.",
+        "Realistic video. A woman in her thirties with dark hair tied back stands where the mask is, in a bright pottery studio with whitewashed brick walls and daylight from a wide window on the left. A single continuous take from one locked-off tripod; the camera holds the same framing throughout and the take runs unbroken.",
         640,
         1120,
         121,
@@ -1113,9 +1113,9 @@
       "widgets_values": [
         "video editing",
         5.0,
-        "Realistic video, the same dim club room, dark walls and warm amber light spilling from the left, faint haze in the air",
-        "<Subject 1> is in exactly the position, pose and framing that the woman occupies in <Video 1> — the same body angle, the same contact with the ropes and the same place in frame. Everything else in the shot is unchanged from <Video 1>: the same room, the same lighting, the same locked-off camera, the same ropes and rigging. Only who she is differs.",
-        "Room tone, faint low music, no speech",
+        "Realistic video, the same bright pottery studio, whitewashed brick and daylight from a wide window on the left",
+        "<Subject 1> is in exactly the position, pose and framing that the woman occupies in <Video 1> — the same body angle, the same contact with the wheel and the same place in frame. Everything else in the shot is unchanged from <Video 1>: the same room, the same lighting, the same locked-off camera, the same shelves and bench. Only who she is differs.",
+        "Room tone, the low hum of the wheel, faint street noise, no speech",
         "N/A",
         "English",
         ""

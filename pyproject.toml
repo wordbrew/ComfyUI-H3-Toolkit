@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-h3-toolkit"
+description = "MiniMax-H3 nodes: prompt construction, masked region replacement, subject cropping, and long-form chaining."
+version = "0.1.0"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/USERNAME/ComfyUI-H3-Toolkit"
+
+[tool.comfy]
+PublisherId = "USERNAME"
+DisplayName = "H3 Toolkit"
+Icon = ""
