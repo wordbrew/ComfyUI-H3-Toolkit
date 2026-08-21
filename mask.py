@@ -250,9 +250,21 @@ class H3MaskInpaint:
             f = torch.stack([g.mean(dim=2) for g in torch.split(f, sizes, dim=2)], dim=2)
             f = (f * float(forget_strength)).clamp(0, 1)
             f = f.expand_as(mask_v).to(video.device, video.dtype)
-            # forgetting outside the regenerate region is meaningless — those cells
-            # are re-pinned to the source every step and would overwrite it anyway
-            f = f * mask_v
+            # GATE on the mask, do not scale by it. known_v is not only the
+            # initialisation, it is also the restore target:
+            #
+            #     x = x*mask + scale_latent_inpaint(..., latent_image)*(1 - mask)
+            #
+            # Where mask is 1 that term vanishes and the fill is never seen again.
+            # But the mask is FEATHERED, so at the boundary mask sits between 0 and
+            # 1, and there a cell holding 4.55x noise gets re-injected as if it were
+            # real content on every step. Multiplying f by mask_v left exactly those
+            # partial cells half-filled, which showed up as isolated 16px squares
+            # scattered along the mask edge.
+            #
+            # So forget only where the cell is FULLY free. Edge cells keep the true
+            # source, which is what a blend boundary wants anyway.
+            f = f * (mask_v >= 0.999).to(f.dtype)
 
             # variance correction. x_init = sigma*n1 + (1-sigma)*k*n2 with n1, n2
             # independent, so Var = sigma^2 + (1-sigma)^2 * k^2. Setting that to 1
