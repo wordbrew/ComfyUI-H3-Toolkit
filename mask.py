@@ -76,17 +76,43 @@ class H3MaskInpaint:
         }, "optional": {
             "audio_vae": ("VAE",),
             "source_audio": ("AUDIO",),
+            "forget_mask": ("MASK", {
+                "tooltip": "Greyscale. How much each area FORGETS the source it started "
+                           "from. Black = remember it fully (what happens with nothing "
+                           "connected); white = start from noise with no memory. Only "
+                           "meaningful inside the main mask.\n\n"
+                           "This is the knob for 'the model keeps the original hair "
+                           "colour even though it is masked'. Below denoise 1.0 the free "
+                           "region still STARTS from the source, and hue survives "
+                           "denoising better than anything else, so a fraction of a "
+                           "percent is enough to carry blonde through. Painting the hair "
+                           "white here removes that memory without touching denoise, so "
+                           "the body keeps the source residual that holds its pose."}),
+            "forget_strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0,
+                                "step": 0.05,
+                                "tooltip": "Global multiplier on forget_mask, so you can "
+                                           "sweep it without re-authoring the mask. 0 "
+                                           "reproduces the old behaviour exactly."}),
+            "sigmas": ("SIGMAS", {
+                "tooltip": "Optional, from the same scheduler feeding the sampler. Lets "
+                           "the fill be variance-corrected for the sigma sampling will "
+                           "actually start at. Without it the forgotten region comes out "
+                           "slightly UNDER-noised, which the model reads as further along "
+                           "than it is and answers by over-sharpening."}),
         }}
 
-    RETURN_TYPES = ("LATENT",)
+    RETURN_TYPES = ("LATENT", "STRING")
+    RETURN_NAMES = ("latent", "info")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Regenerate a masked region of an existing video while pinning "
                    "everything outside it. Feed a SAM mask and reference anchors to "
-                   "replace a person without touching the scene.")
+                   "replace a person without touching the scene. forget_mask controls "
+                   "how much of the region remembers the source it started from.")
 
     def go(self, latent, vae, source_images, mask, dilate, feather, invert, keep_audio,
-           audio_vae=None, source_audio=None):
+           audio_vae=None, source_audio=None, forget_mask=None, forget_strength=1.0,
+           sigmas=None):
         import comfy.nested_tensor
         import torch.nn.functional as Fn
 
@@ -115,11 +141,16 @@ class H3MaskInpaint:
         tw, th = lw * 16, lh * 16
         src = source_images
         m3 = mask if mask.dim() == 3 else mask.unsqueeze(0)
+        fg3 = None
+        if forget_mask is not None and float(forget_strength) > 0:
+            fg3 = forget_mask if forget_mask.dim() == 3 else forget_mask.unsqueeze(0)
         if (sw, sh) != (tw, th):
             x0, y0, cw, chh = cover_crop(sw, sh, tw, th)
             if (cw, chh) != (sw, sh):
                 src = src[:, y0:y0 + chh, x0:x0 + cw, :]
                 m3 = m3[..., y0:y0 + chh, x0:x0 + cw]
+                if fg3 is not None:
+                    fg3 = fg3[..., y0:y0 + chh, x0:x0 + cw]
                 logging.warning(
                     "H3MaskInpaint: source %dx%d (%.2f:1) does not match the latent's "
                     "aspect %dx%d (%.2f:1) — centre-cropped to %dx%d rather than "
@@ -134,6 +165,10 @@ class H3MaskInpaint:
                                      antialias=True).clamp(0, 1).movedim(1, -1)
                 m3 = Fn.interpolate(m3.unsqueeze(1), size=(th, tw),
                                     mode="nearest").squeeze(1)
+                if fg3 is not None:
+                    # bilinear, not nearest: this one carries meaningful mid-tones
+                    fg3 = Fn.interpolate(fg3.unsqueeze(1), size=(th, tw),
+                                         mode="bilinear", align_corners=False).squeeze(1)
         mask = m3
 
         z = vae.encode(src)                                 # [1,24,T,h,w]
@@ -186,6 +221,69 @@ class H3MaskInpaint:
         mask_v = mask_v.to(video.device, video.dtype)
         known_v = z.to(video.device, video.dtype)
 
+        # ---- forget: drop the source memory where asked -----------------------
+        #
+        # The sampler builds its starting point as
+        #
+        #     x_init = sigma * noise + (1 - sigma) * known_v
+        #
+        # over the WHOLE tensor, with no mask involved (KSAMPLER.sample calls
+        # model_sampling.noise_scaling before any masking happens). So the free
+        # region does not start blank — it starts holding (1 - sigma) of the source.
+        # At denoise 0.45 under shift 12 that is 9% of it, and hue survives
+        # denoising better than structure does, which is why a masked region can
+        # still come back with the original hair colour.
+        #
+        # Replacing known_v with noise where `forget` is set removes that memory for
+        # those cells only, so the rest of the mask keeps the residual that holds
+        # pose and framing.
+        forget_report = ""
+        if fg3 is not None:
+            f = fg3.float().unsqueeze(0).unsqueeze(0)          # [1,1,T,H,W]
+            f = Fn.avg_pool3d(f, kernel_size=(1, 16, 16), stride=(1, 16, 16))
+            if sum(sizes) != f.shape[2]:
+                raise ValueError(
+                    f"forget_mask has {f.shape[2]} frame(s) but the clip needs "
+                    f"{sum(sizes)}. It must be the same length as source_images.")
+            # MEAN over each group, not max: this mask's mid-tones are the point,
+            # and a max would turn any touched cell fully white.
+            f = torch.stack([g.mean(dim=2) for g in torch.split(f, sizes, dim=2)], dim=2)
+            f = (f * float(forget_strength)).clamp(0, 1)
+            f = f.expand_as(mask_v).to(video.device, video.dtype)
+            # forgetting outside the regenerate region is meaningless — those cells
+            # are re-pinned to the source every step and would overwrite it anyway
+            f = f * mask_v
+
+            # variance correction. x_init = sigma*n1 + (1-sigma)*k*n2 with n1, n2
+            # independent, so Var = sigma^2 + (1-sigma)^2 * k^2. Setting that to 1
+            # gives k = sqrt((1+sigma)/(1-sigma)). Without it the region is
+            # UNDER-noised, which reads as further along the trajectory than it is
+            # and comes back over-sharpened — the same failure as blending a feather
+            # against nothing.
+            s0 = None
+            if sigmas is not None and len(sigmas) > 0:
+                s0 = float(sigmas[0])
+            if s0 is None:
+                k = 1.0
+                note = ("sigmas not connected, fill left at unit variance — the "
+                        "forgotten region will be slightly under-noised")
+            elif s0 >= 0.999:
+                k = 1.0
+                note = f"sigma {s0:.3f}: the source contributes nothing anyway"
+            else:
+                k = float((1.0 + s0) / (1.0 - s0)) ** 0.5
+                note = f"sigma {s0:.3f}, fill scaled {k:.2f}x for unit variance"
+
+            gen = torch.Generator(device="cpu").manual_seed(0x4F3D)
+            fill = torch.randn(known_v.shape, generator=gen, dtype=torch.float32)
+            fill = (fill * k).to(known_v.device, known_v.dtype)
+            known_v = known_v * (1.0 - f) + fill * f
+
+            covered = float(f.mean())
+            forget_report = (f"forget: {covered * 100:.1f}% of the latent forgotten "
+                             f"(strength {forget_strength:.2f}); {note}")
+            logging.info("H3MaskInpaint: %s", forget_report)
+
         known_a, mask_a = aud, torch.ones_like(aud)
         if keep_audio and source_audio is not None and audio_vae is not None:
             wav = source_audio["waveform"]
@@ -205,7 +303,12 @@ class H3MaskInpaint:
         out = dict(latent)
         out["samples"] = comfy.nested_tensor.NestedTensor((known_v, known_a))
         out["noise_mask"] = comfy.nested_tensor.NestedTensor((mask_v, mask_a))
-        return (out,)
+
+        info = (f"{lw * 16}x{lh * 16}, {lt} latent frames; mask covers "
+                f"{float(mask_v.mean()) * 100:.1f}% of the latent")
+        if forget_report:
+            info += "\n" + forget_report
+        return {"ui": {"h3char": [info]}, "result": (out, info)}
 
 
 class H3LatentPin:
