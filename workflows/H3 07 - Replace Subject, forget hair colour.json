@@ -1,6 +1,6 @@
 {
   "last_node_id": 56,
-  "last_link_id": 85,
+  "last_link_id": 88,
   "nodes": [
     {
       "id": 1,
@@ -689,7 +689,7 @@
         {
           "name": "forget_mask",
           "type": "MASK",
-          "link": 84,
+          "link": 88,
           "shape": 7
         },
         {
@@ -1109,7 +1109,7 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "FORGET A SOURCE ATTRIBUTE — when masking alone is not enough.\n\nTHE PROBLEM\n  Masking a region does not make it start blank. The sampler builds its\n  starting point as  x = sigma*noise + (1-sigma)*source  over the WHOLE\n  frame, before any mask is applied. So below denoise 1.0 the free region\n  still starts holding part of the source -- 9% at denoise 0.45.\n\n  Hue survives denoising better than structure does, so that 9% is enough\n  to carry the original hair colour through no matter what the prompt says.\n\nTHE FIX\n  forget_mask says how much each area FORGETS what it started from.\n  Black = remember it fully (the default). White = start from noise.\n  Paint the hair white: it loses its colour memory while the rest of the\n  mask keeps the residual that holds pose and framing.\n\nWHY THE FOUR EXTRA NODES\n  The forget mask has to arrive at H3 Mask Inpaint in the SAME space as\n  source_images -- conformed by H3 Match Source Clip, then cut by\n  H3 Subject Crop. MaskToImage -> ImageScale (crop: center, size wired\n  from H3 Match Source Clip) -> H3 Apply Crop -> ImageToMask does that\n  with stock parts.\n\nWIRE sigmas FROM THE SCHEDULER\n  It lets the fill be variance-corrected for the sigma sampling actually\n  starts at. Without it the forgotten region is under-noised, and the\n  model answers that by over-sharpening.\n\nTEST IT AS A STRICT A/B\n  forget_strength 0 is bit-identical to not using this at all. Run 0, then\n  1, same seed, nothing else changed. If 0 differs from your usual result,\n  something is wired wrong and that is the first thing you learn."
+        "FORGET A SOURCE ATTRIBUTE — when masking alone is not enough.\n\nTHE PROBLEM\n  Masking a region does not make it start blank. The sampler builds its\n  starting point as  x = sigma*noise + (1-sigma)*source  over the WHOLE\n  frame, before any mask is applied. So below denoise 1.0 the free region\n  still starts holding part of the source -- 9% at denoise 0.45.\n\n  Hue survives denoising better than structure does, so that 9% is enough\n  to carry the original hair colour through no matter what the prompt says.\n\nTHE FIX\n  forget_mask says how much each area FORGETS what it started from.\n  Black = remember it fully (the default). White = start from noise.\n  Paint the hair white: it loses its colour memory while the rest of the\n  mask keeps the residual that holds pose and framing.\n\nTWO MASKS, ONE PATH\n  SAM3 is asked for \"a woman and her hair\", so one track gives both:\n  index 0 is the subject, index 1 is the hair. The hair mask rides\n  mask_2 through H3 Match Source Clip and H3 Subject Crop, so it gets\n  the identical conform, scale, TRIM and crop the subject mask gets.\n\n  Rebuilding that from stock resize nodes looks equivalent and is not:\n  those scale but do not shorten, so the second mask ends up longer than\n  the clip and H3 Mask Inpaint rejects it.\n\n  Check SAM3 Track Preview for which index is which — it depends on the\n  clip, not on the order you wrote the prompt.\n\nWIRE sigmas FROM THE SCHEDULER\n  It lets the fill be variance-corrected for the sigma sampling actually\n  starts at. Without it the forgotten region is under-noised, and the\n  model answers that by over-sharpening.\n\nTEST IT AS A STRICT A/B\n  forget_strength 0 is bit-identical to not using this at all. Run 0, then\n  1, same seed, nothing else changed. If 0 differs from your usual result,\n  something is wired wrong and that is the first thing you learn."
       ],
       "title": "Read me"
     },
@@ -1207,6 +1207,12 @@
           "type": "MASK",
           "link": 16,
           "shape": 7
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "link": 86,
+          "shape": 7
         }
       ],
       "outputs": [
@@ -1230,17 +1236,13 @@
         {
           "name": "width",
           "type": "INT",
-          "links": [
-            79
-          ],
+          "links": null,
           "slot_index": 2
         },
         {
           "name": "height",
           "type": "INT",
-          "links": [
-            80
-          ],
+          "links": null,
           "slot_index": 3
         },
         {
@@ -1256,6 +1258,20 @@
           "type": "STRING",
           "links": null,
           "slot_index": 5
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "links": [
+            87
+          ],
+          "slot_index": 6
+        },
+        {
+          "name": "mask_3",
+          "type": "MASK",
+          "links": null,
+          "slot_index": 7
         }
       ],
       "widgets_values": [
@@ -1290,6 +1306,12 @@
           "name": "mask",
           "type": "MASK",
           "link": 72
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "link": 87,
+          "shape": 7
         }
       ],
       "outputs": [
@@ -1329,8 +1351,7 @@
           "name": "crop_data",
           "type": "H3_CROP",
           "links": [
-            75,
-            82
+            75
           ],
           "slot_index": 4
         },
@@ -1339,6 +1360,20 @@
           "type": "STRING",
           "links": null,
           "slot_index": 5
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "links": [
+            88
+          ],
+          "slot_index": 6
+        },
+        {
+          "name": "mask_3",
+          "type": "MASK",
+          "links": null,
+          "slot_index": 7
         }
       ],
       "properties": {
@@ -1426,7 +1461,7 @@
           "name": "masks",
           "type": "MASK",
           "links": [
-            77
+            86
           ],
           "slot_index": 0
         }
@@ -1436,182 +1471,6 @@
       },
       "widgets_values": [
         "1"
-      ]
-    },
-    {
-      "id": 53,
-      "type": "MaskToImage",
-      "pos": [
-        260,
-        700
-      ],
-      "size": [
-        230,
-        30
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "mask",
-          "type": "MASK",
-          "link": 77
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            78
-          ],
-          "slot_index": 0
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "MaskToImage"
-      }
-    },
-    {
-      "id": 54,
-      "type": "ImageScale",
-      "pos": [
-        520,
-        700
-      ],
-      "size": [
-        300,
-        130
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 78
-        },
-        {
-          "name": "width",
-          "type": "INT",
-          "link": 79
-        },
-        {
-          "name": "height",
-          "type": "INT",
-          "link": 80
-        }
-      ],
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            81
-          ],
-          "slot_index": 0
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ImageScale"
-      },
-      "widgets_values": [
-        "bilinear",
-        512,
-        512,
-        "center"
-      ]
-    },
-    {
-      "id": 55,
-      "type": "H3ApplyCrop",
-      "pos": [
-        850,
-        700
-      ],
-      "size": [
-        320,
-        90
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 81
-        },
-        {
-          "name": "crop_data",
-          "type": "H3_CROP",
-          "link": 82
-        }
-      ],
-      "outputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "links": [
-            83
-          ],
-          "slot_index": 0
-        },
-        {
-          "name": "mask",
-          "type": "MASK",
-          "links": null,
-          "slot_index": 1
-        },
-        {
-          "name": "info",
-          "type": "STRING",
-          "links": null,
-          "slot_index": 2
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "H3ApplyCrop"
-      }
-    },
-    {
-      "id": 56,
-      "type": "ImageToMask",
-      "pos": [
-        1200,
-        700
-      ],
-      "size": [
-        230,
-        60
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 83
-        }
-      ],
-      "outputs": [
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": [
-            84
-          ],
-          "slot_index": 0
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ImageToMask"
-      },
-      "widgets_values": [
-        "red"
       ]
     }
   ],
@@ -2009,76 +1868,36 @@
       "SAM3_TRACK_DATA"
     ],
     [
-      77,
-      52,
-      0,
-      53,
-      0,
-      "MASK"
-    ],
-    [
-      78,
-      53,
-      0,
-      54,
-      0,
-      "IMAGE"
-    ],
-    [
-      79,
-      41,
-      2,
-      54,
-      1,
-      "INT"
-    ],
-    [
-      80,
-      41,
-      3,
-      54,
-      2,
-      "INT"
-    ],
-    [
-      81,
-      54,
-      0,
-      55,
-      0,
-      "IMAGE"
-    ],
-    [
-      82,
-      50,
-      4,
-      55,
-      1,
-      "H3_CROP"
-    ],
-    [
-      83,
-      55,
-      0,
-      56,
-      0,
-      "IMAGE"
-    ],
-    [
-      84,
-      56,
-      0,
-      13,
-      6,
-      "MASK"
-    ],
-    [
       85,
       17,
       0,
       13,
       7,
       "SIGMAS"
+    ],
+    [
+      86,
+      52,
+      0,
+      41,
+      2,
+      "MASK"
+    ],
+    [
+      87,
+      41,
+      6,
+      50,
+      2,
+      "MASK"
+    ],
+    [
+      88,
+      50,
+      6,
+      13,
+      6,
+      "MASK"
     ]
   ],
   "groups": [],

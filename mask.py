@@ -441,10 +441,23 @@ class H3MatchSource:
                                       "in a chain, not when you are masking a one-off."}),
             "mask": ("MASK", {"tooltip": "Optional — conformed and trimmed identically, "
                                          "so it stays pixel-aligned with the frames."}),
+            "mask_2": ("MASK", {"tooltip": "A second mask riding the same conform and "
+                                           "trim. For anything derived from the same "
+                                           "frames that has to stay aligned with them — "
+                                           "a forget mask, an occluder mask. Rebuilding "
+                                           "this path from stock resize nodes looks "
+                                           "equivalent and is not: it misses the frame "
+                                           "trim, so the mask ends up longer than the "
+                                           "clip."}),
+            "mask_3": ("MASK", {"tooltip": "A third, same treatment."}),
         }}
 
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING")
-    RETURN_NAMES = ("images", "mask", "width", "height", "length", "info")
+    # mask_2/mask_3 are APPENDED, not inserted next to mask. Slot indices are what
+    # saved workflows store, so inserting in the middle silently rewires every graph
+    # that already uses this node.
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING", "MASK", "MASK")
+    RETURN_NAMES = ("images", "mask", "width", "height", "length", "info",
+                    "mask_2", "mask_3")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/mask"
     DESCRIPTION = ("Conform a source clip to a canvas H3 can render and report the "
@@ -452,23 +465,30 @@ class H3MatchSource:
                    "conditioning node so an inpaint can never be shape-mismatched.")
 
     def go(self, images, mode="fill", target_width=0, target_height=0,
-           target_megapixels=0.0, av_aligned=False, mask=None):
+           target_megapixels=0.0, av_aligned=False, mask=None, mask_2=None,
+           mask_3=None):
         import math
         import torch.nn.functional as Fn
         n, h, w = images.shape[0], images.shape[1], images.shape[2]
         notes = []
 
-        if mask is not None and mask.dim() == 2:
-            mask = mask.unsqueeze(0)
+        # every mask travels as a LIST through one code path. Threading three
+        # variables through five mode branches is how the second one quietly stops
+        # matching the first.
+        masks = [m if m is None or m.dim() == 3 else m.unsqueeze(0)
+                 for m in (mask, mask_2, mask_3)]
 
-        def scale(img, msk, tw, th):
+        def crop_all(ms, y0, ch, x0, cw):
+            return [None if m is None else m[..., y0:y0 + ch, x0:x0 + cw] for m in ms]
+
+        def scale(img, ms, tw, th):
             img = Fn.interpolate(img.movedim(-1, 1), size=(th, tw), mode="bicubic",
                                  align_corners=False,
                                  antialias=True).clamp(0, 1).movedim(1, -1)
-            if msk is not None:
-                msk = Fn.interpolate(msk.unsqueeze(1), size=(th, tw),
-                                     mode="nearest").squeeze(1)
-            return img, msk
+            ms = [None if m is None else
+                  Fn.interpolate(m.unsqueeze(1), size=(th, tw),
+                                 mode="nearest").squeeze(1) for m in ms]
+            return img, ms
 
         tw = (int(target_width) // 32) * 32
         th = (int(target_height) // 32) * 32
@@ -510,8 +530,7 @@ class H3MatchSource:
                                  f"cropping to a multiple of 32.")
             if (cw, ch) != (w, h):
                 images = images[:, y0:y0 + ch, x0:x0 + cw, :]
-                if mask is not None:
-                    mask = mask[..., y0:y0 + ch, x0:x0 + cw]
+                masks = crop_all(masks, y0, ch, x0, cw)
                 notes.append(f"centre-cropped {w}x{h} -> {cw}x{ch} (no resample)")
             if mode != "crop to /32" and not want_target:
                 notes.append(f"no target set, so '{mode}' fell back to a /32 crop")
@@ -519,14 +538,13 @@ class H3MatchSource:
             x0, y0, cw0, ch0 = cover_crop(w, h, tw, th)
             if (cw0, ch0) != (w, h):
                 images = images[:, y0:y0 + ch0, x0:x0 + cw0, :]
-                if mask is not None:
-                    mask = mask[..., y0:y0 + ch0, x0:x0 + cw0]
+                masks = crop_all(masks, y0, ch0, x0, cw0)
                 notes.append(f"cropped to {tw}:{th} aspect ({cw0}x{ch0})")
-            images, mask = scale(images, mask, tw, th)
+            images, masks = scale(images, masks, tw, th)
             cw, ch = tw, th
             notes.append(f"scaled to {tw}x{th}")
         elif mode == "stretch":
-            images, mask = scale(images, mask, tw, th)
+            images, masks = scale(images, masks, tw, th)
             cw, ch = tw, th
             ar_s, ar_t = w / max(1, h), tw / max(1, th)
             notes.append(f"stretched {w}x{h} -> {tw}x{th}")
@@ -537,12 +555,11 @@ class H3MatchSource:
         elif mode == "pad":
             s = min(tw / w, th / h)
             iw, ih = max(32, int(round(w * s))), max(32, int(round(h * s)))
-            images, mask = scale(images, mask, iw, ih)
+            images, masks = scale(images, masks, iw, ih)
             px, py = (tw - iw) // 2, (th - ih) // 2
-            images = Fn.pad(images.movedim(-1, 1), (px, tw - iw - px, py, th - ih - py)
-                            ).movedim(1, -1)
-            if mask is not None:
-                mask = Fn.pad(mask, (px, tw - iw - px, py, th - ih - py))
+            pad = (px, tw - iw - px, py, th - ih - py)
+            images = Fn.pad(images.movedim(-1, 1), pad).movedim(1, -1)
+            masks = [None if m is None else Fn.pad(m, pad) for m in masks]
             cw, ch = tw, th
             notes.append(f"scaled to {iw}x{ih} and padded to {tw}x{th}")
             notes.append("WARNING: the model generates into the bars — crop them off "
@@ -564,8 +581,10 @@ class H3MatchSource:
         if length != n:
             notes.append(f"trimmed {n - length} frame(s)")
         images = images[:length]
-        if mask is not None:
-            mask = mask[:length]
+        # THE TRIM is why this belongs on the node rather than being rebuilt from
+        # stock resize nodes: those scale but do not shorten, so a second mask ends
+        # up longer than the clip and H3 Mask Inpaint rejects it.
+        masks = [None if m is None else m[:length] for m in masks]
 
         mp = cw * ch / 1e6
         info = f"{cw}x{ch} ({mp:.2f} MP), " + describe(length)
@@ -575,10 +594,15 @@ class H3MatchSource:
             info += ("\nWARNING: past the 768x1344 area cap. Set target_width/height "
                      "to something H3 renders — a bigger canvas measured no better and "
                      "costs superlinearly.")
-        if mask is None:
-            mask = torch.zeros(length, ch, cw)
+        # an unconnected mask output is an empty one, so downstream nodes get a
+        # well-formed tensor rather than None
+        blank = torch.zeros(length, ch, cw)
+        m1, m2, m3 = [blank if m is None else m for m in masks]
+        got = sum(1 for m in masks if m is not None)
+        if got > 1:
+            info += f" | {got} masks conformed together"
         return {"ui": {"h3char": [info]},
-                "result": (images, mask, cw, ch, length, info)}
+                "result": (images, m1, cw, ch, length, info, m2, m3)}
 
 
 NODE_CLASS_MAPPINGS = {
