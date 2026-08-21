@@ -312,9 +312,142 @@ class H3ApplyCrop:
         return {"ui": {"h3char": [info]}, "result": (out_i, out_m, info)}
 
 
+class H3PreviewMaskCrop:
+    """See the mask and the crop box on the footage, before spending a render.
+
+    Three overlays, and the third is the one worth having:
+
+      mask          your per-pixel mask, tinted over the frames. Tells you whether
+                    segmentation actually found the subject.
+      latent mask   THE MASK AS THE MODEL RECEIVES IT. Reduced to 16px cells and
+                    unioned over the VAE's (1,4,4,4,4) frame grouping, then blown
+                    back up. This is what decides what gets regenerated, and it is
+                    much coarser than the mask you drew — a thin occluder crossing
+                    the subject can vanish into a cell, and a fast-moving edge
+                    smears across the frames sharing a latent step. Watching this
+                    one is how you find out why an edge did not land where you
+                    expected.
+      crop box      the rectangle H3 Subject Crop chose, drawn per frame. Shows
+                    whether the box is too tight, whether it moves, and whether
+                    the subject ever escapes it.
+
+    `dilate` mirrors H3 Mask Inpaint, so set it to the same value and the latent
+    overlay is exactly what that node will build.
+
+    Feed the output to a video preview rather than an image preview — a single
+    frame tells you almost nothing about tracking or smear.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE",),
+            "opacity": ("FLOAT", {"default": 0.45, "min": 0.0, "max": 1.0,
+                        "step": 0.05}),
+        }, "optional": {
+            "mask": ("MASK",),
+            "crop_data": ("H3_CROP",),
+            "show_mask": ("BOOLEAN", {"default": True,
+                          "tooltip": "Your pixel mask, in green."}),
+            "show_latent_mask": ("BOOLEAN", {"default": True,
+                                 "tooltip": "What the model actually gets, in red — "
+                                            "16px cells, unioned over each latent "
+                                            "frame's group. Coarser than yours, and "
+                                            "the difference is what bites."}),
+            "show_crop_box": ("BOOLEAN", {"default": True}),
+            "dilate": ("INT", {"default": 0, "min": 0, "max": 16,
+                       "tooltip": "Match H3 Mask Inpaint's dilate to see exactly what "
+                                  "it will build."}),
+        }}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("images", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    DESCRIPTION = ("Overlay the mask, the mask AS THE MODEL RECEIVES IT, and the crop "
+                   "box on the source frames. Send it to a video preview.")
+
+    def go(self, images, opacity, mask=None, crop_data=None, show_mask=True,
+           show_latent_mask=True, show_crop_box=True, dilate=0):
+        from .timing import frame_groups, video_latent_t
+
+        out = images.clone()[..., :3]
+        n, ih, iw = out.shape[0], out.shape[1], out.shape[2]
+        a = float(opacity)
+        notes = []
+
+        def tint(sel, rgb):
+            """sel: [N,H,W] in 0..1. Paint rgb over the frames where it is set."""
+            s = (sel.to(out.device, out.dtype) * a).unsqueeze(-1)
+            col = torch.tensor(rgb, device=out.device, dtype=out.dtype)
+            out.mul_(1.0 - s).add_(s * col)
+
+        if mask is not None:
+            m = (mask if mask.dim() == 3 else mask.unsqueeze(0)).float()
+            if m.shape[-2:] != (ih, iw):
+                raise ValueError(f"mask is {m.shape[-1]}x{m.shape[-2]} but the clip is "
+                                 f"{iw}x{ih}.")
+            if show_latent_mask:
+                lt = video_latent_t(n)
+                sizes = frame_groups(lt)
+                if sum(sizes) != n:
+                    notes.append(f"{n} frames is not a legal run, so the latent view "
+                                 f"is approximate — H3 would use {sum(sizes)}")
+                    sizes = None
+                if sizes:
+                    q = m.unsqueeze(0).unsqueeze(0)                 # [1,1,N,H,W]
+                    q = Fn.max_pool3d(q, (1, 16, 16), stride=(1, 16, 16))
+                    q = torch.stack([g.amax(dim=2) for g in
+                                     torch.split(q, sizes, dim=2)], dim=2)
+                    if dilate > 0:
+                        k = dilate * 2 + 1
+                        q = Fn.max_pool3d(q, (1, k, k), stride=1,
+                                          padding=(0, dilate, dilate))
+                    # back to pixels: 16x spatially, then each latent frame repeated
+                    # across the pixel frames it covers
+                    q = q.repeat_interleave(16, dim=-1).repeat_interleave(16, dim=-2)
+                    q = q[0, 0]                                     # [lt,h,w]
+                    q = q.repeat_interleave(
+                        torch.tensor(sizes, device=q.device), dim=0)
+                    q = q[:n, :ih, :iw]
+                    tint(q, (1.0, 0.15, 0.15))
+                    cover = float(q.mean())
+                    notes.append(f"latent mask covers {cover * 100:.1f}% of the frame "
+                                 f"({lt} latent frames)")
+            if show_mask:
+                tint(m, (0.15, 1.0, 0.35))
+                notes.append(f"pixel mask covers {float(m.mean()) * 100:.1f}%")
+
+        if crop_data is not None and show_crop_box:
+            boxes = crop_data["boxes"]
+            sx = iw / float(crop_data["image_width"])
+            sy = ih / float(crop_data["image_height"])
+            t = max(1, int(round(min(ih, iw) / 260)))       # visible at any size
+            for i in range(min(n, len(boxes))):
+                b = boxes[i]
+                x0 = max(0, min(int(b["x"] * sx), iw - 1))
+                y0 = max(0, min(int(b["y"] * sy), ih - 1))
+                x1 = max(x0 + 1, min(int((b["x"] + b["width"]) * sx), iw))
+                y1 = max(y0 + 1, min(int((b["y"] + b["height"]) * sy), ih))
+                out[i, y0:y0 + t, x0:x1, :] = 1.0
+                out[i, max(y0, y1 - t):y1, x0:x1, :] = 1.0
+                out[i, y0:y1, x0:x0 + t, :] = 1.0
+                out[i, y0:y1, max(x0, x1 - t):x1, :] = 1.0
+            b = boxes[0]
+            notes.append(f"crop {b['width']}x{b['height']}, "
+                         f"{b['width'] * b['height'] / float(iw * ih) * 100:.0f}% of "
+                         f"the frame")
+
+        info = "; ".join(notes) or "nothing to overlay — wire a mask or crop_data"
+        logging.info("H3PreviewMaskCrop: %s", info)
+        return {"ui": {"h3char": [info]}, "result": (out.clamp(0, 1), info)}
+
+
 NODE_CLASS_MAPPINGS = {"H3SubjectCrop": H3SubjectCrop,
                        "H3SubjectUncrop": H3SubjectUncrop,
-                       "H3ApplyCrop": H3ApplyCrop}
+                       "H3ApplyCrop": H3ApplyCrop,
+                       "H3PreviewMaskCrop": H3PreviewMaskCrop}
 NODE_DISPLAY_NAME_MAPPINGS = {"H3SubjectCrop": "H3 Subject Crop",
                               "H3SubjectUncrop": "H3 Subject Uncrop",
-                              "H3ApplyCrop": "H3 Apply Crop (depth / pose / etc)"}
+                              "H3ApplyCrop": "H3 Apply Crop (depth / pose / etc)",
+                              "H3PreviewMaskCrop": "H3 Preview Mask + Crop"}
