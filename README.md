@@ -1,45 +1,51 @@
-# MiniMax-H3 ComfyUI node pack
+# ComfyUI-H3-Toolkit
 
-Install: symlink or copy `h3_audio/` into `ComfyUI/custom_nodes/`.
-Example workflows: `workflows/` — copy into `ComfyUI/user/default/workflows/`.
+Nodes for MiniMax-H3: prompt construction, masked region replacement, subject
+cropping, and long-form chaining.
 
-Everything here encodes findings from the engine work in `../docs/long-form-waves.md`
-and `../docs/prompting-ref2va.md`. The nodes do not wrap the model — ComfyUI's stock
-H3 nodes already generate. What they add is the knowledge around it: prompt format,
-timing, masking shape rules, and the settings that were measured rather than guessed.
+The model already generates — ComfyUI's stock H3 nodes handle that. What this pack
+adds is the knowledge around it: prompt format, the frame and audio grids, mask
+geometry, and settings that were measured rather than guessed.
+
+**Requires MiniMax-H3.** Several nodes reach into H3's paired (video, audio) latent
+and its specific VAE geometry. They will not work with other video models.
+
+## Install
+
+Copy or symlink `h3_toolkit/` into `ComfyUI/custom_nodes/`, then restart.
+Example workflows are in `workflows/` — copy them into
+`ComfyUI/user/default/workflows/`.
+
+Needs a ComfyUI recent enough to include **#15322**, which fixed H3's masked
+sampling (shipped in v0.33.x). On anything older the masking nodes produce
+swirling colour artifacts in the generated region, and no setting avoids it.
 
 ## Nodes
 
-**prompt** — `H3ScenePrompt`, `H3LongFormLinks`, `H3PromptLint`,
+**`MiniMax H3/mask`** — `H3MatchSource`, `H3MaskInpaint`, `H3SubjectCrop`,
+`H3SubjectUncrop`, `H3ApplyCrop`, `H3PreviewMaskCrop`, `H3LatentPin`
+
+Replace a masked region of an existing video while pinning everything outside it.
+`H3SubjectCrop` cuts the canvas down to the subject so the model renders fewer
+tokens; `H3PreviewMaskCrop` shows the mask **as the model actually receives it**,
+which is coarser than the one you drew.
+
+**`MiniMax H3/prompt`** — `H3ScenePrompt`, `H3LongFormLinks`, `H3PromptLint`,
 `H3RewriterBrief`, `H3RewriterParse`
 
-**audio** — `H3AudioPrompt` (song / speech / instrumental, multi-speaker),
-`H3AudioLength`
+Build six-section prompts, and lint them against the traps below.
 
-**character** — `H3Character`, `H3CharacterSave`
+**`MiniMax H3/character`** — `H3Character`, `H3CharacterSave`
 
-**long-form** — `H3MatchSource`, `H3Assemble`, `H3AudioSlice`, `H3Take`,
-`H3Resolution`, `H3SubjectCrop`, `H3SubjectUncrop`
+**`MiniMax H3/audio`** — `H3AudioPrompt`, `H3AudioLength`
 
-Supporting modules with no nodes of their own: `timing.py` (the two clocks, and
-the VAE's frame grouping), `geometry.py` (the crop-don't-stretch rules) and
-`cropplan.py` (where to cut a subject out of a clip). All three are torch-free so
-they can be tested — `python3 test_geometry.py`, `python3 test_cropplan.py`.
-`python3 validate_workflows.py workflows/*.json` checks the example graphs, which
-is worth doing after any hand edit; every workflow bug this pack has shipped was a
-silent structural one.
+**`MiniMax H3/video`** — `H3ReferenceToVideoLongForm`, `H3KeyframeTimeline`
 
-`H3SubjectCrop` exists because H3 denoises every token every step, so a full-frame
-render pays for scenery that is pinned anyway. How much it buys depends entirely
-on framing — a full-body subject on a portrait canvas already fills the height, so
-the crop only gains horizontally. Its info output reports the actual saving.
-The approach (stable whole-clip planning rather than per-frame boxes, because the
-model reads crop wobble as camera motion) is from drozbay/MaskVidExperiments;
-the implementation is ours and much simpler — see `cropplan.py` for what that
-costs.
+Conditioning where a keyframe is also *presented* to the language model, and
+keyframes that can coexist with reference images.
 
-**video** — `H3ReferenceToVideoLongForm`, `H3KeyframeTimeline`, `H3AudioLock`,
-`H3ChainFrame`, `H3LatentPin`, `H3MaskInpaint`
+**`MiniMax H3/long-form`** — `H3Assemble`, `H3AudioSlice`, `H3AudioLock`,
+`H3ChainFrame`, `H3Take`, `H3Resolution`
 
 ## Things that are easy to get wrong, and are enforced here
 
@@ -53,16 +59,43 @@ costs.
   leaves the reference with no declared role and the model improvises.
 - One soundtrack for a whole take, sliced per link. Generating audio per link
   restarts the music; pinning the same slice into every link loops it.
-- Masking pins the source's own pixels, so the generated latent must match the
-  source clip's shape exactly. `H3MatchSource` derives it.
 - A clip's length has to be legal on BOTH clocks. The video VAE takes 17n+5 frames;
   the audio latent runs at 40 Hz, and `audio_t = round(frames / 24 * 40)` only comes
-  out exact when the frame count is also divisible by 3. That is every third video
-  run — 39, 90, 141, 192, 243, 294, 345, 396, spaced 51 apart. Off-grid lengths
-  round, and the error accumulates across a chain. Our long-form work used 362,
-  which is a legal video run and is a third of an audio step out; 345 is the aligned
-  run nearest it. (Rule from `seitanism/ComfyUI-H3-Motion-Context-MultiRef`.)
-- Conform by CROPPING, never by stretching. In an inpaint most of the output *is*
-  the source, so resampling softens pixels that were going to be kept verbatim, and
-  a non-uniform resize additionally hands the model a distorted body to match.
-  Crop to the target aspect first, and only rescale if the size still differs.
+  out exact when the frame count is also divisible by 3 — every third video run,
+  51 apart: 39, 90, 141, 192, 243, 294, 345, 396. Off-grid lengths round, and the
+  error accumulates across a chain.
+- Masks reduce to latent space UNEVENLY in time. The VAE groups pixel frames
+  `(1,4,4,4,4)`, so every fifth latent frame covers one pixel frame and the rest
+  cover four. Splitting into equal buckets shifts every mask boundary by up to two
+  frames and smears fast motion onto the tokens that should be sharpest.
+- Conform by CROPPING where you have the choice. In an inpaint most of the output
+  *is* the source, so resampling softens pixels that were going to be kept verbatim.
+  Where a downscale is unavoidable — 1080p into a 768p-class model — `fill` loses
+  edges, `stretch` distorts, `pad` adds bars the model paints into.
+
+## Layout
+
+Modules are named for what they hold. Four carry no nodes at all:
+
+| | |
+|---|---|
+| `timing.py` | the two clocks, the frame grids, and where they agree |
+| `geometry.py` | crop rectangles |
+| `cropplan.py` | where to cut a subject out of a clip |
+| `avlatent.py` | reaching inside the paired (video, audio) latent |
+
+The first three are torch-free so they can be tested without ComfyUI:
+
+```
+python3 test_geometry.py
+python3 test_cropplan.py
+python3 validate_workflows.py workflows/*.json
+```
+
+Run the validator after editing any workflow JSON by hand. Every workflow bug this
+pack has shipped was structural and silent — ComfyUI drops a bad connection on load
+rather than complaining, so the graph opens looking fine and fails at queue time.
+
+## License
+
+MIT — see `LICENSE`.

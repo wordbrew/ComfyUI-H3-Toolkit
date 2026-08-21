@@ -18,7 +18,7 @@ diegetic, and that naming a failure ("no cuts") tends to produce it.
 
 import re
 
-from .lint import lint
+from .prompt_lint import lint
 
 SECTIONS = ["subject_definitions", "summary", "retention_analysis",
             "detailed_description", "overall_soundscape", "non_diegetic_music"]

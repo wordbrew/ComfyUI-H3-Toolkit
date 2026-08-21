@@ -37,7 +37,7 @@ after a render.
 
 import re
 
-from .lint import lint
+from .prompt_lint import lint
 
 TASK_TYPES = ["reference generation", "keyframe completion", "video continuation",
               "video editing", "audio reference", "audio reuse"]
