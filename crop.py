@@ -396,11 +396,13 @@ class H3PreviewMaskCrop:
     covered every pixel of it. Blue has to win the overlap or the node cannot
     answer the only question it was added for.
 
-    Only the primary mask gets a latent overlay. The second one reduces differently
-    where it is used — H3 Mask Inpaint takes a MEAN over each frame group for the
-    forget mask, against the MAX it uses for the main one — so drawing them in the
-    same red would be a lie. To see that reduction, put the second mask into `mask`
-    on another instance of this node.
+    mask_2 gets its own latent overlay in AMBER, reduced the way a forget mask
+    actually is — 16px MEANS and a mean over each frame group, against the maxes the
+    main mask uses. That difference is not cosmetic: means DILUTE a fine mask, so a
+    strand covering a third of a cell becomes 0.3 forget rather than 1.0, and
+    forget_strength 1.0 then forgets a third of it. The peak and mean are reported
+    as numbers, and a peak below 0.9 warns, because nothing about that is visible
+    from the mask you drew.
 
     `dilate` mirrors H3 Mask Inpaint, so set it to the same value and the latent
     overlay is exactly what that node will build.
@@ -497,6 +499,34 @@ class H3PreviewMaskCrop:
             if m2.shape[-2:] != (ih, iw):
                 raise ValueError(f"mask_2 is {m2.shape[-1]}x{m2.shape[-2]} but the clip "
                                  f"is {iw}x{ih}.")
+            if show_latent_mask:
+                lt2 = video_latent_t(n)
+                sizes2 = frame_groups(lt2)
+                if sum(sizes2) == n:
+                    # H3 Mask Inpaint reduces a forget mask with MEANS, not the maxes
+                    # it uses for the main mask, because its mid-tones are the point.
+                    # That DILUTES a fine mask: a strand covering 30% of a 16px cell
+                    # becomes 0.3 forget, not 1.0 — so forget_strength 1.0 on hair can
+                    # really be forgetting a third of it. Drawn in amber, and reported
+                    # as a number, because that dilution is invisible otherwise.
+                    q2 = m2.unsqueeze(0).unsqueeze(0)
+                    q2 = Fn.avg_pool3d(q2, (1, 16, 16), stride=(1, 16, 16))
+                    q2 = torch.stack([g.mean(dim=2) for g in
+                                      torch.split(q2, sizes2, dim=2)], dim=2)
+                    peak = float(q2.max())
+                    inside = q2[q2 > 0.01]
+                    avg = float(inside.mean()) if inside.numel() else 0.0
+                    q2v = q2.repeat_interleave(16, dim=-1).repeat_interleave(16, dim=-2)
+                    q2v = q2v[0, 0].repeat_interleave(
+                        torch.tensor(sizes2, device=q2v.device), dim=0)[:n, :ih, :iw]
+                    tint(q2v, (1.0, 0.65, 0.1))
+                    notes.append(f"mask_2 in latent space: peak {peak:.2f}, mean "
+                                 f"{avg:.2f} where set (amber)")
+                    if peak < 0.9:
+                        notes.append(f"WARNING: mask_2 never reaches 1.0 after the "
+                                     f"16px mean — its strongest cell is {peak:.2f}, "
+                                     f"so forget_strength 1.0 forgets at most that "
+                                     f"much. Widen or solidify the mask")
             tint(m2, (0.2, 0.4, 1.0))
             notes.append(f"mask_2 covers {float(m2.mean()) * 100:.1f}% (blue)")
             if mask is not None:
