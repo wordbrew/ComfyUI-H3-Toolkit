@@ -384,6 +384,18 @@ class H3PreviewMaskCrop:
       crop box      the rectangle H3 Subject Crop chose, drawn per frame. Shows
                     whether the box is too tight, whether it moves, and whether
                     the subject ever escapes it.
+      mask_2        a second mask in blue, for the relational questions a pair of
+                    separate previews makes hard: does the forget mask sit INSIDE
+                    the subject mask (they are intersected, so anything outside is
+                    discarded), and does it cover the hair without touching the
+                    face. Blue outside green is being thrown away; blue on skin is
+                    what wrecks the face.
+
+    Only the primary mask gets a latent overlay. The second one reduces differently
+    where it is used — H3 Mask Inpaint takes a MEAN over each frame group for the
+    forget mask, against the MAX it uses for the main one — so drawing them in the
+    same red would be a lie. To see that reduction, put the second mask into `mask`
+    on another instance of this node.
 
     `dilate` mirrors H3 Mask Inpaint, so set it to the same value and the latent
     overlay is exactly what that node will build.
@@ -400,6 +412,9 @@ class H3PreviewMaskCrop:
                         "step": 0.05}),
         }, "optional": {
             "mask": ("MASK",),
+            "mask_2": ("MASK", {"tooltip": "A second mask, drawn in blue. For seeing "
+                                           "a forget mask against the subject mask "
+                                           "on the same frames."}),
             "crop_data": ("H3_CROP",),
             "show_mask": ("BOOLEAN", {"default": True,
                           "tooltip": "Your pixel mask, in green."}),
@@ -421,8 +436,8 @@ class H3PreviewMaskCrop:
     DESCRIPTION = ("Overlay the mask, the mask AS THE MODEL RECEIVES IT, and the crop "
                    "box on the source frames. Send it to a video preview.")
 
-    def go(self, images, opacity, mask=None, crop_data=None, show_mask=True,
-           show_latent_mask=True, show_crop_box=True, dilate=0):
+    def go(self, images, opacity, mask=None, mask_2=None, crop_data=None,
+           show_mask=True, show_latent_mask=True, show_crop_box=True, dilate=0):
         from .timing import frame_groups, video_latent_t
 
         out = images.clone()[..., :3]
@@ -435,6 +450,22 @@ class H3PreviewMaskCrop:
             s = (sel.to(out.device, out.dtype) * a).unsqueeze(-1)
             col = torch.tensor(rgb, device=out.device, dtype=out.dtype)
             out.mul_(1.0 - s).add_(s * col)
+
+        if mask_2 is not None:
+            m2 = (mask_2 if mask_2.dim() == 3 else mask_2.unsqueeze(0)).float()
+            if m2.shape[-2:] != (ih, iw):
+                raise ValueError(f"mask_2 is {m2.shape[-1]}x{m2.shape[-2]} but the clip "
+                                 f"is {iw}x{ih}.")
+            tint(m2, (0.2, 0.4, 1.0))
+            notes.append(f"mask_2 covers {float(m2.mean()) * 100:.1f}% (blue)")
+            if mask is not None:
+                mm = (mask if mask.dim() == 3 else mask.unsqueeze(0)).float()
+                if mm.shape == m2.shape:
+                    outside = float(((m2 > 0.5) & (mm <= 0.5)).float().mean())
+                    if outside > 0.001:
+                        notes.append(f"WARNING: {outside * 100:.1f}% of the frame has "
+                                     f"mask_2 OUTSIDE mask — that part is discarded "
+                                     f"where the two are intersected")
 
         if mask is not None:
             m = (mask if mask.dim() == 3 else mask.unsqueeze(0)).float()
