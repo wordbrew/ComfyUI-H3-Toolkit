@@ -104,9 +104,9 @@ class H3SubjectCrop:
                                            "the primary mask decides where to cut."}),
         }}
 
-    # appended, not inserted — see the note in H3MatchSource
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "H3_CROP", "STRING", "MASK")
-    RETURN_NAMES = ("images", "mask", "width", "height", "crop_data", "info", "mask_2")
+    # mask_2 next to mask — see the note in H3MatchSource about the slot shift
+    RETURN_TYPES = ("IMAGE", "MASK", "MASK", "INT", "INT", "H3_CROP", "STRING")
+    RETURN_NAMES = ("images", "mask", "mask_2", "width", "height", "crop_data", "info")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Crop a clip to its subject and report the size to render at. "
@@ -183,8 +183,8 @@ class H3SubjectCrop:
         if out_m2 is not None:
             text += " | a second mask cut by the same box"
         return {"ui": {"h3char": [text]},
-                "result": (out_i, out_m, int(w), int(h), crop_data, text,
-                           blank if out_m2 is None else out_m2)}
+                "result": (out_i, out_m, blank if out_m2 is None else out_m2,
+                           int(w), int(h), crop_data, text)}
 
 
 class H3SubjectUncrop:

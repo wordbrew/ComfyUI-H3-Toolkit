@@ -1030,12 +1030,18 @@
           "slot_index": 1
         },
         {
+          "name": "mask_2",
+          "links": null,
+          "type": "MASK",
+          "slot_index": 2
+        },
+        {
           "name": "width",
           "type": "INT",
           "links": [
             54
           ],
-          "slot_index": 2
+          "slot_index": 3
         },
         {
           "name": "height",
@@ -1043,7 +1049,7 @@
           "links": [
             55
           ],
-          "slot_index": 3
+          "slot_index": 4
         },
         {
           "name": "length",
@@ -1051,13 +1057,13 @@
           "links": [
             56
           ],
-          "slot_index": 4
+          "slot_index": 5
         },
         {
           "name": "info",
           "type": "STRING",
           "links": null,
-          "slot_index": 5
+          "slot_index": 6
         }
       ],
       "widgets_values": [
@@ -1329,7 +1335,7 @@
     [
       54,
       31,
-      2,
+      3,
       12,
       3,
       "INT"
@@ -1337,7 +1343,7 @@
     [
       55,
       31,
-      3,
+      4,
       12,
       4,
       "INT"
@@ -1345,7 +1351,7 @@
     [
       56,
       31,
-      4,
+      5,
       12,
       5,
       "INT"

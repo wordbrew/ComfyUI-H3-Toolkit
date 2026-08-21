@@ -1236,16 +1236,24 @@
           "slot_index": 1
         },
         {
+          "name": "mask_2",
+          "type": "MASK",
+          "links": [
+            87
+          ],
+          "slot_index": 2
+        },
+        {
           "name": "width",
           "type": "INT",
           "links": null,
-          "slot_index": 2
+          "slot_index": 3
         },
         {
           "name": "height",
           "type": "INT",
           "links": null,
-          "slot_index": 3
+          "slot_index": 4
         },
         {
           "name": "length",
@@ -1253,20 +1261,12 @@
           "links": [
             66
           ],
-          "slot_index": 4
+          "slot_index": 5
         },
         {
           "name": "info",
           "type": "STRING",
           "links": null,
-          "slot_index": 5
-        },
-        {
-          "name": "mask_2",
-          "type": "MASK",
-          "links": [
-            87
-          ],
           "slot_index": 6
         }
       ],
@@ -1328,12 +1328,20 @@
           "slot_index": 1
         },
         {
+          "name": "mask_2",
+          "type": "MASK",
+          "links": [
+            88
+          ],
+          "slot_index": 2
+        },
+        {
           "name": "width",
           "type": "INT",
           "links": [
             64
           ],
-          "slot_index": 2
+          "slot_index": 3
         },
         {
           "name": "height",
@@ -1341,7 +1349,7 @@
           "links": [
             65
           ],
-          "slot_index": 3
+          "slot_index": 4
         },
         {
           "name": "crop_data",
@@ -1349,20 +1357,12 @@
           "links": [
             75
           ],
-          "slot_index": 4
+          "slot_index": 5
         },
         {
           "name": "info",
           "type": "STRING",
           "links": null,
-          "slot_index": 5
-        },
-        {
-          "name": "mask_2",
-          "type": "MASK",
-          "links": [
-            88
-          ],
           "slot_index": 6
         }
       ],
@@ -1913,7 +1913,7 @@
     [
       64,
       50,
-      2,
+      3,
       12,
       4,
       "INT"
@@ -1921,7 +1921,7 @@
     [
       65,
       50,
-      3,
+      4,
       12,
       5,
       "INT"
@@ -1929,7 +1929,7 @@
     [
       66,
       41,
-      4,
+      5,
       12,
       6,
       "INT"
@@ -1985,7 +1985,7 @@
     [
       75,
       50,
-      4,
+      5,
       51,
       2,
       "H3_CROP"
@@ -2001,7 +2001,7 @@
     [
       87,
       41,
-      6,
+      2,
       50,
       2,
       "MASK"
@@ -2009,7 +2009,7 @@
     [
       88,
       50,
-      6,
+      2,
       13,
       6,
       "MASK"

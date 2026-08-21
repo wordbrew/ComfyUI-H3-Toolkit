@@ -451,11 +451,13 @@ class H3MatchSource:
                                            "clip."}),
         }}
 
-    # mask_2 is APPENDED, not inserted next to mask. Slot indices are what saved
-    # workflows store, so inserting in the middle silently rewires every graph that
-    # already uses this node.
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "STRING", "MASK")
-    RETURN_NAMES = ("images", "mask", "width", "height", "length", "info", "mask_2")
+    # mask_2 sits next to mask, where it reads. That is a deliberate break: slot
+    # indices are what saved workflows store, so everything after it shifted by one
+    # and graphs built before 2026-08-21 need their width/height/length/info links
+    # remade. The shipped workflows were remapped; a hand-built one will show the
+    # wrong wires rather than fail loudly, so check them.
+    RETURN_TYPES = ("IMAGE", "MASK", "MASK", "INT", "INT", "INT", "STRING")
+    RETURN_NAMES = ("images", "mask", "mask_2", "width", "height", "length", "info")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/mask"
     DESCRIPTION = ("Conform a source clip to a canvas H3 can render and report the "
@@ -598,7 +600,7 @@ class H3MatchSource:
         if masks[1] is not None:
             info += " | 2 masks conformed together"
         return {"ui": {"h3char": [info]},
-                "result": (images, m1, cw, ch, length, info, m2)}
+                "result": (images, m1, m2, cw, ch, length, info)}
 
 
 NODE_CLASS_MAPPINGS = {
