@@ -62,10 +62,25 @@ class H3MaskInpaint:
             "vae": ("VAE",),
             "source_images": ("IMAGE", {"tooltip": "The source video's frames."}),
             "mask": ("MASK", {"tooltip": "Per-frame subject mask. White = regenerate."}),
+            "grow_px": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1,
+                        "tooltip": "Grow the mask in PIXELS, before it is reduced to "
+                                   "latent space. Finer than `dilate`, which can only "
+                                   "move in 16 px jumps because it works on latent "
+                                   "cells. Prefer this one and leave dilate at 0."}),
             "dilate": ("INT", {"default": 2, "min": 0, "max": 16, "step": 1,
-                               "tooltip": "Grow the mask in LATENT cells. Each cell is "
-                                          "16 px, so 2 is ~32 px of margin. Too tight "
-                                          "leaves slivers of the original subject."}),
+                               "tooltip": "Grow the mask in LATENT cells, after the "
+                                          "reduction. Each cell is 16 px, so 2 is ~32 px "
+                                          "of margin — coarse. `grow_px` is the finer "
+                                          "control."}),
+            "token_snap": ("BOOLEAN", {"default": True,
+                           "tooltip": "Snap the mask to the model's 2x2 patch grid — 32 "
+                                      "px, not 16. The sampler pins per latent CELL, but "
+                                      "the DiT reasons per 2x2 PATCH, so a mask finer "
+                                      "than 32 px hands it tokens that are half pinned "
+                                      "and half free. It has no sub-token resolution to "
+                                      "resolve that with, and the boundary is where it "
+                                      "shows. Off only to compare against the old "
+                                      "behaviour."}),
             "feather": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.05,
                                   "tooltip": "Soften the boundary so the model can "
                                              "blend rather than butt up against a wall."}),
@@ -111,8 +126,8 @@ class H3MaskInpaint:
                    "how much of the region remembers the source it started from.")
 
     def go(self, latent, vae, source_images, mask, dilate, feather, invert, keep_audio,
-           audio_vae=None, source_audio=None, forget_mask=None, forget_strength=1.0,
-           sigmas=None):
+           grow_px=0, token_snap=True, audio_vae=None, source_audio=None,
+           forget_mask=None, forget_strength=1.0, sigmas=None):
         import comfy.nested_tensor
         import torch.nn.functional as Fn
 
@@ -186,6 +201,15 @@ class H3MaskInpaint:
         if invert:
             m = 1.0 - m
 
+        # Growing HERE, in pixels, moves the edge one pixel at a time. Growing after
+        # the reduction can only move it in 16px jumps, which on a hand or a strand
+        # of hair is the difference between a margin and a blob. Separable so a
+        # large radius stays cheap.
+        if grow_px > 0:
+            r = int(grow_px)
+            m = Fn.max_pool3d(m, (1, 2 * r + 1, 1), stride=1, padding=(0, r, 0))
+            m = Fn.max_pool3d(m, (1, 1, 2 * r + 1), stride=1, padding=(0, 0, r))
+
         # UNION, not resample: any pixel frame contributing to a latent frame counts.
         #
         # Spatially that is an exact 16x16 block — the source was conformed to
@@ -216,6 +240,19 @@ class H3MaskInpaint:
             k = r * 2 + 1
             m = Fn.avg_pool3d(m, kernel_size=(1, k, k), stride=1, padding=(0, r, r))
             m = m.clamp(0, 1)
+
+        if token_snap:
+            # The sampler pins per latent CELL; the DiT reasons per 2x2 PATCH. A mask
+            # finer than the patch gives it a token that is half pinned and half free,
+            # and it has no sub-token resolution to resolve that with. Max, so a patch
+            # any part of which should regenerate, regenerates whole — the same rule
+            # the engine's own _mask_row_values applies.
+            ph, pw = lh % 2, lw % 2
+            q = m if (ph == 0 and pw == 0) else Fn.pad(m, (0, pw, 0, ph),
+                                                       mode="replicate")
+            q = Fn.max_pool3d(q, (1, 2, 2), stride=(1, 2, 2))
+            q = q.repeat_interleave(2, dim=-1).repeat_interleave(2, dim=-2)
+            m = q[..., :lh, :lw]
 
         mask_v = m.expand(video.shape[0], video.shape[1], lt, lh, lw).contiguous()
         mask_v = mask_v.to(video.device, video.dtype)
