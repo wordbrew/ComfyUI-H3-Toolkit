@@ -72,15 +72,22 @@ class H3MaskInpaint:
                                           "reduction. Each cell is 16 px, so 2 is ~32 px "
                                           "of margin — coarse. `grow_px` is the finer "
                                           "control."}),
-            "token_snap": ("BOOLEAN", {"default": True,
+            "token_snap": ("BOOLEAN", {"default": False,
                            "tooltip": "Snap the mask to the model's 2x2 patch grid — 32 "
-                                      "px, not 16. The sampler pins per latent CELL, but "
-                                      "the DiT reasons per 2x2 PATCH, so a mask finer "
-                                      "than 32 px hands it tokens that are half pinned "
-                                      "and half free. It has no sub-token resolution to "
-                                      "resolve that with, and the boundary is where it "
-                                      "shows. Off only to compare against the old "
-                                      "behaviour."}),
+                                      "px instead of 16. TESTED AND NOT OBSERVABLE: at "
+                                      "denoise 0.45, 0.70 and 1.0 it made no visible "
+                                      "difference, and it costs ~2.4% more regenerated "
+                                      "area, so it is off.\n\n"
+                                      "The theory was that the sampler pins per latent "
+                                      "CELL while the DiT reasons per 2x2 PATCH, so a "
+                                      "finer mask splits tokens. It does — 4.7% of them "
+                                      "on a subject-shaped mask. But the pinning happens "
+                                      "BEFORE the model call and fills the pinned half "
+                                      "with correctly-noised source, so both halves are "
+                                      "valid latents and the model just sees an edge "
+                                      "inside a token, which is ordinary. Kept as an "
+                                      "option in case it matters somewhere it was not "
+                                      "tested."}),
             "feather": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.05,
                                   "tooltip": "Soften the boundary so the model can "
                                              "blend rather than butt up against a wall."}),
