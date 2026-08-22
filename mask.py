@@ -62,32 +62,11 @@ class H3MaskInpaint:
             "vae": ("VAE",),
             "source_images": ("IMAGE", {"tooltip": "The source video's frames."}),
             "mask": ("MASK", {"tooltip": "Per-frame subject mask. White = regenerate."}),
-            "grow_px": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1,
-                        "tooltip": "Grow the mask in PIXELS, before it is reduced to "
-                                   "latent space. Finer than `dilate`, which can only "
-                                   "move in 16 px jumps because it works on latent "
-                                   "cells. Prefer this one and leave dilate at 0."}),
             "dilate": ("INT", {"default": 2, "min": 0, "max": 16, "step": 1,
                                "tooltip": "Grow the mask in LATENT cells, after the "
                                           "reduction. Each cell is 16 px, so 2 is ~32 px "
                                           "of margin — coarse. `grow_px` is the finer "
                                           "control."}),
-            "token_snap": ("BOOLEAN", {"default": False,
-                           "tooltip": "Snap the mask to the model's 2x2 patch grid — 32 "
-                                      "px instead of 16. TESTED AND NOT OBSERVABLE: at "
-                                      "denoise 0.45, 0.70 and 1.0 it made no visible "
-                                      "difference, and it costs ~2.4% more regenerated "
-                                      "area, so it is off.\n\n"
-                                      "The theory was that the sampler pins per latent "
-                                      "CELL while the DiT reasons per 2x2 PATCH, so a "
-                                      "finer mask splits tokens. It does — 4.7% of them "
-                                      "on a subject-shaped mask. But the pinning happens "
-                                      "BEFORE the model call and fills the pinned half "
-                                      "with correctly-noised source, so both halves are "
-                                      "valid latents and the model just sees an edge "
-                                      "inside a token, which is ordinary. Kept as an "
-                                      "option in case it matters somewhere it was not "
-                                      "tested."}),
             "feather": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.05,
                                   "tooltip": "Soften the boundary so the model can "
                                              "blend rather than butt up against a wall."}),
@@ -115,6 +94,27 @@ class H3MaskInpaint:
                                 "tooltip": "Global multiplier on forget_mask, so you can "
                                            "sweep it without re-authoring the mask. 0 "
                                            "reproduces the old behaviour exactly."}),
+            "grow_px": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1,
+                        "tooltip": "Grow the mask in PIXELS, before it is reduced to "
+                                   "latent space. Finer than `dilate`, which can only "
+                                   "move in 16 px jumps because it works on latent "
+                                   "cells. Prefer this one and leave dilate at 0."}),
+            "token_snap": ("BOOLEAN", {"default": False,
+                           "tooltip": "Snap the mask to the model's 2x2 patch grid — 32 "
+                                      "px instead of 16. TESTED AND NOT OBSERVABLE: at "
+                                      "denoise 0.45, 0.70 and 1.0 it made no visible "
+                                      "difference, and it costs ~2.4% more regenerated "
+                                      "area, so it is off.\n\n"
+                                      "The theory was that the sampler pins per latent "
+                                      "CELL while the DiT reasons per 2x2 PATCH, so a "
+                                      "finer mask splits tokens. It does — 4.7% of them "
+                                      "on a subject-shaped mask. But the pinning happens "
+                                      "BEFORE the model call and fills the pinned half "
+                                      "with correctly-noised source, so both halves are "
+                                      "valid latents and the model just sees an edge "
+                                      "inside a token, which is ordinary. Kept as an "
+                                      "option in case it matters somewhere it was not "
+                                      "tested."}),
             "sigmas": ("SIGMAS", {
                 "tooltip": "Optional, from the same scheduler feeding the sampler. Lets "
                            "the fill be variance-corrected for the sigma sampling will "
@@ -245,7 +245,13 @@ class H3MaskInpaint:
         if feather > 0:
             r = max(1, int(round(feather * 3)))
             k = r * 2 + 1
-            m = Fn.avg_pool3d(m, kernel_size=(1, k, k), stride=1, padding=(0, r, r))
+            # count_include_pad=False, or the zero padding outside the image is
+            # averaged in and drags the mask down at the FRAME edges: a solid 1.0
+            # mask came out at 0.444 in the corners, so the outer ring of cells was
+            # partially pinned and blended generated content with source in a band
+            # around the whole picture.
+            m = Fn.avg_pool3d(m, kernel_size=(1, k, k), stride=1, padding=(0, r, r),
+                              count_include_pad=False)
             m = m.clamp(0, 1)
 
         if token_snap:
