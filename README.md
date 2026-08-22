@@ -22,13 +22,37 @@ swirling colour artifacts in the generated region, and no setting avoids it.
 
 ## Nodes
 
-**`MiniMax H3/mask`** — `H3MatchSource`, `H3MaskInpaint`, `H3SubjectCrop`,
-`H3SubjectUncrop`, `H3ApplyCrop`, `H3PreviewMaskCrop`, `H3LatentPin`
+**`MiniMax H3/mask`** — `H3MatchSource`, `H3MaskInpaint`, `H3MaskStabilize`,
+`H3SubjectCrop`, `H3SubjectUncrop`, `H3ApplyCrop`, `H3PreviewMaskCrop`,
+`H3LatentPin`
 
 Replace a masked region of an existing video while pinning everything outside it.
+
+`H3MatchSource` conforms a clip to a canvas H3 can render — crop, fill, stretch or
+pad, with a megapixel budget — and derives the width, height and legal frame count
+for everything downstream. Its `mask_2` carries a second mask through the identical
+conform, scale and **trim**, which rebuilding from stock resize nodes does not.
+
+`H3MaskInpaint` builds the masked latent. `grow_px` dilates in pixel space before
+the reduction, so the edge moves a pixel at a time rather than in the 16 px jumps
+`dilate` is limited to. `forget_mask` controls how much of a region **forgets the
+source it started from** — below denoise 1.0 the free region still starts holding
+part of the source, and hue survives denoising better than structure does, so a
+masked region can come back with the original's colour no matter what the prompt
+says. Paint an area white there and it starts from noise while the rest of the mask
+keeps the residual that holds pose.
+
+`H3MaskStabilize` fills frame-to-frame dropouts. Segmentation loses whatever is
+fast and small — hands, mostly — and each dropout flips a region between pinned and
+free mid-clip. It uses morphology along the time axis rather than a median, because
+a median asks "is this pixel usually masked", which for a moving subject is no: on a
+hand crossing frame, a temporal median deletes it entirely.
+
 `H3SubjectCrop` cuts the canvas down to the subject so the model renders fewer
-tokens; `H3PreviewMaskCrop` shows the mask **as the model actually receives it**,
-which is coarser than the one you drew.
+tokens. How much that buys depends entirely on framing — a full-body subject on a
+portrait canvas already fills the height, so the crop only gains horizontally. Its
+info output reports the real saving. `H3PreviewMaskCrop` shows the mask **as the
+model actually receives it**, which is coarser than the one you drew.
 
 **`MiniMax H3/prompt`** — `H3ScenePrompt`, `H3LongFormLinks`, `H3PromptLint`,
 `H3RewriterBrief`, `H3RewriterParse`
@@ -68,6 +92,13 @@ keyframes that can coexist with reference images.
   `(1,4,4,4,4)`, so every fifth latent frame covers one pixel frame and the rest
   cover four. Splitting into equal buckets shifts every mask boundary by up to two
   frames and smears fast motion onto the tokens that should be sharpest.
+- Below denoise 1.0 a masked region does not start blank. The sampler builds its
+  starting point as `sigma*noise + (1-sigma)*source` over the whole frame, before
+  any mask is applied, so the free region starts holding part of the source — 9% at
+  denoise 0.45 under shift 12. That residual anchors position and structure, which
+  is what keeps hands and contact points registered; it also carries appearance,
+  which is what keeps the original's hair colour. Both move together on that one
+  dial.
 - Conform by CROPPING where you have the choice. In an inpaint most of the output
   *is* the source, so resampling softens pixels that were going to be kept verbatim.
   Where a downscale is unavoidable — 1080p into a 768p-class model — `fill` loses
