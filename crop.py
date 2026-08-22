@@ -98,6 +98,18 @@ class H3SubjectCrop:
                                          "crop lags a real move."}),
             "divisible_by": ("INT", {"default": 32, "min": 8, "max": 128, "step": 8,
                              "tooltip": "H3 needs 32. Leave it."}),
+            "upscale_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 4.0,
+                                   "step": 0.05,
+                                   "tooltip": "0 = off, and the crop stays pixel-exact. "
+                                              "Above 0, the cut region is scaled UP to "
+                                              "about this area before it is generated, "
+                                              "which is what makes cropping a DETAILER "
+                                              "rather than just a saving: a face cut out "
+                                              "of a wide frame occupies few latent cells, "
+                                              "and enlarging it to the same budget the "
+                                              "whole frame had gives it many more. Never "
+                                              "scales down. H3 Subject Uncrop puts it "
+                                              "back at the original size."}),
             "mask_2": ("MASK", {"tooltip": "A second mask cut by the SAME box, for "
                                            "anything that has to stay aligned with the "
                                            "crop — a forget mask, an occluder mask. Only "
@@ -114,7 +126,7 @@ class H3SubjectCrop:
                    "into H3 Subject Uncrop. crop_scale 0 disables it.")
 
     def go(self, images, mask, mode, crop_scale, aspect_ratio=0.0,
-           smooth_window=16, divisible_by=32, mask_2=None):
+           smooth_window=16, divisible_by=32, upscale_megapixels=0.0, mask_2=None):
         n, ih, iw = images.shape[0], images.shape[1], images.shape[2]
         m = mask if mask.dim() == 3 else mask.unsqueeze(0)
         if m.shape[0] != n:
@@ -177,8 +189,36 @@ class H3SubjectCrop:
             text += "\n" + info["note"]
         logging.info("H3SubjectCrop: %s", text.replace("\n", " "))
 
+        # Scaling UP after the cut is the whole detailer mechanism. The crop itself
+        # stays pixel-exact — this is a separate, deliberate resample, and the uncrop
+        # reverses it rather than warning about it.
+        up = float(upscale_megapixels)
+        if up > 0:
+            import math
+            div = max(1, int(divisible_by))
+            ar = w / float(h)
+            uw = max(div, int(round(math.sqrt(up * 1e6 * ar) / div)) * div)
+            uh = max(div, int(round(math.sqrt(up * 1e6 / ar) / div)) * div)
+            if uw > w or uh > h:
+                out_i = Fn.interpolate(out_i.movedim(-1, 1), size=(uh, uw),
+                                       mode="bicubic", align_corners=False,
+                                       antialias=True).clamp(0, 1).movedim(1, -1)
+                out_m = Fn.interpolate(out_m.unsqueeze(1), size=(uh, uw),
+                                       mode="bilinear", align_corners=False).squeeze(1)
+                if out_m2 is not None:
+                    out_m2 = Fn.interpolate(out_m2.unsqueeze(1), size=(uh, uw),
+                                            mode="bilinear",
+                                            align_corners=False).squeeze(1)
+                text += (f" | upscaled {w}x{h} -> {uw}x{uh} "
+                         f"({(uw * uh) / float(w * h):.1f}x the pixels on the subject)")
+                w, h = uw, uh
+            else:
+                text += (f" | upscale_megapixels {up:.2f} is not larger than the crop's "
+                         f"{w * h / 1e6:.2f} MP, so it was skipped — this never scales "
+                         f"down")
+
         crop_data = {"boxes": boxes, "image_width": iw, "image_height": ih,
-                     "frames": n}
+                     "frames": n, "render_width": int(w), "render_height": int(h)}
         blank = torch.zeros((n, h, w), dtype=out_m.dtype, device=out_m.device)
         if out_m2 is not None:
             text += " | a second mask cut by the same box"
@@ -220,11 +260,24 @@ class H3SubjectUncrop:
 
         gen = images
         if gen.shape[1] != h or gen.shape[2] != w:
-            logging.warning(
-                "H3SubjectUncrop: render is %dx%d but the crop was %dx%d — "
-                "rescaling to fit. The H3 conditioning node's width/height should "
-                "be wired from H3 Subject Crop so this never happens.",
-                gen.shape[2], gen.shape[1], w, h)
+            # An upscaled crop is SUPPOSED to arrive bigger than its box — that is
+            # the detailer path, and putting it back is this node's job, not a
+            # mistake to complain about. Any other mismatch means the conditioning
+            # node's width/height are not wired from the crop, which is a wiring
+            # error worth saying so about.
+            rw = crop_data.get("render_width")
+            rh = crop_data.get("render_height")
+            deliberate = (rw, rh) == (gen.shape[2], gen.shape[1]) and (rw > w or rh > h)
+            if deliberate:
+                logging.info("H3SubjectUncrop: putting a %dx%d render back into its "
+                             "%dx%d box (%.1fx downscale)", gen.shape[2], gen.shape[1],
+                             w, h, (gen.shape[2] * gen.shape[1]) / float(w * h))
+            else:
+                logging.warning(
+                    "H3SubjectUncrop: render is %dx%d but the crop was %dx%d and no "
+                    "upscale was recorded — rescaling to fit, but the H3 conditioning "
+                    "node's width/height should be wired from H3 Subject Crop.",
+                    gen.shape[2], gen.shape[1], w, h)
             gen = Fn.interpolate(gen.movedim(-1, 1), size=(h, w), mode="bicubic",
                                  align_corners=False,
                                  antialias=True).clamp(0, 1).movedim(1, -1)
