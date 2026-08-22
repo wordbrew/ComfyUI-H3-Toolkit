@@ -615,13 +615,115 @@ class H3MatchSource:
                 "result": (images, m1, m2, cw, ch, length, info)}
 
 
+
+class H3MaskStabilize:
+    """Settle a mask that flickers frame to frame, without growing it.
+
+    Segmentation is re-run per frame, so it drops and re-acquires whatever is
+    hardest — fast, small, self-occluding things. Hands, mostly. The mask then
+    switches on and off across consecutive frames, and every switch is a change in
+    what the sampler is allowed to touch there.
+
+    That matters more than it looks. A latent frame covers up to four pixel frames
+    and the mask is UNIONED over them, so a hand that drops out for one frame turns
+    a solid latent cell into a partial one, and the free/pinned boundary moves. The
+    model gets a different instruction at that spot every latent step.
+
+    WHY NOT A MEDIAN FILTER
+      The obvious tool, and wrong here. A median across frames asks "is this pixel
+      usually masked", which for a MOVING subject is no — the hand is only at any
+      given pixel briefly. A median erases fast motion, which is exactly what needs
+      keeping.
+
+    So this uses morphology along the time axis instead, which is about GAPS rather
+    than averages:
+
+      remove_blips   temporal opening. Drops anything that appears for fewer than
+                     this many frames — spurious detections that flash on and off.
+      fill_gaps      temporal closing. Fills dropouts shorter than this, so a hand
+                     that vanishes for a frame or two stays masked through it.
+
+    Both preserve the mask's overall extent: a region genuinely present keeps its
+    shape and its path. Only the holes in time close up.
+
+    Order is opening then closing, so a blip is not first widened and then treated
+    as real.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "mask": ("MASK",),
+            "fill_gaps": ("INT", {"default": 2, "min": 0, "max": 16,
+                          "tooltip": "Frames. Dropouts shorter than this are filled. "
+                                     "2 covers the common case of a hand lost for a "
+                                     "frame or two. Too high and a genuine "
+                                     "disappearance gets papered over."}),
+            "remove_blips": ("INT", {"default": 1, "min": 0, "max": 16,
+                             "tooltip": "Frames. Detections lasting fewer than this "
+                                        "are dropped. 1 clears single-frame noise; "
+                                        "raise it only if you see the mask flashing "
+                                        "onto things that are not the subject."}),
+        }}
+
+    RETURN_TYPES = ("MASK", "STRING")
+    RETURN_NAMES = ("mask", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    DESCRIPTION = ("Fill frame-to-frame dropouts in a mask and drop momentary false "
+                   "detections, without growing the mask or blurring its motion. For "
+                   "hands and anything else segmentation loses track of.")
+
+    def go(self, mask, fill_gaps, remove_blips):
+        import torch.nn.functional as Fn
+        m = mask if mask.dim() == 3 else mask.unsqueeze(0)
+        m = m.float()
+        n = m.shape[0]
+        before = float(m.mean())
+        x = m.unsqueeze(0).unsqueeze(0)                      # [1,1,N,H,W]
+
+        def dilate_t(t, r):
+            return Fn.max_pool3d(t, (2 * r + 1, 1, 1), stride=1, padding=(r, 0, 0))
+
+        def erode_t(t, r):
+            return -Fn.max_pool3d(-t, (2 * r + 1, 1, 1), stride=1, padding=(r, 0, 0))
+
+        # opening first: a one-frame blip should not be widened and then kept
+        if remove_blips > 0:
+            r = int(remove_blips)
+            x = dilate_t(erode_t(x, r), r)
+        if fill_gaps > 0:
+            r = int(fill_gaps)
+            x = erode_t(dilate_t(x, r), r)
+
+        out = x[0, 0].clamp(0, 1)
+        after = float(out.mean())
+
+        # how unsteady was it? count per-frame coverage swings before and after
+        def jitter(t):
+            per = t.flatten(1).mean(dim=1)
+            return float((per[1:] - per[:-1]).abs().mean()) if t.shape[0] > 1 else 0.0
+
+        j0, j1 = jitter(m), jitter(out)
+        info = (f"{n} frames | coverage {before * 100:.2f}% -> {after * 100:.2f}% | "
+                f"frame-to-frame jitter {j0 * 100:.3f}% -> {j1 * 100:.3f}%")
+        if j0 > 0 and j1 < j0 * 0.9:
+            info += f" ({(1 - j1 / j0) * 100:.0f}% steadier)"
+        elif j0 > 0:
+            info += " (little change — the flicker may be motion, not dropout)"
+        logging.info("H3MaskStabilize: %s", info)
+        return {"ui": {"h3char": [info]}, "result": (out, info)}
+
+
 NODE_CLASS_MAPPINGS = {
     "H3MaskInpaint": H3MaskInpaint,
     "H3LatentPin": H3LatentPin,
     "H3MatchSource": H3MatchSource,
+    "H3MaskStabilize": H3MaskStabilize,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3MaskInpaint": "H3 Mask Inpaint (region replace)",
     "H3LatentPin": "H3 Latent Pin (cuts — read description)",
     "H3MatchSource": "H3 Match Source Clip",
+    "H3MaskStabilize": "H3 Stabilise Mask (temporal)",
 }
