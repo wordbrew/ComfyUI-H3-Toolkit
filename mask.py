@@ -725,5 +725,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "H3MaskInpaint": "H3 Mask Inpaint (region replace)",
     "H3LatentPin": "H3 Latent Pin (cuts — read description)",
     "H3MatchSource": "H3 Match Source Clip",
-    "H3MaskStabilize": "H3 Stabilise Mask (temporal)",
+    "H3MaskStabilize": "H3 Stabilize Mask (temporal)",
 }
