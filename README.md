@@ -54,6 +54,16 @@ portrait canvas already fills the height, so the crop only gains horizontally. I
 info output reports the real saving. `H3PreviewMaskCrop` shows the mask **as the
 model actually receives it**, which is coarser than the one you drew.
 
+`H3SubjectCrop`'s `upscale_megapixels` turns the crop into a **detailer**: a face
+in a wide frame occupies few latent cells, so cut it out, render the cut at the
+budget the whole frame had, and paste it back. Same model, same cost, far more of
+it spent on the face. `H3SubjectUncrop` reverses the scale. See workflow 08.
+
+For a refinement pass, drop the **sigma shift**. Shift 12 is tuned for generating a
+scene from nothing and compresses the schedule toward sigma 1, so even denoise 0.10
+discards 40% of the source and no light pass is available. At shift 3 the same
+denoise keeps 74%, and more of the steps land where detail is decided.
+
 **`MiniMax H3/prompt`** — `H3ScenePrompt`, `H3LongFormLinks`, `H3PromptLint`,
 `H3RewriterBrief`, `H3RewriterParse`
 
