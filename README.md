@@ -73,10 +73,22 @@ Build six-section prompts, and lint them against the traps below.
 
 **`MiniMax H3/audio`** — `H3AudioPrompt`, `H3AudioLength`
 
-**`MiniMax H3/video`** — `H3ReferenceToVideoLongForm`, `H3KeyframeTimeline`
+**`MiniMax H3/video`** — `H3ReferenceToVideoLongForm`, `H3KeyframeTimeline`,
+`H3RefBudget`
 
 Conditioning where a keyframe is also *presented* to the language model, and
-keyframes that can coexist with reference images.
+keyframes that can coexist with reference images. The reference node autogrows to
+nine reference images, matching stock.
+
+`H3RefBudget` answers a question the graph never shows you: how much of the
+sequence your references actually occupy. A reference image is a FIXED number of
+tokens — one latent frame's worth — while the target video grows with duration, so
+a reference's share collapses as the clip lengthens. Three references holding 19.4%
+of a 39-frame render hold 3.2% of a 294-frame one, and past some point the source's
+appearance wins over the reference's. Feed it the same `width`, `height`, `length`,
+`ref_image_size` and images as the reference node; `info` is a plain string that
+goes into any display node. It reports the number and shows where the levers move
+it — it does not tell you what is good.
 
 **`MiniMax H3/long-form`** — `H3Assemble`, `H3AudioSlice`, `H3AudioLock`,
 `H3ChainFrame`, `H3Take`, `H3Resolution`
