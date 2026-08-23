@@ -29,11 +29,24 @@ import torch
 
 import comfy.model_management
 import node_helpers
+from comfy_api.latest import io
 
 from .avlatent import av
-from .timing import align_frames, video_latent_t
+from .timing import snap_run, video_latent_t
 
 CATEGORY = "MiniMax H3/video"
+
+# Mirrors stock MiniMaxH3ReferenceToVideo's autogrow ceiling. Nine matters: a
+# reference's share of the picture tokens falls as the clip lengthens, and nine
+# large references on `max` is what holds a 294-frame render above the ratio a
+# 39-frame one gets from three. See H3RefBudget.
+MAX_REF_IMAGES = 9
+
+# Core's own constant, imported so a change upstream follows rather than drifting.
+try:
+    from comfy_extras.nodes_minimax_h3 import REF_IMAGE_SHORT_EDGE
+except Exception:  # pragma: no cover - core moved or renamed
+    REF_IMAGE_SHORT_EDGE = 2048
 
 
 #  layout patch: let keyframes and references coexist
@@ -244,7 +257,7 @@ class H3KeyframeTimeline:
 
     def go(self, conditioning, vae, length, **kw):
         patch_packed_layout()
-        frame_count = align_frames(length)
+        frame_count = snap_run(length)
         entries = []
         for i in (1, 2, 3, 4):
             img = kw.get(f"image_{i}")
@@ -277,7 +290,7 @@ class H3KeyframeTimeline:
         return (out,)
 
 
-class H3ReferenceToVideoLongForm:
+class H3ReferenceToVideoLongForm(io.ComfyNode):
     """ref2va conditioning with a keyframe that is ALSO SHOWN to the language model.
 
     This exists because the one thing that cannot be bolted on after the fact is
@@ -297,63 +310,99 @@ class H3ReferenceToVideoLongForm:
     maths, same ref ordering, same encode path. The additions are `keyframe`,
     `keyframe_time`, and `present_keyframe`.
 
+    WHY REFERENCE COUNT IS WORTH SPENDING ON
+      A reference image contributes a FIXED number of tokens — one latent frame's
+      worth — while the target video grows linearly with duration. So a reference's
+      share of the picture tokens collapses as the clip lengthens: 3 references that
+      hold 19.4% of a 39-frame render hold 3.2% of a 294-frame one, and at that
+      point the source's appearance wins over the reference's. `H3RefBudget` reports
+      the number. More references, and `ref_image_size = max` on large sources, are
+      the two levers that move it, which is why this node autogrows to nine rather
+      than capping at the five it used to offer.
+
     ORDERING MATTERS. `cond_video_latents` is consumed as a flat concatenation
     dropped into the non-target image rows in sequence order, so references come
-    first and keyframes second — matching the patched PackedLayout above.
+    first and keyframes second — matching the patched PackedLayout above. The
+    autogrow dict preserves insertion order, and the executor fills it in schema
+    order, so iterating `.values()` is the same order stock uses.
+
+    V3 SCHEMA, ON PURPOSE. Autogrow is a `DynamicInput` and has no equivalent in
+    the V1 `INPUT_TYPES` dict, so this one node is defined with `io.Schema` while
+    the rest of the pack stays V1. Both register through NODE_CLASS_MAPPINGS —
+    ComfyUI's loader takes the V1 branch for the module and stores the class
+    as-is, and `io.ComfyNode` supplies an `INPUT_TYPES` bridge for everything
+    downstream. Do NOT add a `comfy_entrypoint` to this pack: the loader is
+    if/elif, so NODE_CLASS_MAPPINGS wins and the entrypoint would never run.
     """
 
     @classmethod
-    def INPUT_TYPES(cls):
-        req = {
-            "clip": ("CLIP",),
-            "vae": ("VAE",),
-            "audio_vae": ("VAE",),
-            "prompt": ("STRING", {"multiline": True, "dynamicPrompts": True}),
-            "width": ("INT", {"default": 640, "min": 32, "max": 4096, "step": 32}),
-            "height": ("INT", {"default": 1120, "min": 32, "max": 4096, "step": 32}),
-            "length": ("INT", {"default": 345, "min": 5, "max": 3600, "step": 17,
-                               "tooltip": "Frames at 24 fps. 345 = 14.375 s — the longest "
-                                          "run inside the trained range that lands exactly "
-                                          "on BOTH clocks, 24 fps video and the 40 Hz audio "
-                                          "latent. 362 (15.08 s) is a legal video run but "
-                                          "rounds the audio, which accumulates across a "
-                                          "chain. Aligned runs: 39, 90, 141, 192, 243, "
-                                          "294, 345."}),
-            "ref_image_size": (["match", "max"], {"default": "max",
-                               "tooltip": "'match' shrinks anchors to the render's pixel "
-                                          "area; 'max' keeps them near full size for "
-                                          "identity. 'max' costs ~1.8x."}),
-        }
-        opt = {f"ref_image_{i}": ("IMAGE",) for i in range(1, 6)}
-        opt.update({
-            "keyframe": ("IMAGE", {"tooltip": "Usually the previous clip's last frame."}),
-            "keyframe_time": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 150.0,
-                                        "step": 0.1,
-                                        "tooltip": "Seconds. 0 = start here."}),
-            "present_keyframe": ("BOOLEAN", {"default": True,
-                                 "tooltip": "Show the keyframe to the language model as "
-                                            "the next <Picture n>. Leave ON — this is "
-                                            "what stops motion hesitating at joins."}),
-        })
-        return {"required": req, "optional": opt}
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3ReferenceToVideoLongForm",
+            display_name="H3 Reference to Video (long-form)",
+            category=CATEGORY,
+            description=("ref2va conditioning where the keyframe is also presented to "
+                         "the language model. Chain clips by feeding the previous "
+                         "clip's last frame (H3 Chain Frame) into `keyframe`."),
+            inputs=[
+                io.Clip.Input("clip"),
+                io.Vae.Input("vae"),
+                io.Vae.Input("audio_vae"),
+                io.String.Input("prompt", multiline=True, dynamic_prompts=True),
+                io.Int.Input("width", default=640, min=32, max=4096, step=32),
+                io.Int.Input("height", default=1120, min=32, max=4096, step=32),
+                io.Int.Input("length", default=345, min=5, max=3600, step=17,
+                             tooltip="Frames at 24 fps. 345 = 14.375 s — the longest "
+                                     "run inside the trained range that lands exactly "
+                                     "on BOTH clocks, 24 fps video and the 40 Hz audio "
+                                     "latent. 362 (15.08 s) is a legal video run but "
+                                     "rounds the audio, which accumulates across a "
+                                     "chain. Aligned runs: 39, 90, 141, 192, 243, "
+                                     "294, 345."),
+                io.Combo.Input("ref_image_size", options=["match", "max"], default="max",
+                               tooltip="'match' shrinks anchors to the render's pixel "
+                                       "area; 'max' keeps them native up to a 2048 "
+                                       "short edge. On a large source 'max' is several "
+                                       "times the tokens, which is the point — it is "
+                                       "how a reference keeps its share on a long "
+                                       "clip. It costs roughly the square of the "
+                                       "sequence growth in attention."),
+                io.Autogrow.Input(
+                    "ref_images", optional=True,
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.Image.Input(
+                            "ref_image",
+                            tooltip="Identity anchor, shown to the language model as "
+                                    "the next <Picture n>. Never upscaled; downscaled "
+                                    "per ref_image_size."),
+                        prefix="ref_image_", min=0, max=MAX_REF_IMAGES)),
+                io.Image.Input("keyframe", optional=True,
+                               tooltip="Usually the previous clip's last frame."),
+                io.Float.Input("keyframe_time", default=0.0, min=0.0, max=150.0,
+                               step=0.1, optional=True,
+                               tooltip="Seconds. 0 = start here."),
+                io.Boolean.Input("present_keyframe", default=True, optional=True,
+                                 tooltip="Show the keyframe to the language model as "
+                                         "the next <Picture n>. Leave ON — this is "
+                                         "what stops motion hesitating at joins."),
+            ],
+            outputs=[
+                io.Conditioning.Output(display_name="conditioning"),
+                io.Latent.Output(display_name="latent"),
+            ],
+        )
 
-    RETURN_TYPES = ("CONDITIONING", "LATENT")
-    RETURN_NAMES = ("conditioning", "latent")
-    FUNCTION = "go"
-    CATEGORY = CATEGORY
-    DESCRIPTION = ("ref2va conditioning where the keyframe is also presented to the "
-                   "language model. Chain clips by feeding the previous clip's last "
-                   "frame (H3 Chain Frame) into `keyframe`.")
-
-    def go(self, clip, vae, audio_vae, prompt, width, height, length, ref_image_size,
-           **kw):
+    @classmethod
+    def execute(cls, clip, vae, audio_vae, prompt, width, height, length,
+                ref_image_size="max", ref_images=None, keyframe=None,
+                keyframe_time=0.0, present_keyframe=True):
         import math
         import comfy.nested_tensor
         import comfy.model_management
         import comfy.utils
         patch_packed_layout()
 
-        frame_count = align_frames(length)
+        frame_count = snap_run(length)
         latent_t = video_latent_t(frame_count)
         audio_t = round(frame_count / 24.0 * 40)
         dev = comfy.model_management.intermediate_device()
@@ -367,15 +416,14 @@ class H3ReferenceToVideoLongForm:
             return s.movedim(1, -1)
 
         ref_items, ref_blocks = [], []
-        for i in range(1, 6):
-            img = kw.get(f"ref_image_{i}")
+        for img in (ref_images or {}).values():
             if img is None:
                 continue
             h, w = img.shape[1], img.shape[2]
             if ref_image_size == "match":
                 scale = min(1.0, math.sqrt((width * height) / (w * h)))
             else:
-                scale = min(1.0, 2048 / min(w, h))
+                scale = min(1.0, REF_IMAGE_SHORT_EDGE / min(w, h))
             tw = max(32, round(w * scale / 32) * 32)
             th = max(32, round(h * scale / 32) * 32)
             r = resize(img[:1], tw, th, "disabled")
@@ -384,14 +432,13 @@ class H3ReferenceToVideoLongForm:
                                "latent_w": tw // 16, "latent": vae.encode(r)})
 
         keyframes = []
-        kf = kw.get("keyframe")
-        if kf is not None:
-            kimg = resize(kf[:1], width, height, "disabled")
-            idx = int(round(float(kw.get("keyframe_time", 0.0)) * 24.0))
+        if keyframe is not None:
+            kimg = resize(keyframe[:1], width, height, "disabled")
+            idx = int(round(float(keyframe_time) * 24.0))
             idx = 0 if idx <= 0 else min(idx, frame_count - 1)
             keyframes.append({"resolved_frame_index": idx, "latent": vae.encode(kimg),
                               "latent_t": 1})
-            if kw.get("present_keyframe", True):
+            if present_keyframe:
                 # presentation ONLY — no ref block, so it stays a keyframe to the DiT
                 # while the LM still sees it. This is the whole point of the node.
                 ref_items.append({"type": "image", "data": kimg})
@@ -409,7 +456,7 @@ class H3ReferenceToVideoLongForm:
             values["cond_video_latents"] = ([r["latent"] for r in ref_blocks]
                                             + [k["latent"] for k in keyframes])
             cond = node_helpers.conditioning_set_values(cond, values)
-        return (cond, latent)
+        return io.NodeOutput(cond, latent)
 
 
 NODE_CLASS_MAPPINGS = {

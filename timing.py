@@ -62,8 +62,27 @@ def frame_groups(latent_t):
 
 
 def align_frames(seconds):
-    """Seconds -> the next legal video run (17n+5). Ignores the audio grid."""
+    """SECONDS -> the next legal video run (17n+5). Ignores the audio grid.
+
+    Takes seconds, NOT frames. Handing it a frame count multiplies by 24 and
+    returns a run 24x too long — `align_frames(345)` is 8284, not 345. Two nodes
+    shipped that mistake (fixed 2026-08-22); if you have a frame count already,
+    you want `snap_run` below.
+    """
     n = max(5, round(float(seconds) * FPS))
+    while n % 17 != 5:
+        n += 1
+    return n
+
+
+def snap_run(frames):
+    """FRAMES -> the next legal video run (17n+5), rounding UP.
+
+    Matches core's `align_frame_count` in comfy_extras/nodes_minimax_h3.py, so a
+    length widget reports the run H3 will actually allocate. Rounding up is core's
+    choice, not ours: a graph that asks for 121 frames gets 124.
+    """
+    n = max(5, int(frames))
     while n % 17 != 5:
         n += 1
     return n

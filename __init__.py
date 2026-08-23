@@ -11,6 +11,8 @@ where possible so they can be tested without ComfyUI.
 
 from .audio import (NODE_CLASS_MAPPINGS as _AUDIO_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _AUDIO_NAMES, PRESETS)
+from .budget import (NODE_CLASS_MAPPINGS as _BUDGET_CLASSES,
+                     NODE_DISPLAY_NAME_MAPPINGS as _BUDGET_NAMES)
 from .character import (NODE_CLASS_MAPPINGS as _CHAR_CLASSES,
                         NODE_DISPLAY_NAME_MAPPINGS as _CHAR_NAMES)
 from .crop import (NODE_CLASS_MAPPINGS as _CROP_CLASSES,
@@ -32,6 +34,7 @@ from .video import (NODE_CLASS_MAPPINGS as _VID_CLASSES,
 
 _PARTS = (
     (_AUDIO_CLASSES, _AUDIO_NAMES),
+    (_BUDGET_CLASSES, _BUDGET_NAMES),
     (_CHAR_CLASSES, _CHAR_NAMES),
     (_CROP_CLASSES, _CROP_NAMES),
     (_LF_CLASSES, _LF_NAMES),
