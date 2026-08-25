@@ -22,6 +22,18 @@ from .cropplan import plan
 
 CATEGORY = "MiniMax H3/mask"
 
+# H3's own canvas ceiling: adapt_canvas() scales everything down to
+# MAX_PIXELS = 768*1344, so ~1.03 MP is the largest area the model works at.
+# `upscale_megapixels` used to allow 4.0 -- nearly 4x past that, at roughly 225x
+# the attention cost of a 0.26 MP crop, reachable by dragging a slider with no
+# warning at all. Imported from core so a change upstream follows; the literal
+# is the v0.33.2 value.
+try:
+    from comfy_extras.nodes_minimax_h3 import MAX_PIXELS as _H3_MAX_PIXELS
+except Exception:  # pragma: no cover - core moved or renamed
+    _H3_MAX_PIXELS = 768 * 1344
+H3_CANVAS_MP = round(_H3_MAX_PIXELS / 1e6, 2)
+
 
 def _bboxes(mask, threshold=0.5):
     """Per-frame inclusive (x0, y0, x1, y1), or None where the mask is empty.
@@ -98,7 +110,8 @@ class H3SubjectCrop:
                                          "crop lags a real move."}),
             "divisible_by": ("INT", {"default": 32, "min": 8, "max": 128, "step": 8,
                              "tooltip": "H3 needs 32. Leave it."}),
-            "upscale_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 4.0,
+            "upscale_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0,
+                                   "max": H3_CANVAS_MP,
                                    "step": 0.05,
                                    "tooltip": "0 = off, and the crop stays pixel-exact. "
                                               "Above 0, the cut region is scaled UP to "
@@ -107,9 +120,19 @@ class H3SubjectCrop:
                                               "rather than just a saving: a face cut out "
                                               "of a wide frame occupies few latent cells, "
                                               "and enlarging it to the same budget the "
-                                              "whole frame had gives it many more. Never "
-                                              "scales down. H3 Subject Uncrop puts it "
-                                              "back at the original size."}),
+                                              "whole frame had gives it many more. This "
+                                              "INTERPOLATES -- it adds resolution, not "
+                                              "information, so past a point you are only "
+                                              "giving the model more empty pixels to "
+                                              "invent into, at quadratic cost, with more "
+                                              "latent cells free to drift from the source. "
+                                              "Judge by the enlargement factor `info` "
+                                              "reports, not by this number: the same "
+                                              "target is a different operation on a small "
+                                              "face and a large one. Capped at H3's own "
+                                              "1.03 MP canvas. Never scales down. H3 "
+                                              "Subject Uncrop puts it back at the "
+                                              "original size."}),
             "mask_2": ("MASK", {"tooltip": "A second mask cut by the SAME box, for "
                                            "anything that has to stay aligned with the "
                                            "crop — a forget mask, an occluder mask. Only "
@@ -216,6 +239,19 @@ class H3SubjectCrop:
                 text += (f" | upscale_megapixels {up:.2f} is not larger than the crop's "
                          f"{w * h / 1e6:.2f} MP, so it was skipped — this never scales "
                          f"down")
+
+        # The render size is what actually decides cost, and nothing else in the
+        # graph shows it. Attention goes roughly as the square of the token
+        # count, so a slider nudge here is not a linear expense: 0.26 -> 4.00 MP
+        # is 15x the tokens and ~225x the attention. Say it out loud.
+        _mp = (w * h) / 1e6
+        _cells = (w // 32) * (h // 32)
+        text += (f"\n  render {w}x{h} = {_mp:.2f} MP, {_cells:,} tokens per latent "
+                 f"frame")
+        if _mp > H3_CANVAS_MP:
+            text += (f"\n  WARNING: past H3's own canvas cap of {H3_CANVAS_MP:.2f} MP "
+                     f"(MAX_PIXELS 768x1344) — out of the trained range, and the cost "
+                     f"is quadratic")
 
         crop_data = {"boxes": boxes, "image_width": iw, "image_height": ih,
                      "frames": n, "render_width": int(w), "render_height": int(h)}
