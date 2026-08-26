@@ -29,6 +29,8 @@ from .prompt_rewriter import (NODE_CLASS_MAPPINGS as _RW_CLASSES,
                               NODE_DISPLAY_NAME_MAPPINGS as _RW_NAMES)
 from .prompt_scene import (NODE_CLASS_MAPPINGS as _SCENE_CLASSES,
                            NODE_DISPLAY_NAME_MAPPINGS as _SCENE_NAMES)
+from .windowing import (NODE_CLASS_MAPPINGS as _WIN_CLASSES,
+                        NODE_DISPLAY_NAME_MAPPINGS as _WIN_NAMES)
 from .video import (NODE_CLASS_MAPPINGS as _VID_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _VID_NAMES)
 
@@ -44,6 +46,7 @@ _PARTS = (
     (_RW_CLASSES, _RW_NAMES),
     (_SCENE_CLASSES, _SCENE_NAMES),
     (_VID_CLASSES, _VID_NAMES),
+    (_WIN_CLASSES, _WIN_NAMES),
 )
 
 NODE_CLASS_MAPPINGS = {}
