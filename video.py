@@ -414,7 +414,23 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
     @classmethod
     def execute(cls, clip, vae, audio_vae, prompt, width, height, length,
                 ref_image_size="max", ref_images=None, keyframe=None,
-                keyframe_time=0.0, present_keyframe=True):
+                keyframe_time=0.0, present_keyframe=True, **kwargs):
+        # An Autogrow input is DOCUMENTED to arrive as {name: value}, and stock
+        # MiniMaxH3ReferenceToVideo receives it that way. Registered through
+        # NODE_CLASS_MAPPINGS rather than comfy_entrypoint it can instead arrive
+        # as separate ref_image_N kwargs, which raised
+        #   TypeError: execute() got an unexpected keyword argument 'ref_image_1'
+        # on ComfyUI 0.34.0. Accept both rather than betting on one: the numeric
+        # suffix decides order, so <Picture n> numbering stays stable either way.
+        if not ref_images:
+            loose = [(k, v) for k, v in kwargs.items()
+                     if k.startswith("ref_image_") and v is not None]
+
+            def _order(item):
+                tail = item[0].rsplit("_", 1)[-1]
+                return int(tail) if tail.isdigit() else 1 << 30
+
+            ref_images = {k: v for k, v in sorted(loose, key=_order)}
         import math
         import comfy.nested_tensor
         import comfy.model_management
