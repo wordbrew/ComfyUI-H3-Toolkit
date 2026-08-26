@@ -25,6 +25,8 @@ extrapolation of the same positional maths, not a measured result.
     video acts as a destination and the clip converges onto it.
 """
 
+import inspect
+
 import torch
 
 import comfy.model_management
@@ -69,6 +71,7 @@ def patch_packed_layout():
         return False
 
     Base = M.PackedLayout
+    _BASE_PARAMS = set(inspect.signature(Base.__init__).parameters)
     if getattr(Base, "_h3_longform_patched", False):
         _PATCHED = True
         return True
@@ -84,9 +87,25 @@ def patch_packed_layout():
 
         def __init__(self, text_len, latent_t, latent_h, latent_w, audio_t,
                      keyframes=None, refs=None, frame_count=None):
+            # Forward ONLY what this build's PackedLayout accepts. ComfyUI
+            # 0.34.0 dropped `frame_count` from the signature, and forwarding it
+            # blindly raised TypeError on the no-keyframes path -- which is most
+            # renders. Introspecting instead of hard-coding means the next
+            # signature change degrades rather than crashes.
+            base_kw = {"keyframes": None, "refs": refs}
+            base_kw = {k: v for k, v in base_kw.items() if k in _BASE_PARAMS}
+            if "frame_count" in _BASE_PARAMS:
+                base_kw["frame_count"] = frame_count
+
+            # Core no longer passes frame_count either, so a keyframe pinned to
+            # the LAST frame would silently never resolve. Derive it: a legal run
+            # is 17n+5 and its latent length is 5n+2, so the map is exact.
+            if frame_count is None and latent_t >= 2:
+                frame_count = (int(latent_t) - 2) // 5 * 17 + 5
+
             if not keyframes:
                 super().__init__(text_len, latent_t, latent_h, latent_w, audio_t,
-                                 keyframes=None, refs=refs, frame_count=frame_count)
+                                 **base_kw)
                 return
 
             frame, w_grid = _frame_grid(latent_h, latent_w)
