@@ -381,19 +381,39 @@ class H3ContextWindows:
         w_lat = wf // 17 * 5
         o_lat = of // 17 * 5
 
+        # Look the node up by its NODE ID, not by a Python class name. The class
+        # is `ContextWindowsManualNode` while the id is `ContextWindowsManual`,
+        # and importing the guessed name failed outright. The id is the stable
+        # contract -- it is what saved workflows store -- so resolve through the
+        # registry and fall back to the module only if that misses.
+        CWM = None
         try:
-            from comfy_extras.nodes_context_windows import ContextWindowsManual as CWM
-        except Exception as exc:
-            return {"ui": {"h3char": [f"Context Windows unavailable: {exc}"]},
-                    "result": (model, f"Context Windows unavailable: {exc}")}
+            import nodes as comfy_nodes
+            CWM = getattr(comfy_nodes, "NODE_CLASS_MAPPINGS", {}).get(
+                "ContextWindowsManual")
+        except Exception:
+            pass
+        if CWM is None:
+            try:
+                import comfy_extras.nodes_context_windows as M
+                CWM = (getattr(M, "ContextWindowsManualNode", None)
+                       or getattr(M, "ContextWindowsManual", None))
+            except Exception as exc:
+                CWM = None
+                notes.append(f"import failed: {type(exc).__name__}: {exc}")
+        if CWM is None:
+            msg = ("Context Windows node not found. This ComfyUI has no\n"
+                   "  ContextWindowsManual — windowing is unavailable here.")
+            return {"ui": {"h3char": [msg]}, "result": (model, msg)}
 
         out = CWM.execute(model=model, context_length=w_lat, context_overlap=o_lat,
                           context_schedule=schedule, context_stride=1,
-                          closed_loop=False, fuse_method=fuse_method, dim=VIDEO_TIME_DIM,
-                          freenoise=freenoise, cond_retain_index_list="",
-                          split_conds_to_windows=False, latent_retain_index_list="",
-                          causal_window_fix=True)
-        patched = out.result[0] if hasattr(out, "result") else out[0]
+                          closed_loop=False, fuse_method=fuse_method,
+                          dim=VIDEO_TIME_DIM, freenoise=freenoise,
+                          cond_retain_index_list=[], split_conds_to_windows=False,
+                          latent_retain_index_list=[], causal_window_fix=True)
+        patched = out.result[0] if hasattr(out, "result") else (
+            out[0] if isinstance(out, (list, tuple)) else out)
 
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
