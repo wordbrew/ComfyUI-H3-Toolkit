@@ -12,6 +12,7 @@ Run it after editing any workflow JSON by hand or by script:
     python3 validate_workflows.py workflows/*.json
 """
 
+import glob
 import json
 import sys
 from collections import Counter
@@ -91,7 +92,15 @@ def check(path):
 
 def main(paths):
     bad = 0
+    # expand patterns ourselves so `python3 validate_workflows.py` checks every
+    # workflow whether or not the shell got to the argument first
+    expanded = []
     for p in paths:
+        expanded.extend(sorted(glob.glob(p)) if any(c in p for c in "*?[") else [p])
+    if not expanded:
+        print("no workflows matched")
+        return 1
+    for p in expanded:
         errs = check(p)
         name = p.rsplit("/", 1)[-1]
         if errs:
