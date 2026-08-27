@@ -178,15 +178,18 @@ def patch_h3_context_windows():
         state.prepare_window = prepare_window
         state._h3_windowing_patched = True
 
-    # ---- 3. fuse each modality on ITS OWN axis ---------------------------- #
-    # combine_context_window_results builds ONE weights tensor from the primary
-    # dim and multiplies EVERY modality's output by it:
-    #     weights_tensor = match_weights_to_dim(weights, x_in, self.dim, ...)
-    #     for i in range(len(sub_conds_out)):
-    #         window.add_window(conds_final[i], sub_conds_out[i] * weights_tensor)
-    # For H3 that meets the audio's stereo axis and dies with
+    # ---- 3. fuse on the window's OWN dim, not the handler's ---------------- #
+    # combine_context_window_results is already called PER MODALITY -- it gets
+    # that modality's latent and its own window (execute():599-607). But inside,
+    # it builds the fusion weights from `self.dim`, the handler's PRIMARY dim,
+    # rather than `window.dim`. For H3's [B, 32, 2, T] audio that is the stereo
+    # axis, and a real render died with
     #   "size of tensor a (2) must match the size of tensor b (150) at dim 2"
-    # LTXAV survives it only because its audio time is also dim 2.
+    # -- 2 the stereo axis, 150 the audio length for a 90-frame window.
+    #
+    # Since the window passed in already carries the right dim (patch 2 above
+    # sets it), swapping self.dim -> window.dim is a NO-OP for every existing
+    # model, whose modality dims equal the primary's, and correct for H3.
     handler = getattr(CW, "IndexListContextHandler", None)
     if handler is not None and not getattr(handler, "_h3_windowing_patched", False):
         original_combine = handler.combine_context_window_results
@@ -194,38 +197,34 @@ def patch_h3_context_windows():
         def combine(self, x_in, sub_conds_out, sub_conds, window, window_idx,
                     total_windows, timestep, conds_final, counts_final,
                     biases_final):
-            mw = getattr(window, "modality_windows", None) or {}
-            # Only take over when a modality genuinely sits on another axis.
-            # Everything else -- every other model -- keeps core's path exactly.
-            off_axis = {i: w for i, w in mw.items()
-                        if i < len(sub_conds_out)
-                        and getattr(w, "dim", self.dim) != self.dim}
-            if not off_axis or self.fuse_method.name == CW.ContextFuseMethods.RELATIVE:
+            wdim = getattr(window, "dim", self.dim)
+            if wdim == self.dim:
                 return original_combine(self, x_in, sub_conds_out, sub_conds,
                                         window, window_idx, total_windows,
                                         timestep, conds_final, counts_final,
                                         biases_final)
-
-            weights = CW.get_context_weights(
-                window.context_length, x_in.shape[self.dim], window.index_list,
-                self, sigma=timestep, context_overlap=window.context_overlap)
-            wt = CW.match_weights_to_dim(weights, x_in, self.dim, device=x_in.device)
-
-            for i in range(len(sub_conds_out)):
-                sub = off_axis.get(i)
-                if sub is None:
-                    window.add_window(conds_final[i], sub_conds_out[i] * wt)
-                    window.add_window(counts_final[i], wt)
-                    continue
-                d = sub.dim
-                w_i = CW.get_context_weights(
-                    len(sub.index_list), conds_final[i].shape[d], sub.index_list,
-                    self, sigma=timestep,
-                    context_overlap=getattr(sub, "context_overlap", 0))
-                wt_i = CW.match_weights_to_dim(w_i, conds_final[i], d,
-                                               device=x_in.device)
-                sub.add_window(conds_final[i], sub_conds_out[i] * wt_i, dim=d)
-                sub.add_window(counts_final[i], wt_i, dim=d)
+            if self.fuse_method.name == CW.ContextFuseMethods.RELATIVE:
+                for pos, idx in enumerate(window.index_list):
+                    bias = 1 - abs(idx - (window.index_list[0] + window.index_list[-1]) / 2) \
+                        / ((window.index_list[-1] - window.index_list[0] + 1e-2) / 2)
+                    bias = max(1e-2, bias)
+                    for i in range(len(sub_conds_out)):
+                        bias_total = biases_final[i][idx]
+                        prev_w = bias_total / (bias_total + bias)
+                        new_w = bias / (bias_total + bias)
+                        iw = tuple([slice(None)] * wdim + [idx])
+                        pw = tuple([slice(None)] * wdim + [pos])
+                        conds_final[i][iw] = (conds_final[i][iw] * prev_w
+                                              + sub_conds_out[i][pw] * new_w)
+                        biases_final[i][idx] = bias_total + bias
+            else:
+                weights = CW.get_context_weights(
+                    window.context_length, x_in.shape[wdim], window.index_list,
+                    self, sigma=timestep, context_overlap=window.context_overlap)
+                wt = CW.match_weights_to_dim(weights, x_in, wdim, device=x_in.device)
+                for i in range(len(sub_conds_out)):
+                    window.add_window(conds_final[i], sub_conds_out[i] * wt, dim=wdim)
+                    window.add_window(counts_final[i], wt, dim=wdim)
 
             for cb in comfy.patcher_extension.get_all_callbacks(
                     CW.IndexListCallbacks.COMBINE_CONTEXT_WINDOW_RESULTS,
@@ -277,14 +276,24 @@ class H3EnableContextWindows:
     def go(self, model):
         ok = patch_h3_context_windows()
         if ok:
-            text = ("H3 context windowing ENABLED.\n"
-                    "  video windows on dim 2; audio remapped onto dim 3\n"
-                    "  video->audio mapping uses the real (1,4,4,4,4) frame grid,\n"
-                    "  not a proportional split — core's generic mapping is off by\n"
-                    "  up to 3 pixel frames, worst at the clip start.\n"
-                    "  Now wire Context Windows (Manual) into the sampler.\n"
-                    "  NOTE this bounds attention cost, NOT memory: the whole\n"
-                    "  latent stays resident.")
+            text = (
+                "H3 context windowing: PATCHED BUT NOT USABLE on this build.\n"
+                "  Three of core's shared-modality-dim assumptions are patched:\n"
+                "    the model hooks, the window builder, and the fusion weights.\n"
+                "  A FOURTH is not. IndexListContextHandler.execute allocates its\n"
+                "  accumulators with get_shape_for_dim(m, self.dim) and\n"
+                "  [0.0] * m.shape[self.dim] for EVERY modality. On H3's\n"
+                "  [B, 32, 2, T] audio that is the stereo axis, so counts come out\n"
+                "  [1,1,2,1] and biases length 2. Fixing it means vendoring a large\n"
+                "  core method, which breaks on every ComfyUI update.\n"
+                "\n"
+                "  Core's context windows assume every modality's time axis sits at\n"
+                "  the same dim as the primary's. LTXAV satisfies that; H3 does not.\n"
+                "  The real fix is upstream. Until then use H3 Chunk Plan and\n"
+                "  separate passes.\n"
+                "\n"
+                "  The (1,4,4,4,4) video->audio mapping in this file IS correct and\n"
+                "  is the piece worth contributing upstream.")
         else:
             text = ("Could not patch — comfy.context_windows or MiniMaxH3 was not "
                     "importable on this build. Context windowing is unavailable.")
