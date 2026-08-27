@@ -362,7 +362,6 @@ class H3ChunkPlan:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "source_images": ("IMAGE", {"tooltip": "The whole clip."}),
             "chunk_frames": ("INT", {"default": 90, "min": 5, "max": 3600, "step": 1,
                              "tooltip": "Target chunk size. 39/90/141/192/243/294/"
                                         "345 land on BOTH clocks. Shorter chunks "
@@ -375,6 +374,16 @@ class H3ChunkPlan:
                                        "never describes two scenes. fixed: uniform "
                                        "size, may straddle a cut."}),
         }, "optional": {
+            "source_images": ("IMAGE", {"tooltip": "The clip to chunk. Leave "
+                                        "UNWIRED for fresh generation and set "
+                                        "total_frames instead — there is no "
+                                        "source to slice, so chunks are just a "
+                                        "schedule."}),
+            "total_frames": ("INT", {"default": 0, "min": 0, "max": 36000,
+                             "step": 1,
+                             "tooltip": "Fresh generation only: how long the "
+                                        "finished piece should be. Ignored when "
+                                        "source_images is wired."}),
             "scene_threshold": ("FLOAT", {"default": 0.12, "min": 0.005, "max": 1.0,
                                 "step": 0.005,
                                 "tooltip": "Mean absolute frame difference that "
@@ -400,12 +409,18 @@ class H3ChunkPlan:
     DESCRIPTION = ("Plan where a long clip gets cut into chunks, aligned to scene "
                    "changes or to a fixed size. Reports the plan before you run it.")
 
-    def go(self, source_images, chunk_frames, chunk_mode, scene_threshold=0.12,
-           min_chunk=39, render_width=0, render_height=0, ref_tokens=0):
-        n = int(source_images.shape[0])
+    def go(self, chunk_frames, chunk_mode, source_images=None, total_frames=0,
+           scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
+           ref_tokens=0):
+        n = int(source_images.shape[0]) if source_images is not None else int(total_frames)
+        if n <= 0:
+            msg = ("Nothing to plan. Wire source_images for a V2V pass, or set "
+                   "total_frames for a fresh generation.")
+            return {"ui": {"h3char": [msg]},
+                    "result": ({"chunks": [], "info": {}, "total_frames": 0}, 0, msg)}
 
         cuts = []
-        if chunk_mode == "scene" and n > 1:
+        if chunk_mode == "scene" and source_images is not None and n > 1:
             # mean |delta| per frame against its predecessor. Cheap, and a hard
             # cut changes the whole picture in one frame so it stands well clear
             # of ordinary motion.
