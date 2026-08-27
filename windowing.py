@@ -14,16 +14,24 @@ WHY H3 CANNOT USE IT UNPATCHED
   its masks sliced per window. `MiniMaxH3` inherits `BaseModel` and implements
   NEITHER, even though it has the whole masked-denoise machinery.
 
-  And there is a third obstacle that is not a missing method. In
-  `WindowingState.prepare_window`, core computes a modality's length as
+  Two further obstacles are not missing methods at all. Core's windowing assumes
+  every modality's temporal axis sits at the SAME dim as the primary's, and H3
+  breaks that in two separate places:
 
-      modality_total_frames = self.latents[mod_idx].shape[self.dim]
+    `WindowingState.prepare_window` computes a modality's length as
+    `self.latents[i].shape[self.dim]` and builds its window with `dim=self.dim`.
+    For H3's `[B, 32, 2, T]` audio that reads the STEREO axis, not the length.
 
-  where `self.dim` is the PRIMARY (video) temporal axis, 2. H3's audio latent is
-  `[B, 32, 2, T]` -- dim 2 is the stereo-pair axis, so that reads 2 instead of
-  the audio length, and the audio window would slice the wrong axis entirely.
-  LTXAV escapes this only because its audio time genuinely sits at dim 2.
-  So the model hook alone is not enough; the window builder has to be told.
+    `IndexListContextHandler.combine_context_window_results` builds ONE weights
+    tensor from the primary dim and multiplies EVERY modality's output by it.
+    That killed a real render with
+      "size of tensor a (2) must match the size of tensor b (150) at dim 2"
+    -- 2 being the stereo axis and 150 the audio length for a 90-frame window.
+
+  LTXAV escapes both only because its audio time genuinely sits at dim 2. This
+  file patches all three points. Scope was misjudged twice on the way here: the
+  research said "two methods", reading said "three points", and the first render
+  found a fourth. There may be more.
 
 WHAT WE KNOW THAT CORE DOES NOT
   LTXAV maps video indices to audio PROPORTIONALLY. For H3 that is wrong. The
@@ -101,6 +109,7 @@ def patch_h3_context_windows():
         import torch
         import comfy.model_base as MB
         import comfy.context_windows as CW
+        import comfy.patcher_extension
     except Exception:
         return False
 
@@ -168,6 +177,65 @@ def patch_h3_context_windows():
 
         state.prepare_window = prepare_window
         state._h3_windowing_patched = True
+
+    # ---- 3. fuse each modality on ITS OWN axis ---------------------------- #
+    # combine_context_window_results builds ONE weights tensor from the primary
+    # dim and multiplies EVERY modality's output by it:
+    #     weights_tensor = match_weights_to_dim(weights, x_in, self.dim, ...)
+    #     for i in range(len(sub_conds_out)):
+    #         window.add_window(conds_final[i], sub_conds_out[i] * weights_tensor)
+    # For H3 that meets the audio's stereo axis and dies with
+    #   "size of tensor a (2) must match the size of tensor b (150) at dim 2"
+    # LTXAV survives it only because its audio time is also dim 2.
+    handler = getattr(CW, "IndexListContextHandler", None)
+    if handler is not None and not getattr(handler, "_h3_windowing_patched", False):
+        original_combine = handler.combine_context_window_results
+
+        def combine(self, x_in, sub_conds_out, sub_conds, window, window_idx,
+                    total_windows, timestep, conds_final, counts_final,
+                    biases_final):
+            mw = getattr(window, "modality_windows", None) or {}
+            # Only take over when a modality genuinely sits on another axis.
+            # Everything else -- every other model -- keeps core's path exactly.
+            off_axis = {i: w for i, w in mw.items()
+                        if i < len(sub_conds_out)
+                        and getattr(w, "dim", self.dim) != self.dim}
+            if not off_axis or self.fuse_method.name == CW.ContextFuseMethods.RELATIVE:
+                return original_combine(self, x_in, sub_conds_out, sub_conds,
+                                        window, window_idx, total_windows,
+                                        timestep, conds_final, counts_final,
+                                        biases_final)
+
+            weights = CW.get_context_weights(
+                window.context_length, x_in.shape[self.dim], window.index_list,
+                self, sigma=timestep, context_overlap=window.context_overlap)
+            wt = CW.match_weights_to_dim(weights, x_in, self.dim, device=x_in.device)
+
+            for i in range(len(sub_conds_out)):
+                sub = off_axis.get(i)
+                if sub is None:
+                    window.add_window(conds_final[i], sub_conds_out[i] * wt)
+                    window.add_window(counts_final[i], wt)
+                    continue
+                d = sub.dim
+                w_i = CW.get_context_weights(
+                    len(sub.index_list), conds_final[i].shape[d], sub.index_list,
+                    self, sigma=timestep,
+                    context_overlap=getattr(sub, "context_overlap", 0))
+                wt_i = CW.match_weights_to_dim(w_i, conds_final[i], d,
+                                               device=x_in.device)
+                sub.add_window(conds_final[i], sub_conds_out[i] * wt_i, dim=d)
+                sub.add_window(counts_final[i], wt_i, dim=d)
+
+            for cb in comfy.patcher_extension.get_all_callbacks(
+                    CW.IndexListCallbacks.COMBINE_CONTEXT_WINDOW_RESULTS,
+                    self.callbacks):
+                cb(self, x_in, sub_conds_out, sub_conds, window, window_idx,
+                   total_windows, timestep, conds_final, counts_final,
+                   biases_final)
+
+        handler.combine_context_window_results = combine
+        handler._h3_windowing_patched = True
 
     _PATCHED = True
     logging.info("[h3_toolkit] MiniMaxH3 context windowing patched: modality "
