@@ -1,6 +1,6 @@
 {
- "last_node_id": 45,
- "last_link_id": 62,
+ "last_node_id": 47,
+ "last_link_id": 69,
  "nodes": [
   {
    "id": 1,
@@ -22,7 +22,7 @@
      "name": "CLIP",
      "type": "CLIP",
      "links": [
-      26
+      28
      ]
     }
    ],
@@ -52,9 +52,9 @@
      "name": "VAE",
      "type": "VAE",
      "links": [
-      27,
-      38,
-      51
+      29,
+      40,
+      53
      ]
     }
    ],
@@ -83,8 +83,8 @@
      "name": "VAE",
      "type": "VAE",
      "links": [
-      28,
-      41
+      30,
+      43
      ]
     }
    ],
@@ -254,7 +254,7 @@
      "type": "MODEL",
      "links": [
       5,
-      43
+      45
      ]
     }
    ],
@@ -287,7 +287,7 @@
      "name": "MODEL",
      "type": "MODEL",
      "links": [
-      12
+      14
      ]
     },
     {
@@ -334,7 +334,7 @@
      "name": "CONDITIONING",
      "type": "CONDITIONING",
      "links": [
-      13
+      15
      ]
     }
    ],
@@ -362,7 +362,7 @@
      "name": "da_v2_model",
      "type": "DAMODEL",
      "links": [
-      22
+      24
      ]
     }
    ],
@@ -391,7 +391,7 @@
      "name": "SAMPLER",
      "type": "SAMPLER",
      "links": [
-      47
+      49
      ]
     }
    ],
@@ -425,7 +425,7 @@
      "name": "SIGMAS",
      "type": "SIGMAS",
      "links": [
-      48
+      50
      ]
     }
    ],
@@ -455,7 +455,7 @@
      "name": "NOISE",
      "type": "NOISE",
      "links": [
-      45
+      47
      ]
     }
    ],
@@ -484,7 +484,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      33
+      35
      ]
     },
     {
@@ -518,7 +518,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      34
+      36
      ]
     },
     {
@@ -552,7 +552,7 @@
      "name": "AUDIO",
      "type": "AUDIO",
      "links": [
-      36
+      38
      ]
     }
    ],
@@ -615,8 +615,8 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      7,
-      9
+      13,
+      19
      ]
     },
     {
@@ -628,8 +628,8 @@
      "name": "audio",
      "type": "AUDIO",
      "links": [
-      10,
-      58
+      12,
+      65
      ]
     },
     {
@@ -688,13 +688,14 @@
      "name": "info",
      "type": "STRING",
      "links": [
-      59
+      66
      ]
     }
    ],
    "widgets_values": [
     90,
     "scene",
+    "22",
     0,
     0.12,
     39,
@@ -702,7 +703,7 @@
     0,
     0
    ],
-   "title": "1. plan  (render w/h 0 \u2014 the crop decides)"
+   "title": "1. plan  (context 22 = chunks overlap by 22f)"
   },
   {
    "id": 21,
@@ -732,17 +733,17 @@
     {
      "name": "extra_images",
      "type": "IMAGE",
-     "link": null
+     "link": 11
     },
     {
      "name": "mask",
      "type": "MASK",
-     "link": null
+     "link": 10
     },
     {
      "name": "source_audio",
      "type": "AUDIO",
-     "link": 10
+     "link": 12
     }
    ],
    "outputs": [
@@ -750,41 +751,42 @@
      "name": "images",
      "type": "IMAGE",
      "links": [
-      11,
-      17
+      54
      ]
     },
     {
      "name": "mask",
      "type": "MASK",
-     "links": []
+     "links": [
+      55
+     ]
     },
     {
      "name": "audio",
      "type": "AUDIO",
      "links": [
-      42
+      44
      ]
     },
     {
      "name": "length",
      "type": "INT",
      "links": [
-      32
+      34
      ]
     },
     {
      "name": "chunk_index",
      "type": "INT",
      "links": [
-      24
+      26
      ]
     },
     {
      "name": "flow",
      "type": "H3_CHUNK_FLOW",
      "links": [
-      55
+      59
      ]
     },
     {
@@ -796,7 +798,7 @@
      "name": "chunk_count",
      "type": "INT",
      "links": [
-      25
+      27
      ]
     },
     {
@@ -807,18 +809,29 @@
     {
      "name": "context",
      "type": "IMAGE",
-     "links": []
+     "links": [
+      57
+     ]
     },
     {
      "name": "extra",
      "type": "IMAGE",
-     "links": []
+     "links": [
+      37
+     ]
+    },
+    {
+     "name": "pin",
+     "type": "INT",
+     "links": [
+      56
+     ]
     }
    ],
    "widgets_values": [
-    39
+    22
    ],
-   "title": "2. one chunk of raw footage"
+   "title": "2. one chunk, cropped and masked"
   },
   {
    "id": 22,
@@ -846,8 +859,8 @@
    "id": 23,
    "type": "SAM3_VideoTrack",
    "pos": [
-    900,
-    20
+    460,
+    1400
    ],
    "size": [
     360,
@@ -860,12 +873,12 @@
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 11
+     "link": 13
     },
     {
      "name": "model",
      "type": "MODEL",
-     "link": 12
+     "link": 14
     },
     {
      "name": "initial_mask",
@@ -875,7 +888,7 @@
     {
      "name": "conditioning",
      "type": "CONDITIONING",
-     "link": 13
+     "link": 15
     }
    ],
    "outputs": [
@@ -883,7 +896,7 @@
      "name": "track_data",
      "type": "SAM3_TRACK_DATA",
      "links": [
-      14
+      16
      ]
     }
    ],
@@ -897,8 +910,8 @@
    "id": 24,
    "type": "SAM3_TrackToMask",
    "pos": [
-    900,
-    180
+    460,
+    1560
    ],
    "size": [
     360,
@@ -911,7 +924,7 @@
     {
      "name": "track_data",
      "type": "SAM3_TRACK_DATA",
-     "link": 14
+     "link": 16
     }
    ],
    "outputs": [
@@ -919,7 +932,7 @@
      "name": "masks",
      "type": "MASK",
      "links": [
-      15
+      17
      ]
     }
    ],
@@ -931,8 +944,8 @@
    "id": 25,
    "type": "H3MaskStabilize",
    "pos": [
-    900,
-    270
+    460,
+    1650
    ],
    "size": [
     360,
@@ -945,7 +958,7 @@
     {
      "name": "mask",
      "type": "MASK",
-     "link": 15
+     "link": 17
     }
    ],
    "outputs": [
@@ -953,7 +966,7 @@
      "name": "mask",
      "type": "MASK",
      "links": [
-      16
+      18
      ]
     },
     {
@@ -971,8 +984,8 @@
    "id": 26,
    "type": "GrowMaskWithBlur",
    "pos": [
-    900,
-    390
+    460,
+    1770
    ],
    "size": [
     360,
@@ -985,7 +998,7 @@
     {
      "name": "mask",
      "type": "MASK",
-     "link": 16
+     "link": 18
     }
    ],
    "outputs": [
@@ -993,7 +1006,7 @@
      "name": "mask",
      "type": "MASK",
      "links": [
-      18
+      20
      ]
     },
     {
@@ -1017,8 +1030,8 @@
    "id": 27,
    "type": "H3MatchSource",
    "pos": [
-    900,
-    620
+    460,
+    2000
    ],
    "size": [
     360,
@@ -1031,12 +1044,12 @@
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 17
+     "link": 19
     },
     {
      "name": "mask",
      "type": "MASK",
-     "link": 18
+     "link": 20
     },
     {
      "name": "mask_2",
@@ -1049,16 +1062,16 @@
      "name": "images",
      "type": "IMAGE",
      "links": [
-      19,
       21,
-      53
+      23,
+      62
      ]
     },
     {
      "name": "mask",
      "type": "MASK",
      "links": [
-      20
+      22
      ]
     },
     {
@@ -1099,8 +1112,8 @@
    "id": 28,
    "type": "H3SubjectCrop",
    "pos": [
-    900,
-    850
+    460,
+    2230
    ],
    "size": [
     360,
@@ -1113,12 +1126,12 @@
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 19
+     "link": 21
     },
     {
      "name": "mask",
      "type": "MASK",
-     "link": 20
+     "link": 22
     },
     {
      "name": "mask_2",
@@ -1131,14 +1144,15 @@
      "name": "images",
      "type": "IMAGE",
      "links": [
-      39
+      7,
+      9
      ]
     },
     {
      "name": "mask",
      "type": "MASK",
      "links": [
-      40
+      10
      ]
     },
     {
@@ -1150,28 +1164,28 @@
      "name": "width",
      "type": "INT",
      "links": [
-      30
+      32
      ]
     },
     {
      "name": "height",
      "type": "INT",
      "links": [
-      31
+      33
      ]
     },
     {
      "name": "crop_data",
      "type": "H3_CROP",
      "links": [
-      54
+      63
      ]
     },
     {
      "name": "info",
      "type": "STRING",
      "links": [
-      62
+      69
      ]
     }
    ],
@@ -1188,8 +1202,8 @@
    "id": 29,
    "type": "ImageScaleBy",
    "pos": [
-    900,
-    1100
+    460,
+    2480
    ],
    "size": [
     360,
@@ -1202,7 +1216,7 @@
     {
      "name": "image",
      "type": "IMAGE",
-     "link": 21
+     "link": 23
     }
    ],
    "outputs": [
@@ -1210,7 +1224,7 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      23
+      25
      ]
     }
    ],
@@ -1223,8 +1237,8 @@
    "id": 30,
    "type": "DepthAnything_V2",
    "pos": [
-    900,
-    1210
+    460,
+    2590
    ],
    "size": [
     360,
@@ -1237,12 +1251,12 @@
     {
      "name": "da_model",
      "type": "DAMODEL",
-     "link": 22
+     "link": 24
     },
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 23
+     "link": 25
     }
    ],
    "outputs": [
@@ -1250,7 +1264,7 @@
      "name": "image",
      "type": "IMAGE",
      "links": [
-      35
+      11
      ]
     }
    ],
@@ -1258,6 +1272,102 @@
   },
   {
    "id": 31,
+   "type": "H3ChunkContext",
+   "pos": [
+    900,
+    20
+   ],
+   "size": [
+    360,
+    200
+   ],
+   "flags": {},
+   "order": 30,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 54
+    },
+    {
+     "name": "mask",
+     "type": "MASK",
+     "link": 55
+    },
+    {
+     "name": "pin",
+     "type": "INT",
+     "link": 56,
+     "widget": {
+      "name": "pin"
+     }
+    },
+    {
+     "name": "context_images",
+     "type": "IMAGE",
+     "link": 57
+    }
+   ],
+   "outputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "links": [
+      41
+     ]
+    },
+    {
+     "name": "mask",
+     "type": "MASK",
+     "links": [
+      42
+     ]
+    },
+    {
+     "name": "pinned",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": [
+      58
+     ]
+    }
+   ],
+   "widgets_values": [
+    22
+   ],
+   "title": "carry the seam \u2014 22 frames"
+  },
+  {
+   "id": 32,
+   "type": "PreviewAny",
+   "pos": [
+    900,
+    260
+   ],
+   "size": [
+    360,
+    160
+   ],
+   "flags": {},
+   "order": 31,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "source",
+     "type": "*",
+     "link": 58
+    }
+   ],
+   "outputs": [],
+   "title": "CONTEXT \u2014 what got pinned"
+  },
+  {
+   "id": 33,
    "type": "H3LongFormLinks",
    "pos": [
     1300,
@@ -1268,13 +1378,13 @@
     460
    ],
    "flags": {},
-   "order": 30,
+   "order": 32,
    "mode": 0,
    "inputs": [
     {
      "name": "link_index",
      "type": "INT",
-     "link": 24,
+     "link": 26,
      "widget": {
       "name": "link_index"
      }
@@ -1282,7 +1392,7 @@
     {
      "name": "expected_count",
      "type": "INT",
-     "link": 25,
+     "link": 27,
      "widget": {
       "name": "expected_count"
      }
@@ -1293,7 +1403,7 @@
      "name": "prompt",
      "type": "STRING",
      "links": [
-      29
+      31
      ]
     },
     {
@@ -1320,7 +1430,7 @@
      "name": "lint",
      "type": "STRING",
      "links": [
-      61
+      68
      ]
     }
    ],
@@ -1337,7 +1447,7 @@
    "title": "3. one clause per chunk \u2014 index from Open"
   },
   {
-   "id": 32,
+   "id": 34,
    "type": "MiniMaxH3ReferenceToVideo",
    "pos": [
     1740,
@@ -1348,28 +1458,28 @@
     360
    ],
    "flags": {},
-   "order": 31,
+   "order": 33,
    "mode": 0,
    "inputs": [
     {
      "name": "clip",
      "type": "CLIP",
-     "link": 26
+     "link": 28
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 27
+     "link": 29
     },
     {
      "name": "audio_vae",
      "type": "VAE",
-     "link": 28
+     "link": 30
     },
     {
      "name": "prompt",
      "type": "STRING",
-     "link": 29,
+     "link": 31,
      "widget": {
       "name": "prompt"
      }
@@ -1377,27 +1487,27 @@
     {
      "name": "ref_images.ref_image_0",
      "type": "IMAGE",
-     "link": 33
+     "link": 35
     },
     {
      "name": "ref_images.ref_image_1",
      "type": "IMAGE",
-     "link": 34
+     "link": 36
     },
     {
      "name": "ref_videos.ref_video_0",
      "type": "IMAGE",
-     "link": 35
+     "link": 37
     },
     {
      "name": "ref_audios.ref_audio_0",
      "type": "AUDIO",
-     "link": 36
+     "link": 38
     },
     {
      "name": "width",
      "type": "INT",
-     "link": 30,
+     "link": 32,
      "widget": {
       "name": "width"
      }
@@ -1405,7 +1515,7 @@
     {
      "name": "height",
      "type": "INT",
-     "link": 31,
+     "link": 33,
      "widget": {
       "name": "height"
      }
@@ -1413,7 +1523,7 @@
     {
      "name": "length",
      "type": "INT",
-     "link": 32,
+     "link": 34,
      "widget": {
       "name": "length"
      }
@@ -1424,14 +1534,14 @@
      "name": "positive",
      "type": "CONDITIONING",
      "links": [
-      44
+      46
      ]
     },
     {
      "name": "LATENT",
      "type": "LATENT",
      "links": [
-      37
+      39
      ]
     }
    ],
@@ -1445,7 +1555,7 @@
    "title": "length from Open, w/h from the crop"
   },
   {
-   "id": 33,
+   "id": 35,
    "type": "H3MaskInpaint",
    "pos": [
     1740,
@@ -1456,38 +1566,38 @@
     260
    ],
    "flags": {},
-   "order": 32,
+   "order": 34,
    "mode": 0,
    "inputs": [
     {
      "name": "latent",
      "type": "LATENT",
-     "link": 37
+     "link": 39
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 38
+     "link": 40
     },
     {
      "name": "source_images",
      "type": "IMAGE",
-     "link": 39
+     "link": 41
     },
     {
      "name": "mask",
      "type": "MASK",
-     "link": 40
+     "link": 42
     },
     {
      "name": "audio_vae",
      "type": "VAE",
-     "link": 41
+     "link": 43
     },
     {
      "name": "source_audio",
      "type": "AUDIO",
-     "link": 42
+     "link": 44
     }
    ],
    "outputs": [
@@ -1495,7 +1605,7 @@
      "name": "latent",
      "type": "LATENT",
      "links": [
-      49
+      51
      ]
     },
     {
@@ -1515,7 +1625,7 @@
    ]
   },
   {
-   "id": 34,
+   "id": 36,
    "type": "BasicGuider",
    "pos": [
     1740,
@@ -1526,18 +1636,18 @@
     60
    ],
    "flags": {},
-   "order": 33,
+   "order": 35,
    "mode": 0,
    "inputs": [
     {
      "name": "model",
      "type": "MODEL",
-     "link": 43
+     "link": 45
     },
     {
      "name": "conditioning",
      "type": "CONDITIONING",
-     "link": 44
+     "link": 46
     }
    ],
    "outputs": [
@@ -1545,13 +1655,13 @@
      "name": "GUIDER",
      "type": "GUIDER",
      "links": [
-      46
+      48
      ]
     }
    ]
   },
   {
-   "id": 35,
+   "id": 37,
    "type": "SamplerCustomAdvanced",
    "pos": [
     1740,
@@ -1562,33 +1672,33 @@
     130
    ],
    "flags": {},
-   "order": 34,
+   "order": 36,
    "mode": 0,
    "inputs": [
     {
      "name": "noise",
      "type": "NOISE",
-     "link": 45
+     "link": 47
     },
     {
      "name": "guider",
      "type": "GUIDER",
-     "link": 46
+     "link": 48
     },
     {
      "name": "sampler",
      "type": "SAMPLER",
-     "link": 47
+     "link": 49
     },
     {
      "name": "sigmas",
      "type": "SIGMAS",
-     "link": 48
+     "link": 50
     },
     {
      "name": "latent_image",
      "type": "LATENT",
-     "link": 49
+     "link": 51
     }
    ],
    "outputs": [
@@ -1596,7 +1706,7 @@
      "name": "output",
      "type": "LATENT",
      "links": [
-      50
+      52
      ]
     },
     {
@@ -1607,7 +1717,7 @@
    ]
   },
   {
-   "id": 36,
+   "id": 38,
    "type": "VAEDecode",
    "pos": [
     1740,
@@ -1618,18 +1728,18 @@
     58
    ],
    "flags": {},
-   "order": 35,
+   "order": 37,
    "mode": 0,
    "inputs": [
     {
      "name": "samples",
      "type": "LATENT",
-     "link": 50
+     "link": 52
     },
     {
      "name": "vae",
      "type": "VAE",
-     "link": 51
+     "link": 53
     }
    ],
    "outputs": [
@@ -1637,58 +1747,13 @@
      "name": "IMAGE",
      "type": "IMAGE",
      "links": [
-      52
+      60
      ]
     }
    ]
   },
   {
-   "id": 37,
-   "type": "H3SubjectUncrop",
-   "pos": [
-    1740,
-    1080
-   ],
-   "size": [
-    400,
-    140
-   ],
-   "flags": {},
-   "order": 36,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 52
-    },
-    {
-     "name": "source_images",
-     "type": "IMAGE",
-     "link": 53
-    },
-    {
-     "name": "crop_data",
-     "type": "H3_CROP",
-     "link": 54
-    }
-   ],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      56
-     ]
-    }
-   ],
-   "widgets_values": [
-    16
-   ],
-   "title": "uncrop INSIDE \u2014 chunks join at full frame"
-  },
-  {
-   "id": 38,
+   "id": 39,
    "type": "H3ChunkClose",
    "pos": [
     2200,
@@ -1699,18 +1764,18 @@
     130
    ],
    "flags": {},
-   "order": 37,
+   "order": 38,
    "mode": 0,
    "inputs": [
     {
      "name": "flow",
      "type": "H3_CHUNK_FLOW",
-     "link": 55
+     "link": 59
     },
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 56
+     "link": 60
     }
    ],
    "outputs": [
@@ -1718,43 +1783,88 @@
      "name": "images",
      "type": "IMAGE",
      "links": [
-      57
+      61
      ]
     },
     {
      "name": "info",
      "type": "STRING",
      "links": [
-      60
+      67
      ]
     }
    ],
    "title": "4. clone the body per chunk, join"
   },
   {
-   "id": 39,
-   "type": "VHS_VideoCombine",
+   "id": 40,
+   "type": "H3SubjectUncrop",
    "pos": [
     2200,
     190
    ],
    "size": [
     380,
-    320
+    140
    ],
    "flags": {},
-   "order": 38,
+   "order": 39,
    "mode": 0,
    "inputs": [
     {
      "name": "images",
      "type": "IMAGE",
-     "link": 57
+     "link": 61
+    },
+    {
+     "name": "source_images",
+     "type": "IMAGE",
+     "link": 62
+    },
+    {
+     "name": "crop_data",
+     "type": "H3_CROP",
+     "link": 63
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      64
+     ]
+    }
+   ],
+   "widgets_values": [
+    16
+   ],
+   "title": "5. uncrop the JOINED clip, once"
+  },
+  {
+   "id": 41,
+   "type": "VHS_VideoCombine",
+   "pos": [
+    2200,
+    360
+   ],
+   "size": [
+    380,
+    320
+   ],
+   "flags": {},
+   "order": 40,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 64
     },
     {
      "name": "audio",
      "type": "AUDIO",
-     "link": 58
+     "link": 65
     }
    ],
    "outputs": [],
@@ -1771,7 +1881,7 @@
    }
   },
   {
-   "id": 40,
+   "id": 42,
    "type": "Note",
    "pos": [
     2200,
@@ -1782,18 +1892,18 @@
     320
    ],
    "flags": {},
-   "order": 39,
+   "order": 41,
    "mode": 0,
    "inputs": [],
    "outputs": [],
    "widgets_values": [
-    "WHY UNCROP IS INSIDE\n\nThe crop runs per chunk, so each chunk gets its own box, sized to\nwhere she actually is in those frames rather than to everywhere\nshe goes in the whole clip. That is the point of chunking a long\ntake: the box stays tight.\n\nBoxes differ between chunks, so the chunks cannot be joined at\ncrop size. Uncropping inside puts every chunk back to the same\nfull frame first, and Close joins those.\n\nThe trade: her rendered detail can step at a seam when one chunk's\nbox is much tighter than the next one's. If that shows, raise\nchunk_frames so fewer boxes are in play."
+    "WHY THE CROP IS OUTSIDE\n\nThe carried frames have to line up pixel for pixel with what\nfollows them. A box computed per chunk would move between chunks,\nso the pin would fight the generation instead of anchoring it \u2014\nH3 Chunk Context refuses outright if it sees two sizes.\n\nOne box for the whole clip also means every chunk decodes at the\nsame size, so they join at crop size and uncrop ONCE at the end.\n\nThe cost: on a clip where she crosses the frame, that one box is\nthe union of everywhere she goes, and the subject gets fewer\npixels than a per-chunk box would give her."
    ],
    "color": "#432",
    "bgcolor": "#653"
   },
   {
-   "id": 41,
+   "id": 43,
    "type": "Note",
    "pos": [
     2200,
@@ -1804,7 +1914,7 @@
     260
    ],
    "flags": {},
-   "order": 40,
+   "order": 42,
    "mode": 0,
    "inputs": [],
    "outputs": [],
@@ -1815,7 +1925,7 @@
    "bgcolor": "#653"
   },
   {
-   "id": 42,
+   "id": 44,
    "type": "PreviewAny",
    "pos": [
     2620,
@@ -1826,20 +1936,20 @@
     200
    ],
    "flags": {},
-   "order": 41,
+   "order": 43,
    "mode": 0,
    "inputs": [
     {
      "name": "source",
      "type": "*",
-     "link": 59
+     "link": 66
     }
    ],
    "outputs": [],
    "title": "PLAN \u2014 read before queueing"
   },
   {
-   "id": 43,
+   "id": 45,
    "type": "PreviewAny",
    "pos": [
     2620,
@@ -1850,20 +1960,20 @@
     220
    ],
    "flags": {},
-   "order": 42,
+   "order": 44,
    "mode": 0,
    "inputs": [
     {
      "name": "source",
      "type": "*",
-     "link": 60
+     "link": 67
     }
    ],
    "outputs": [],
    "title": "CLOSE \u2014 what got cloned"
   },
   {
-   "id": 44,
+   "id": 46,
    "type": "PreviewAny",
    "pos": [
     2620,
@@ -1874,20 +1984,20 @@
     180
    ],
    "flags": {},
-   "order": 43,
+   "order": 45,
    "mode": 0,
    "inputs": [
     {
      "name": "source",
      "type": "*",
-     "link": 61
+     "link": 68
     }
    ],
    "outputs": [],
    "title": "PROMPT LINT"
   },
   {
-   "id": 45,
+   "id": 47,
    "type": "PreviewAny",
    "pos": [
     2620,
@@ -1898,13 +2008,13 @@
     180
    ],
    "flags": {},
-   "order": 44,
+   "order": 46,
    "mode": 0,
    "inputs": [
     {
      "name": "source",
      "type": "*",
-     "link": 62
+     "link": 69
     }
    ],
    "outputs": [],
@@ -1962,7 +2072,7 @@
   ],
   [
    7,
-   19,
+   28,
    0,
    20,
    0,
@@ -1978,7 +2088,7 @@
   ],
   [
    9,
-   19,
+   28,
    0,
    21,
    1,
@@ -1986,6 +2096,22 @@
   ],
   [
    10,
+   28,
+   1,
+   21,
+   3,
+   "MASK"
+  ],
+  [
+   11,
+   30,
+   0,
+   21,
+   2,
+   "IMAGE"
+  ],
+  [
+   12,
    19,
    2,
    21,
@@ -1993,15 +2119,15 @@
    "AUDIO"
   ],
   [
-   11,
-   21,
+   13,
+   19,
    0,
    23,
    0,
    "IMAGE"
   ],
   [
-   12,
+   14,
    9,
    0,
    23,
@@ -2009,7 +2135,7 @@
    "MODEL"
   ],
   [
-   13,
+   15,
    10,
    0,
    23,
@@ -2017,7 +2143,7 @@
    "CONDITIONING"
   ],
   [
-   14,
+   16,
    23,
    0,
    24,
@@ -2025,7 +2151,7 @@
    "SAM3_TRACK_DATA"
   ],
   [
-   15,
+   17,
    24,
    0,
    25,
@@ -2033,7 +2159,7 @@
    "MASK"
   ],
   [
-   16,
+   18,
    25,
    0,
    26,
@@ -2041,15 +2167,15 @@
    "MASK"
   ],
   [
-   17,
-   21,
+   19,
+   19,
    0,
    27,
    0,
    "IMAGE"
   ],
   [
-   18,
+   20,
    26,
    0,
    27,
@@ -2057,7 +2183,7 @@
    "MASK"
   ],
   [
-   19,
+   21,
    27,
    0,
    28,
@@ -2065,7 +2191,7 @@
    "IMAGE"
   ],
   [
-   20,
+   22,
    27,
    1,
    28,
@@ -2073,7 +2199,7 @@
    "MASK"
   ],
   [
-   21,
+   23,
    27,
    0,
    29,
@@ -2081,7 +2207,7 @@
    "IMAGE"
   ],
   [
-   22,
+   24,
    11,
    0,
    30,
@@ -2089,7 +2215,7 @@
    "DAMODEL"
   ],
   [
-   23,
+   25,
    29,
    0,
    30,
@@ -2097,314 +2223,354 @@
    "IMAGE"
   ],
   [
-   24,
+   26,
    21,
    4,
-   31,
+   33,
    0,
    "INT"
   ],
   [
-   25,
+   27,
    21,
    7,
-   31,
+   33,
    1,
    "INT"
   ],
   [
-   26,
+   28,
    1,
    0,
-   32,
+   34,
    0,
    "CLIP"
   ],
   [
-   27,
+   29,
    2,
    0,
-   32,
+   34,
    1,
    "VAE"
   ],
   [
-   28,
+   30,
    3,
    0,
-   32,
+   34,
    2,
    "VAE"
   ],
   [
-   29,
    31,
+   33,
    0,
-   32,
+   34,
    3,
    "STRING"
   ],
   [
-   30,
+   32,
    28,
    3,
-   32,
+   34,
    8,
    "INT"
   ],
   [
-   31,
+   33,
    28,
    4,
-   32,
+   34,
    9,
    "INT"
   ],
   [
-   32,
+   34,
    21,
    3,
-   32,
+   34,
    10,
    "INT"
   ],
   [
-   33,
+   35,
    15,
    0,
-   32,
-   4,
-   "IMAGE"
-  ],
-  [
    34,
-   16,
-   0,
-   32,
-   5,
-   "IMAGE"
-  ],
-  [
-   35,
-   30,
-   0,
-   32,
-   6,
+   4,
    "IMAGE"
   ],
   [
    36,
+   16,
+   0,
+   34,
+   5,
+   "IMAGE"
+  ],
+  [
+   37,
+   21,
+   10,
+   34,
+   6,
+   "IMAGE"
+  ],
+  [
+   38,
    17,
    0,
-   32,
+   34,
    7,
    "AUDIO"
   ],
   [
-   37,
-   32,
+   39,
+   34,
    1,
-   33,
+   35,
    0,
    "LATENT"
   ],
   [
-   38,
+   40,
    2,
    0,
-   33,
+   35,
    1,
    "VAE"
   ],
   [
-   39,
-   28,
+   41,
+   31,
    0,
-   33,
+   35,
    2,
    "IMAGE"
   ],
   [
-   40,
-   28,
+   42,
+   31,
    1,
-   33,
+   35,
    3,
    "MASK"
   ],
   [
-   41,
+   43,
    3,
    0,
-   33,
+   35,
    4,
    "VAE"
   ],
   [
-   42,
+   44,
    21,
    2,
-   33,
+   35,
    5,
    "AUDIO"
   ],
   [
-   43,
+   45,
    8,
    0,
-   34,
+   36,
    0,
    "MODEL"
-  ],
-  [
-   44,
-   32,
-   0,
-   34,
-   1,
-   "CONDITIONING"
-  ],
-  [
-   45,
-   14,
-   0,
-   35,
-   0,
-   "NOISE"
   ],
   [
    46,
    34,
    0,
-   35,
+   36,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   47,
+   14,
+   0,
+   37,
+   0,
+   "NOISE"
+  ],
+  [
+   48,
+   36,
+   0,
+   37,
    1,
    "GUIDER"
   ],
   [
-   47,
+   49,
    12,
    0,
-   35,
+   37,
    2,
    "SAMPLER"
   ],
   [
-   48,
+   50,
    13,
    0,
-   35,
+   37,
    3,
    "SIGMAS"
   ],
   [
-   49,
-   33,
-   0,
+   51,
    35,
+   0,
+   37,
    4,
    "LATENT"
   ],
   [
-   50,
-   35,
+   52,
+   37,
    0,
-   36,
+   38,
    0,
    "LATENT"
   ],
   [
-   51,
+   53,
    2,
    0,
-   36,
+   38,
    1,
    "VAE"
   ],
   [
-   52,
-   36,
-   0,
-   37,
-   0,
-   "IMAGE"
-  ],
-  [
-   53,
-   27,
-   0,
-   37,
-   1,
-   "IMAGE"
-  ],
-  [
    54,
-   28,
-   5,
-   37,
-   2,
-   "H3_CROP"
+   21,
+   0,
+   31,
+   0,
+   "IMAGE"
   ],
   [
    55,
    21,
-   5,
-   38,
-   0,
-   "H3_CHUNK_FLOW"
+   1,
+   31,
+   1,
+   "MASK"
   ],
   [
    56,
-   37,
-   0,
-   38,
-   1,
-   "IMAGE"
+   21,
+   11,
+   31,
+   2,
+   "INT"
   ],
   [
    57,
-   38,
-   0,
-   39,
-   0,
+   21,
+   9,
+   31,
+   3,
    "IMAGE"
   ],
   [
    58,
-   19,
-   2,
-   39,
-   1,
-   "AUDIO"
+   31,
+   3,
+   32,
+   0,
+   "STRING"
   ],
   [
    59,
-   20,
-   2,
-   42,
+   21,
+   5,
+   39,
    0,
-   "STRING"
+   "H3_CHUNK_FLOW"
   ],
   [
    60,
    38,
-   1,
-   43,
    0,
-   "STRING"
+   39,
+   1,
+   "IMAGE"
   ],
   [
    61,
-   31,
+   39,
+   0,
+   40,
+   0,
+   "IMAGE"
+  ],
+  [
+   62,
+   27,
+   0,
+   40,
+   1,
+   "IMAGE"
+  ],
+  [
+   63,
+   28,
    5,
+   40,
+   2,
+   "H3_CROP"
+  ],
+  [
+   64,
+   40,
+   0,
+   41,
+   0,
+   "IMAGE"
+  ],
+  [
+   65,
+   19,
+   2,
+   41,
+   1,
+   "AUDIO"
+  ],
+  [
+   66,
+   20,
+   2,
    44,
    0,
    "STRING"
   ],
   [
-   62,
+   67,
+   39,
+   1,
+   45,
+   0,
+   "STRING"
+  ],
+  [
+   68,
+   33,
+   5,
+   46,
+   0,
+   "STRING"
+  ],
+  [
+   69,
    28,
    6,
-   45,
+   47,
    0,
    "STRING"
   ]

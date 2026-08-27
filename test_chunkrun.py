@@ -83,9 +83,10 @@ import chunkrun  # noqa: E402
 import chunkplan  # noqa: E402
 
 
-def make_plan(total, chunk_frames=90):
+def make_plan(total, chunk_frames=90, context=0):
     """The H3_CHUNK_PLAN shape the nodes pass around."""
-    chunks, info = chunkplan.plan(total, chunk_frames=chunk_frames)
+    chunks, info = chunkplan.plan(total, chunk_frames=chunk_frames,
+                                  context=context)
     return {"chunks": chunks, "info": info, "total_frames": total}
 
 
@@ -114,7 +115,7 @@ def check(name, got, want):
 def test_v2v_slices():
     print("V2V — every stream cut on the same boundary")
     p = make_plan(180, chunk_frames=90)
-    imgs, msk, aud, length, idx, flow, info, count, kf, ctx, xtra = (
+    imgs, msk, aud, length, idx, flow, info, count, kf, ctx, xtra, pin = (
         chunkrun.slice_chunk(p, 1, Fake(180), mask=Fake(180, "mask"),
                              extra_images=Fake(180, "depth")))
     c = p["chunks"][1]
@@ -132,7 +133,7 @@ def test_extra_optional():
     print("V2V — extra unwired stays None, nothing else shifts")
     p = make_plan(180, chunk_frames=90)
     out = chunkrun.slice_chunk(p, 0, Fake(180))
-    check("output arity", len(out), 11)
+    check("output arity", len(out), 12)
     check("extra is None", out[10], None)
     check("mask synthesised", out[1].tag, "zeros")
 
@@ -257,6 +258,124 @@ def test_overlap_trimmed_at_the_join():
           sum(1 for n in g2.values() if n["class_type"] == "ImageFromBatch"), 0)
 
 
+def test_context_overlap_plan():
+    print("with context, chunks overlap and the pin rides along")
+    p = make_plan(400, chunk_frames=90, context=22)
+    c = p["chunks"]
+    check("first chunk pins nothing", c[0]["pin"], 0)
+    check("the rest pin 22", [x["pin"] for x in c[1:]], [22] * (len(c) - 1))
+    check("each advances run - context", c[1]["start"] - c[0]["start"], 68)
+    check("new content starts after the pin", c[1]["keep_from"] - c[1]["start"], 22)
+    kept = [f for x in c for f in range(x["keep_from"], x["end"])]
+    check("still exactly one pass over the clip", kept, list(range(400)))
+    check("and every run still legal",
+          all(x["run"] == x["length"] and x["run"] % 17 == 5 for x in c), True)
+
+    # the pin travels to the body on its own slot, so the number in the plan is
+    # the number the node uses -- no second widget to keep in sync
+    out = chunkrun.slice_chunk(p, 1, Fake(400))
+    check("pin is the last output", out[11], 22)
+    check("chunk 0 hands out pin 0", chunkrun.slice_chunk(p, 0, Fake(400))[11], 0)
+
+
+def test_pin_lines_up_with_the_source():
+    print("the pinned frames are the ones this chunk's head actually overlaps")
+    p = make_plan(400, chunk_frames=90, context=22)
+    c = p["chunks"]
+
+    # chunk 1 butts onto chunk 0, so its head IS chunk 0's tail
+    prev0 = Fake(c[0]["end"] - c[0]["keep_from"], "c0")
+    ctx = chunkrun.slice_chunk(p, 1, Fake(400), prev_images=prev0)[9]
+    check("chunk 1 pins the previous tail", ctx.tag, "c0[68:90]")
+
+    # chunk 4 reached BACK 13 frames for a legal 141 run, so it starts at 259
+    # while chunk 3 ran to 294. Its head is in the MIDDLE of chunk 3's output.
+    check("chunk 4 was back-extended", (c[4]["start"], c[3]["end"]), (259, 294))
+    prev3 = Fake(c[3]["end"] - c[3]["keep_from"], "c3")     # covers 226..294
+    ctx = chunkrun.slice_chunk(p, 4, Fake(400), prev_images=prev3)[9]
+    check("chunk 4 pins from the middle, not the tail", ctx.tag, "c3[33:55]")
+    check("and that is source 259-281",
+          (c[3]["keep_from"] + 33, c[3]["keep_from"] + 55),
+          (c[4]["start"], c[4]["start"] + 22))
+
+    # with no context the plan pins nothing and the tail behaviour is unchanged
+    q = make_plan(400, chunk_frames=90, context=0)
+    ctx = chunkrun.slice_chunk(q, 1, Fake(400), prev_images=Fake(90, "c0"),
+                               context_frames=39)[9]
+    check("no pin falls back to the plain tail", ctx.tag, "c0[51:90]")
+
+
+def test_context_node():
+    print("H3 Chunk Context overwrites the head and blanks the mask there")
+
+    class M(Fake):
+        """A mask/image that can be cloned and assigned into."""
+
+        def __init__(self, n, tag="m", val=1.0, hw=(64, 64)):
+            super().__init__(n, tag)
+            self.rows = [val] * n
+            self.hw = hw
+
+        @property
+        def shape(self):
+            return (self.n, self.hw[0], self.hw[1], 3)
+
+        def clone(self):
+            c = M(self.n, self.tag, hw=self.hw)
+            c.rows = list(self.rows)
+            return c
+
+        @property
+        def dtype(self):
+            return "float32"
+
+        def to(self, *a, **k):
+            return self
+
+        def mean(self):
+            return sum(self.rows) / len(self.rows) if self.rows else 0.0
+
+        def __setitem__(self, key, val):
+            lo, hi, _ = key.indices(self.n)
+            src = val.rows if isinstance(val, M) else [val] * (hi - lo)
+            self.rows[lo:hi] = src
+
+        def __getitem__(self, key):
+            lo, hi, _ = key.indices(self.n)
+            c = M(max(0, hi - lo), f"{self.tag}[{lo}:{hi}]", hw=self.hw)
+            c.rows = self.rows[lo:hi]
+            return c
+
+    node = chunkrun.H3ChunkContext()
+
+    imgs, mask = M(90, "src", 0.5), M(90, "mask", 1.0)
+    prev = M(90, "prev", 0.9)
+    res = node.go(imgs, mask, 22, context_images=prev)["result"]
+    out_i, out_m, pinned, _ = res
+    check("pinned count", pinned, 22)
+    check("head came from the previous chunk", out_i.rows[:22], [0.9] * 22)
+    check("the rest is untouched source", out_i.rows[22:], [0.5] * 68)
+    check("mask blanked over the pin", out_m.rows[:22], [0.0] * 22)
+    check("mask kept everywhere else", out_m.rows[22:], [1.0] * 68)
+    check("the inputs were not mutated", imgs.rows[:22], [0.5] * 22)
+
+    # first chunk of a shot: pin 0, straight through
+    out = node.go(M(90, "src", 0.5), M(90, "mask", 1.0), 0, context_images=prev)
+    check("pin 0 passes through", out[2], 0)
+    check("and says why", "nothing behind it" in out[3], True)
+
+    out = node.go(M(90, "src", 0.5), M(90, "mask", 1.0), 22)
+    check("no context wired passes through", out[2], 0)
+
+    # a moved crop box must not be papered over with a resize
+    try:
+        node.go(M(90, "src"), M(90, "mask"), 22,
+                context_images=M(90, "prev", hw=(32, 32)))
+        check("a changed crop box raises", "no error", "ValueError")
+    except ValueError as exc:
+        check("a changed crop box names the cause", "ONE crop box" in str(exc), True)
+
+
 def test_refuses_bad_wiring():
     print("Close refuses rather than silently rendering one chunk")
     p = make_plan(180, chunk_frames=90)
@@ -277,7 +396,9 @@ def test_refuses_bad_wiring():
 def main():
     for fn in (test_v2v_slices, test_extra_optional, test_fresh_generation,
                test_context_clamped, test_body_capture, test_links_remapped,
-               test_overlap_trimmed_at_the_join, test_refuses_bad_wiring):
+               test_overlap_trimmed_at_the_join, test_context_overlap_plan,
+               test_pin_lines_up_with_the_source, test_context_node,
+               test_refuses_bad_wiring):
         fn()
     print()
     if FAILED:

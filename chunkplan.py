@@ -72,7 +72,29 @@ def find_cuts(deltas, threshold):
     return [i for i, d in enumerate(deltas) if i > 0 and float(d) >= float(threshold)]
 
 
-def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
+CONTEXT_GRID = (39, 22, 5, 1)
+
+
+def snap_context(frames):
+    """Nearest usable context length at or below `frames`, or 0 for none.
+
+    Only 39, 22, 5 and 1 pixel frames encode to distinct VAE runs. An off-grid
+    count snaps DOWN to the next one and then covers the FIRST frames of what it
+    was given rather than the last, so the pin ends early and the join jumps --
+    30 silently becomes the wrong 22. Snapping here means the number the plan
+    reports is the number that actually gets pinned.
+    """
+    n = int(frames)
+    if n <= 0:
+        return 0
+    for g in CONTEXT_GRID:
+        if n >= g:
+            return g
+    return 0
+
+
+def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
+         context=0):
     """-> (chunks, info)
 
     Each chunk is a dict:
@@ -109,6 +131,15 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
     if size != asked:
         notes.append(f"chunk_frames {asked} is not a legal run — using {size} "
                      f"(runs are 17n+5)")
+
+    ctx = snap_context(context)
+    if ctx != int(context or 0):
+        notes.append(f"context {context} is not a usable pin length — using {ctx} "
+                     f"(only 39, 22, 5 and 1 encode distinctly)")
+    if ctx >= size:
+        notes.append(f"context {ctx} does not fit inside a {size}-frame chunk — "
+                     f"dropped to 0; raise chunk_frames to carry context")
+        ctx = 0
 
     if total <= 0:
         return [], {"chunks": 0, "mode": mode, "notes": ["empty clip"]}
@@ -154,10 +185,15 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
         # pass, and no seam. The tail is absorbed rather than left as a runt
         # because a runt would also carry a different reference share from
         # every other chunk.
+        # With context, a chunk OVERLAPS its predecessor: it still spans `size`
+        # frames but only advances `size - context`, and the frames it shares are
+        # where the previous chunk's finished output gets pinned in. Without
+        # context (0) the stride is the full size and chunks butt together.
+        stride = max(5, size - ctx)
         parts, pos = [], s0
         while s1 - pos > size + int(min_chunk):
             parts.append((pos, pos + size))
-            pos += size
+            pos += stride
         parts.append((pos, s1))
         n_parts = len(parts)
         for p, (start, end) in enumerate(parts):
@@ -174,11 +210,15 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
             # and no frame appears twice.
             run = legal_run(end - start, "up")
             deficit = run - (end - start)
-            keep_from = start
+            # everything before keep_from is content the previous chunk already
+            # delivered: the context overlap, plus whatever the tail reached back
+            # for. All of it is regenerated and dropped at the join.
+            keep_from = start + (ctx if p > 0 else 0)
             if deficit and start - deficit >= s0:
-                # room inside this SHOT — never reach back across a cut
+                # room inside this SHOT — never reach back across a cut.
+                # keep_from is an ABSOLUTE frame index and does not move: the
+                # chunk simply starts earlier and throws more of its head away.
                 start -= deficit
-                keep_from = start + deficit
             elif deficit:
                 # nothing behind it: a shot shorter than one legal run. Trim to
                 # the run below rather than generate frames that do not exist.
@@ -192,6 +232,11 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
             chunks.append({
                 "start": start, "end": end, "length": length, "run": run,
                 "keep_from": keep_from,
+                # leading frames to overwrite with the PREVIOUS chunk's finished
+                # output before anything is encoded. 0 on the first chunk of a
+                # shot -- there is nothing behind it, and across a cut there is
+                # nothing worth carrying.
+                "pin": ctx if p > 0 else 0,
                 "shot": si if mode == "scene" else None,
                 "part": (p + 1, n_parts) if n_parts > 1 else None,
                 "both_clocks": on_both_clocks(run),
@@ -237,7 +282,10 @@ def describe(chunks, info, render=None, ref_tokens=0):
             if c["part"]:
                 tag += f" ({c['part'][0]} of {c['part'][1]})"
         over = c["keep_from"] - c["start"]
-        pad = "" if not over else f" (+{over}f overlap, dropped at the join)"
+        pad = "" if not over else (
+            f" (+{over}f overlap"
+            f"{', ' + str(c['pin']) + 'f pinned' if c.get('pin') else ''}"
+            f", dropped at the join)")
         clocks = "both clocks" if c["both_clocks"] else "OFF grid"
         seed = "" if c["seed_mask"] else "  [track restarts]"
         share = ""
