@@ -83,10 +83,48 @@ c, i = plan(500, 90, "scene", cuts=[])
 check("degrades to fixed", i["mode"], "fixed")
 ok("and says why", any("fell back to fixed" in n for n in i["notes"]))
 
-# --- padding --------------------------------------------------------------- #
+# --- the run must EQUAL what the chunk hands out ---------------------------- #
+# This is the one that bit. `run` was rounded up while start/end were left
+# alone, so a 40-frame tail asked for 56 generated frames against 40 source
+# frames and the mask pin refused to resample them. The old assertion here was
+# `run >= length`, which is exactly what let it through.
 c, i = plan(200, 90, "scene", cuts=[85])
-ok("short shots pad UP to a legal run", all(x["run"] >= x["length"] for x in c))
+ok("run equals the frames handed out", all(x["run"] == x["length"] for x in c))
 ok("runs are legal", all(legal_run(x["run"]) == x["run"] for x in c))
+
+bad = []
+for total in (39, 40, 90, 100, 199, 200, 201, 400, 447, 1200, 1201):
+    for cf in (39, 56, 90, 100, 141):
+        c, i = plan(total, cf)
+        for x in c:
+            if x["run"] != x["length"] or legal_run(x["run"]) != x["run"]:
+                bad.append(f"{total}/{cf}: {x['length']}f handed out, run {x['run']}")
+            if x["start"] < 0:
+                bad.append(f"{total}/{cf}: chunk starts before the clip")
+        # every kept frame exactly once, in order, from 0
+        kept = [f for x in c for f in range(x["keep_from"], x["end"])]
+        if kept != list(range(len(kept))):
+            bad.append(f"{total}/{cf}: coverage is not contiguous")
+        if len(kept) > total:
+            bad.append(f"{total}/{cf}: kept {len(kept)} of {total}")
+ok("legal run and exact coverage across 55 clip/chunk combinations", not bad)
+fails.extend(bad[:6])
+
+# a clip shorter than one legal run cannot be extended from footage that does
+# not exist, so it trims down and says how many frames went
+c, i = plan(100, 90)
+check("short clip trims to a legal run", (c[0]["start"], c[0]["end"]), (0, 90))
+ok("and reports the dropped frames",
+   any("10 frame(s) dropped" in n for n in i["notes"]))
+
+# chunk_frames is snapped first, so every full part is legal by construction and
+# only a tail can ever need correcting
+c, i = plan(1200, 100)
+ok("chunk_frames snaps to a legal run", all(x["run"] % 17 == 5 for x in c))
+ok("and says so", any("not a legal run" in n for n in i["notes"]))
+over = [x for x in c if x["keep_from"] > x["start"]]
+check("only one chunk overlaps", len(over), 1)
+check("and it is the last one", over[0]["end"], c[-1]["end"])
 
 # --- the identity lever ---------------------------------------------------- #
 r = 3 * 676  # three 832px references

@@ -78,8 +78,13 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
     Each chunk is a dict:
       start, end     source frame range, end exclusive
       length         end - start, the SOURCE frames this chunk covers
-      run            the legal run actually generated (>= length, padded up)
-      keep_from      where this chunk's NEW content begins (see below)
+      run            the legal run generated. ALWAYS equals `length`: a chunk
+                     hands out `length` source frames and gets `run` back, so
+                     if they differ the mask pin has nothing to pin to.
+      keep_from      where this chunk's NEW content begins. Greater than `start`
+                     when the chunk was extended backwards to reach a legal run;
+                     the join drops frames before it, so the overlap is
+                     regenerated but never appears twice.
       shot           index of the shot it belongs to, or None in fixed mode
       part           (i, n) when a shot was split, else None
       both_clocks    whether `run` lands on the video and audio grids
@@ -95,8 +100,15 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
     reference image is framing-agnostic, so it crosses cuts safely.
     """
     total = int(total_frames)
-    size = max(5, int(chunk_frames))
+    # Snap the chunk size to a legal run FIRST. Every full part is then legal by
+    # construction and only a tail can be short, which is the one case that
+    # needs correcting below.
+    asked = max(5, int(chunk_frames))
+    size = legal_run(asked, "up")
     notes = []
+    if size != asked:
+        notes.append(f"chunk_frames {asked} is not a legal run — using {size} "
+                     f"(runs are 17n+5)")
 
     if total <= 0:
         return [], {"chunks": 0, "mode": mode, "notes": ["empty clip"]}
@@ -149,11 +161,37 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39):
         parts.append((pos, s1))
         n_parts = len(parts)
         for p, (start, end) in enumerate(parts):
+            # A chunk hands out `end - start` source frames and the model
+            # generates `run` of them, so the two MUST be the same number. They
+            # were not: `run` was rounded up and `start`/`end` left alone, and
+            # every tail that did not happen to land on 17n+5 reached the mask
+            # pin as (say) 39 source frames against a 56-frame latent, which it
+            # correctly refused to resample.
+            #
+            # The fix is to move the chunk's START back so it covers a full
+            # legal run, and remember where its NEW content begins. The overlap
+            # is regenerated and then dropped at the join, so nothing is lost
+            # and no frame appears twice.
+            run = legal_run(end - start, "up")
+            deficit = run - (end - start)
+            keep_from = start
+            if deficit and start - deficit >= s0:
+                # room inside this SHOT — never reach back across a cut
+                start -= deficit
+                keep_from = start + deficit
+            elif deficit:
+                # nothing behind it: a shot shorter than one legal run. Trim to
+                # the run below rather than generate frames that do not exist.
+                run = legal_run(end - start, "down")
+                dropped = (end - start) - run
+                end = start + run
+                notes.append(f"shot at {start} is {run + dropped} frames, shorter "
+                             f"than a legal run — trimmed to {run}, "
+                             f"{dropped} frame(s) dropped")
             length = end - start
-            run = legal_run(length, "up")
             chunks.append({
                 "start": start, "end": end, "length": length, "run": run,
-                "keep_from": start,
+                "keep_from": keep_from,
                 "shot": si if mode == "scene" else None,
                 "part": (p + 1, n_parts) if n_parts > 1 else None,
                 "both_clocks": on_both_clocks(run),
@@ -198,7 +236,8 @@ def describe(chunks, info, render=None, ref_tokens=0):
             tag = f"shot {c['shot'] + 1}"
             if c["part"]:
                 tag += f" ({c['part'][0]} of {c['part'][1]})"
-        pad = "" if c["run"] == c["length"] else f" -> padded to {c['run']}"
+        over = c["keep_from"] - c["start"]
+        pad = "" if not over else f" (+{over}f overlap, dropped at the join)"
         clocks = "both clocks" if c["both_clocks"] else "OFF grid"
         seed = "" if c["seed_mask"] else "  [track restarts]"
         share = ""

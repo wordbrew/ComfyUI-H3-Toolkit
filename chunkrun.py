@@ -97,7 +97,7 @@ def downstream_of(dynprompt, start_id):
 
 
 def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
-                prev_images=None, context_frames=39):
+                prev_images=None, context_frames=39, extra_images=None):
     """One chunk's slices, plus the handoff from the previous chunk.
 
     V2V: source_images is wired, every chunk is cut from footage that exists, and
@@ -138,13 +138,13 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
                 f"{'' if c['both_clocks'] else '  OFF audio grid'}"
                 f"{'' if kf is None else '  <- keyframe + context carried'}")
         return (None, None, source_audio, c["run"], i,
-                {"plan": plan, "index": i}, text, len(chunks) or 1, kf, ctx)
+                {"plan": plan, "index": i}, text, len(chunks) or 1, kf, ctx, None)
 
     if not chunks:
         n = int(source_images.shape[0])
         return (source_images, mask, source_audio, n, 0,
                 {"plan": plan, "index": 0}, "empty plan — clip passed through", 1,
-                kf, ctx)
+                kf, ctx, extra_images)
 
     i = max(0, min(int(index), len(chunks) - 1))
     c = chunks[i]
@@ -168,8 +168,9 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
     text = (f"chunk {i + 1} of {len(chunks)}: frames {s0}-{e0} ({e0 - s0}f, run "
             f"{c['run']}){'' if c['both_clocks'] else '  OFF audio grid'}"
             f"{'' if c['seed_mask'] else '  [track restarts]'}")
+    xtra = extra_images[s0:e0] if extra_images is not None else None
     return (imgs, msk, aud, e0 - s0, i, {"plan": plan, "index": i}, text,
-            len(chunks), kf, ctx)
+            len(chunks), kf, ctx, xtra)
 
 
 class H3ChunkOpen:
@@ -189,6 +190,11 @@ class H3ChunkOpen:
                                         "Leave UNWIRED for fresh generation — "
                                         "then `keyframe` and `context` carry "
                                         "continuity instead."}),
+            "extra_images": ("IMAGE", {"tooltip": "A derived stream cut with the "
+                             "images — depth, pose, an edge map. Compute it on "
+                             "the WHOLE clip and slice it here: depth normalises "
+                             "per image, so computing it per chunk would shift "
+                             "the scene's depth range between chunks."}),
             "context_frames": ("INT", {"default": 39, "min": 5, "max": 360,
                                "step": 17,
                                "tooltip": "Fresh generation: how much of the "
@@ -206,9 +212,9 @@ class H3ChunkOpen:
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
-                    "flow", "info", "chunk_count", "keyframe", "context")
+                    "flow", "info", "chunk_count", "keyframe", "context", "extra")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
@@ -216,9 +222,10 @@ class H3ChunkOpen:
                    "to H3 Chunk Close, which repeats it for every chunk.")
 
     def go(self, plan, source_images=None, mask=None, source_audio=None,
-           context_frames=39):
+           extra_images=None, context_frames=39):
         out = slice_chunk(plan, 0, source_images, mask, source_audio,
-                          context_frames=context_frames)
+                          context_frames=context_frames,
+                          extra_images=extra_images)
         n = len(((plan or {}).get("chunks")) or [])
         note = (f"\n  wire your chain from here into H3 Chunk Close; it repeats "
                 f"this for all {n} chunks.") if n > 1 else ""
@@ -294,7 +301,7 @@ class H3ChunkClose:
             open_widgets = {k: v for k, v in open_inputs.items()
                             if not is_link(v)}
             src_kw = {"plan": plan, "chunk_index": ci}
-            for k in ("source_images", "mask", "source_audio"):
+            for k in ("source_images", "mask", "source_audio", "extra_images"):
                 v = open_inputs.get(k)
                 if is_link(v):
                     src_kw[k] = [v[0], v[1]]
@@ -321,7 +328,17 @@ class H3ChunkClose:
                         new.set_input(key, mapping[val[0]].out(val[1]))
                     else:
                         new.set_input(key, [val[0], val[1]])   # shared, not cloned
-            outs.append(mapping[tail_link[0]].out(tail_link[1]))
+            tail = mapping[tail_link[0]].out(tail_link[1])
+            # A chunk extended backwards to reach a legal run regenerates frames
+            # the previous chunk already covered. Drop them here rather than at
+            # the plan, so the model still sees the run it needs and the joined
+            # clip keeps every source frame exactly once.
+            skip = int(c.get("keep_from", c["start"])) - int(c["start"])
+            if skip > 0:
+                tail = graph.node("ImageFromBatch", id=f"trim{ci}", image=tail,
+                                  batch_index=skip,
+                                  length=int(c["end"]) - int(c["keep_from"])).out(0)
+            outs.append(tail)
 
         joined = outs[0]
         for nxt in outs[1:]:
@@ -339,11 +356,15 @@ class H3ChunkClose:
                 report.append(f"      {nid}  {dynprompt.get_node(nid)['class_type']}")
             except Exception:
                 pass
-        report.append(f"  emitted {len(body_ids) * len(chunks) + len(chunks) + max(0, len(chunks) - 1)} "
-                      f"nodes across {len(chunks)} chunks")
+        expanded = graph.finalize()
+        overlap = sum(int(c.get("keep_from", c["start"])) - int(c["start"])
+                      for c in chunks)
+        if overlap:
+            report.append(f"  {overlap} overlap frame(s) regenerated and dropped "
+                          f"at the join, so a short tail still gets a legal run")
+        report.append(f"  emitted {len(expanded)} nodes across {len(chunks)} chunks")
         logging.info("H3ChunkClose: %s", report[0])
-        return {"expand": graph.finalize(),
-                "result": (joined, "\n".join(report))}
+        return {"expand": expanded, "result": (joined, "\n".join(report))}
 
 
 class H3ChunkSlice:
@@ -363,24 +384,26 @@ class H3ChunkSlice:
             "mask": ("MASK",),
             "source_audio": ("AUDIO",),
             "prev_images": ("IMAGE",),
+            "extra_images": ("IMAGE",),
             "context_frames": ("INT", {"default": 39}),
         }}
 
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
-                    "flow", "info", "chunk_count", "keyframe", "context")
+                    "flow", "info", "chunk_count", "keyframe", "context", "extra")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DEPRECATED = True          # keeps it out of the node menu
     DESCRIPTION = "Internal to H3 Chunk Close."
 
     def go(self, plan, chunk_index, source_images=None, mask=None,
-           source_audio=None, prev_images=None, context_frames=39):
+           source_audio=None, prev_images=None, extra_images=None,
+           context_frames=39):
         return slice_chunk(plan, chunk_index, source_images, mask, source_audio,
-                           prev_images, context_frames)
+                           prev_images, context_frames, extra_images)
 
 
 NODE_CLASS_MAPPINGS = {"H3ChunkOpen": H3ChunkOpen, "H3ChunkClose": H3ChunkClose,
