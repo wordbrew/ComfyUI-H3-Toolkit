@@ -106,7 +106,7 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None):
     if not chunks:
         n = int(source_images.shape[0])
         return (source_images, mask, source_audio, n, 0,
-                {"plan": plan, "index": 0}, "empty plan — clip passed through")
+                {"plan": plan, "index": 0}, "empty plan — clip passed through", 1)
 
     i = max(0, min(int(index), len(chunks) - 1))
     c = chunks[i]
@@ -130,7 +130,8 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None):
     text = (f"chunk {i + 1} of {len(chunks)}: frames {s0}-{e0} ({e0 - s0}f, run "
             f"{c['run']}){'' if c['both_clocks'] else '  OFF audio grid'}"
             f"{'' if c['seed_mask'] else '  [track restarts]'}")
-    return (imgs, msk, aud, e0 - s0, i, {"plan": plan, "index": i}, text)
+    return (imgs, msk, aud, e0 - s0, i, {"plan": plan, "index": i}, text,
+            len(chunks))
 
 
 class H3ChunkOpen:
@@ -154,9 +155,12 @@ class H3ChunkOpen:
             "source_audio": ("AUDIO",),
         }}
 
-    RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW", "STRING")
+    # chunk_count appended LAST -- saved workflows store slot indices, so a new
+    # output goes on the end or every existing link silently shifts
+    RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
+                    "STRING", "INT")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
-                    "flow", "info")
+                    "flow", "info", "chunk_count")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
@@ -168,7 +172,7 @@ class H3ChunkOpen:
         n = len(((plan or {}).get("chunks")) or [])
         note = (f"\n  wire your chain from here into H3 Chunk Close; it repeats "
                 f"this for all {n} chunks.") if n > 1 else ""
-        return out[:6] + (out[6] + note,)
+        return out[:6] + (out[6] + note,) + out[7:]
 
 
 class H3ChunkClose:
@@ -300,9 +304,12 @@ class H3ChunkSlice:
             "source_audio": ("AUDIO",),
         }}
 
-    RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW", "STRING")
+    # chunk_count appended LAST -- saved workflows store slot indices, so a new
+    # output goes on the end or every existing link silently shifts
+    RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
+                    "STRING", "INT")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
-                    "flow", "info")
+                    "flow", "info", "chunk_count")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DEPRECATED = True          # keeps it out of the node menu

@@ -366,20 +366,36 @@ class H3ContextWindows:
 
     def go(self, model, window_frames, overlap_frames, schedule="standard_static",
            fuse_method="pyramid", freenoise=False):
+        from .timing import snap_run, video_latent_t
+
         notes = []
 
-        wf = max(17, int(round(window_frames / 17.0)) * 17)
-        of = max(0, int(round(overlap_frames / 17.0)) * 17)
+        # BOTH must be legal runs (17n+5), not merely multiples of 17.
+        # A clip's latent length is always 5k+2, so the FINAL window begins at
+        # latent_t - window_len, which lands on a multiple of 5 only when the
+        # window length is ALSO 5k+2 -- that is, only when the window is itself
+        # a legal run. An earlier version snapped to multiples of 17 and
+        # converted with frames//17*5, which is not the real map: it asked for
+        # 25-latent windows while reporting 85 frames (85 frames is 22 latent),
+        # and on an 87-latent clip the last window started at 62, off-phase.
+        wf = snap_run(max(39, int(window_frames)))
+        of = snap_run(max(5, int(overlap_frames))) if int(overlap_frames) > 0 else 0
         if of >= wf:
-            of = wf - 17
-            notes.append(f"overlap must be smaller than the window — cut to {of}")
+            of = snap_run(max(5, wf // 3))
+            notes.append(f"overlap must be smaller than the window - cut to {of}")
         if wf != int(window_frames):
-            notes.append(f"window {int(window_frames)} -> {wf} frames (multiple of 17)")
+            notes.append(f"window {int(window_frames)} -> {wf} frames "
+                         f"(nearest legal run, 17n+5)")
         if of != int(overlap_frames):
-            notes.append(f"overlap {int(overlap_frames)} -> {of} frames (multiple of 17)")
+            notes.append(f"overlap {int(overlap_frames)} -> {of} frames "
+                         f"(nearest legal run)")
 
-        w_lat = wf // 17 * 5
-        o_lat = of // 17 * 5
+        w_lat = video_latent_t(wf)
+        o_lat = video_latent_t(of) if of > 0 else 0
+        stride = w_lat - o_lat
+        if stride % 5:
+            notes.append(f"stride {stride} latent is not a multiple of 5 - "
+                         f"intermediate windows will be off-phase")
 
         # Look the node up by its NODE ID, not by a Python class name. The class
         # is `ContextWindowsManualNode` while the id is `ContextWindowsManual`,
@@ -418,8 +434,9 @@ class H3ContextWindows:
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
             f"({o_lat} latent)",
-            f"  stride {wf - of} frames ({w_lat - o_lat} latent) — both multiples "
-            f"of 5 latent, so every window starts on a VAE chunk boundary",
+            f"  stride {wf - of} frames ({stride} latent)",
+            f"  both are legal runs (17n+5), so every window — including the "
+            f"clamped last one — starts on a VAE chunk boundary",
             f"  dim {VIDEO_TIME_DIM} (H3's video temporal axis; core defaults to 0)",
             f"  schedule {schedule}, fuse {fuse_method}",
             "",

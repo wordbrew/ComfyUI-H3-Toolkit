@@ -129,6 +129,14 @@ class H3LongFormLinks:
                                              "Leave empty for a plain single-string prompt "
                                              "with no reference sections."}),
                 "retention_1": ("STRING", {"multiline": True, "default": ""}),
+                "expected_count": ("INT", {"default": 0, "min": 0, "max": 4096,
+                                   "tooltip": "Wire H3 Chunk Open's chunk_count "
+                                              "here. If it does not match the "
+                                              "number of clauses, the lint says "
+                                              "so — otherwise a mismatch just "
+                                              "CLAMPS and the last clause repeats "
+                                              "silently for every extra chunk. "
+                                              "0 = no check."}),
                 "task_type": (["reference generation", "keyframe completion"],
                               {"default": "keyframe completion"}),
             },
@@ -144,12 +152,24 @@ class H3LongFormLinks:
                    "continuity clause, and one seed across links.")
 
     def build(self, head, beats, tail, link_index, seconds_per_link, seed,
-              subject_def_1="", retention_1="", task_type="keyframe completion"):
+              subject_def_1="", retention_1="", task_type="keyframe completion",
+              expected_count=0):
         frames = align_frames(seconds_per_link)
         dur = frames / FPS
         clauses = parse_beats(beats)
         if not clauses:
             raise ValueError("`beats` is empty — one line per link.")
+        want = int(expected_count or 0)
+        if want and want != len(clauses):
+            over = "more chunks than clauses" if want > len(clauses) else \
+                   "more clauses than chunks"
+            _mismatch = (f"ERROR count: {len(clauses)} clause(s) for {want} chunk(s) "
+                         f"— {over}. Extra chunks REPEAT the last clause, and "
+                         f"extra clauses are never used. Add or remove beats so "
+                         f"the counts match.")
+        else:
+            _mismatch = None
+
         idx = max(0, min(link_index, len(clauses) - 1))
         h, t = head.strip(), tail.strip()
         clause = clauses[idx]
@@ -169,6 +189,8 @@ class H3LongFormLinks:
 
         # --- guidance, checked per part so the message points at the right box
         notes = []
+        if _mismatch:
+            notes.append(_mismatch)
         for label, txt in (("head", h), ("tail", t)):
             hits = RELATIVE_HINT.findall(txt)
             if hits:
