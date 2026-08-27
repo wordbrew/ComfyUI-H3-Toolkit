@@ -129,6 +129,30 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
         k = max(1, min(int(context_frames), int(prev_images.shape[0])))
         ctx = prev_images[-k:]
 
+        # V2V: the frames to carry are the ones this chunk's head OVERLAPS, and
+        # that is not always the previous chunk's tail. A chunk that reached
+        # backwards for a legal run starts EARLIER than the previous chunk
+        # ended, so its head sits in the middle of what came before rather than
+        # at the end of it. Taking the last N there pins frames from further
+        # along the clip than the chunk actually begins, and the pin fights the
+        # source instead of anchoring to it.
+        #
+        # `prev_images` is the previous chunk's output AFTER its own head was
+        # trimmed, so it starts at that chunk's keep_from.
+        i0 = max(0, min(int(index), len(chunks) - 1)) if chunks else 0
+        pin = int(chunks[i0].get("pin", 0)) if chunks else 0
+        if chunks and i0 > 0 and source_images is not None and pin > 0:
+            base = int(chunks[i0 - 1].get("keep_from", chunks[i0 - 1]["start"]))
+            off = max(0, int(chunks[i0]["start"]) - base)
+            avail = int(prev_images.shape[0])
+            if off + pin <= avail:
+                ctx = prev_images[off:off + pin]
+            else:
+                ctx = prev_images[max(0, avail - pin):]
+                logging.info("H3ChunkSlice: chunk %d wanted frames %d-%d of the "
+                             "previous chunk but only %d exist; pinned the last "
+                             "%d instead", i0, off, off + pin, avail, pin)
+
     if source_images is None:
         # fresh generation: nothing to cut, the chunk is a schedule entry
         i = max(0, min(int(index), max(0, len(chunks) - 1)))
@@ -138,13 +162,14 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
                 f"{'' if c['both_clocks'] else '  OFF audio grid'}"
                 f"{'' if kf is None else '  <- keyframe + context carried'}")
         return (None, None, source_audio, c["run"], i,
-                {"plan": plan, "index": i}, text, len(chunks) or 1, kf, ctx, None)
+                {"plan": plan, "index": i}, text, len(chunks) or 1, kf, ctx, None,
+                int(c.get("pin", 0)))
 
     if not chunks:
         n = int(source_images.shape[0])
         return (source_images, mask, source_audio, n, 0,
                 {"plan": plan, "index": 0}, "empty plan — clip passed through", 1,
-                kf, ctx, extra_images)
+                kf, ctx, extra_images, 0)
 
     i = max(0, min(int(index), len(chunks) - 1))
     c = chunks[i]
@@ -170,7 +195,7 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
             f"{'' if c['seed_mask'] else '  [track restarts]'}")
     xtra = extra_images[s0:e0] if extra_images is not None else None
     return (imgs, msk, aud, e0 - s0, i, {"plan": plan, "index": i}, text,
-            len(chunks), kf, ctx, xtra)
+            len(chunks), kf, ctx, xtra, int(c.get("pin", 0)))
 
 
 class H3ChunkOpen:
@@ -212,9 +237,10 @@ class H3ChunkOpen:
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
-                    "flow", "info", "chunk_count", "keyframe", "context", "extra")
+                    "flow", "info", "chunk_count", "keyframe", "context",
+                    "extra", "pin")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
@@ -391,9 +417,10 @@ class H3ChunkSlice:
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
-                    "flow", "info", "chunk_count", "keyframe", "context", "extra")
+                    "flow", "info", "chunk_count", "keyframe", "context",
+                    "extra", "pin")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DEPRECATED = True          # keeps it out of the node menu
@@ -406,8 +433,113 @@ class H3ChunkSlice:
                            prev_images, context_frames, extra_images)
 
 
+class H3ChunkContext:
+    """Start a chunk on the previous chunk's finished frames, in PIXELS.
+
+    WHAT IT DOES
+      Overwrites the first `pin` frames of this chunk's source with the tail of
+      the previous chunk's output, and blanks the mask over them so nothing
+      regenerates there. Everything downstream then runs unchanged: one encode,
+      one mask, on a clip whose opening already IS the swapped character.
+
+    WHY IT SITS HERE AND NOT AFTER THE CONDITIONING
+      The obvious wiring -- a context node and H3 Mask Inpaint in series -- does
+      not work. Both write `samples` and `noise_mask` wholesale, so the second
+      discards the first. Worse, H3 Mask Inpaint builds its latent as
+      `vae.encode(source_images)` and never reads the incoming samples, so
+      downstream it would overwrite the carried frames with raw source footage.
+      Doing it in pixels, before anything encodes, means there is only ever one
+      mask and one encode.
+
+    WHY PIXELS AND NOT A LATENT SLICE
+      H3LatentPin in this pack does the latent version and carries a warning
+      from nine rounds of measurement: a visible cut where the pin ends. The
+      VAE's FRAME_PER_TOKEN grouping is POSITIONAL -- latent steps built for
+      positions 45..51 do not mean the same thing at 0..6. Re-encoding pixels at
+      the front is why this path works and that one does not.
+
+    HOW LONG
+      Only 39, 22, 5 and 1 pixel frames encode to distinct VAE runs, so `pin`
+      comes from the plan already snapped. 1 frame is a still keyframe: it fixes
+      position and identity, but a keyframe-only chain eroded motion 19%
+      monotonically down the links, because a still carries pose and not
+      velocity. 22 held flat and is the usual answer. 39 costs more overlap for
+      no measured gain over 22 in a V2V pass, where the source pins motion too.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE", {"tooltip": "This chunk's source frames, from "
+                                            "H3 Chunk Open."}),
+            "mask": ("MASK", {"tooltip": "This chunk's subject mask."}),
+            "pin": ("INT", {"default": 22, "min": 0, "max": 39,
+                            "tooltip": "Frames to carry. From H3 Chunk Open's "
+                                       "`pin` output, which is 0 on the first "
+                                       "chunk of every shot."}),
+        }, "optional": {
+            "context_images": ("IMAGE", {"tooltip": "The PREVIOUS chunk's "
+                                         "finished frames. Unwired, or on the "
+                                         "first chunk, this node passes "
+                                         "everything through untouched."}),
+        }}
+
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "STRING")
+    RETURN_NAMES = ("images", "mask", "pinned", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    DESCRIPTION = ("Overwrite a chunk's opening frames with the previous chunk's "
+                   "output and blank the mask there, so the take continues "
+                   "instead of restarting.")
+
+    def go(self, images, mask, pin, context_images=None):
+        import torch
+
+        n = int(images.shape[0])
+        if context_images is None or pin <= 0 or int(context_images.shape[0]) == 0:
+            why = ("first chunk of the shot — nothing behind it to carry"
+                   if pin <= 0 else "no context wired")
+            return (images, mask, 0, f"H3 CHUNK CONTEXT: passthrough ({why})")
+
+        k = min(int(pin), int(context_images.shape[0]), n - 1)
+        if k != int(pin):
+            logging.info("H3ChunkContext: pin %d -> %d (limited by what was "
+                         "available)", int(pin), k)
+        if k <= 0:
+            return (images, mask, 0, "H3 CHUNK CONTEXT: passthrough (chunk too "
+                                     "short to carry anything)")
+
+        tail = context_images[-k:]
+        if tail.shape[1:] != images.shape[1:]:
+            # The crop box moved between chunks. Resizing would hide it and the
+            # pin would fight the generation instead of anchoring it, so say
+            # what actually happened.
+            raise ValueError(
+                f"the previous chunk is {int(tail.shape[2])}x{int(tail.shape[1])} "
+                f"but this one is {int(images.shape[2])}x{int(images.shape[1])}. "
+                f"The pinned frames have to line up pixel for pixel with what "
+                f"follows them, so every chunk must share ONE crop box — move "
+                f"H3 Subject Crop outside the Open..Close section, or set it to "
+                f"`static` on the whole clip.")
+
+        out = images.clone()
+        out[:k] = tail.to(out.device, out.dtype)
+        msk = mask.clone()
+        msk[:k] = 0.0                       # 0 = preserve, so nothing regenerates
+
+        held = float(mask[:k].mean()) * 100
+        info = (f"H3 CHUNK CONTEXT: {k} frame(s) carried from the previous chunk "
+                f"and held\n  the mask over them covered {held:.1f}% — now 0, so "
+                f"the opening is\n  reproduced rather than regenerated, and the "
+                f"join drops it")
+        logging.info("H3ChunkContext: %d frame(s) pinned", k)
+        return {"ui": {"h3char": [info]}, "result": (out, msk, k, info)}
+
+
 NODE_CLASS_MAPPINGS = {"H3ChunkOpen": H3ChunkOpen, "H3ChunkClose": H3ChunkClose,
-                       "H3ChunkSlice": H3ChunkSlice}
+                       "H3ChunkSlice": H3ChunkSlice,
+                       "H3ChunkContext": H3ChunkContext}
 NODE_DISPLAY_NAME_MAPPINGS = {"H3ChunkOpen": "H3 Chunk Open",
                               "H3ChunkClose": "H3 Chunk Close",
-                              "H3ChunkSlice": "H3 Chunk Slice (internal)"}
+                              "H3ChunkSlice": "H3 Chunk Slice (internal)",
+                              "H3ChunkContext": "H3 Chunk Context (carry the seam)"}

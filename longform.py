@@ -373,6 +373,15 @@ class H3ChunkPlan:
                             "tooltip": "scene: chunks end at cuts, so a prompt "
                                        "never describes two scenes. fixed: uniform "
                                        "size, may straddle a cut."}),
+            "context": (["22", "39", "5", "1", "0"], {"default": "22",
+                         "tooltip": "Frames each chunk carries from the previous "
+                                    "one's finished output, to stop the seam "
+                                    "restarting. Chunks OVERLAP by this much and "
+                                    "the join drops it. Only 39/22/5/1 encode "
+                                    "distinctly. 1 is a still keyframe: it fixes "
+                                    "position but a keyframe-only chain eroded "
+                                    "motion 19% down the links, where 22 held "
+                                    "flat. 0 turns it off."}),
         }, "optional": {
             "source_images": ("IMAGE", {"tooltip": "The clip to chunk. Leave "
                                         "UNWIRED for fresh generation and set "
@@ -409,7 +418,8 @@ class H3ChunkPlan:
     DESCRIPTION = ("Plan where a long clip gets cut into chunks, aligned to scene "
                    "changes or to a fixed size. Reports the plan before you run it.")
 
-    def go(self, chunk_frames, chunk_mode, source_images=None, total_frames=0,
+    def go(self, chunk_frames, chunk_mode, context="22", source_images=None,
+           total_frames=0,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
            ref_tokens=0):
         n = int(source_images.shape[0]) if source_images is not None else int(total_frames)
@@ -430,7 +440,7 @@ class H3ChunkPlan:
             cuts = find_cuts([0.0] + deltas, float(scene_threshold))
 
         chunks, info = build_plan(n, int(chunk_frames), chunk_mode, cuts=cuts,
-                                  min_chunk=int(min_chunk))
+                                  min_chunk=int(min_chunk), context=int(context))
         render = (int(render_width), int(render_height)) if render_width and render_height else None
         text = describe_plan(chunks, info, render=render, ref_tokens=int(ref_tokens))
 
