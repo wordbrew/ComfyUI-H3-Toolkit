@@ -15,6 +15,8 @@ from .budget import (NODE_CLASS_MAPPINGS as _BUDGET_CLASSES,
                      NODE_DISPLAY_NAME_MAPPINGS as _BUDGET_NAMES)
 from .character import (NODE_CLASS_MAPPINGS as _CHAR_CLASSES,
                         NODE_DISPLAY_NAME_MAPPINGS as _CHAR_NAMES)
+from .chunkrun import (NODE_CLASS_MAPPINGS as _RUN_CLASSES,
+                      NODE_DISPLAY_NAME_MAPPINGS as _RUN_NAMES)
 from .crop import (NODE_CLASS_MAPPINGS as _CROP_CLASSES,
                    NODE_DISPLAY_NAME_MAPPINGS as _CROP_NAMES)
 from .longform import (NODE_CLASS_MAPPINGS as _LF_CLASSES,
@@ -39,6 +41,7 @@ _PARTS = (
     (_BUDGET_CLASSES, _BUDGET_NAMES),
     (_CHAR_CLASSES, _CHAR_NAMES),
     (_CROP_CLASSES, _CROP_NAMES),
+    (_RUN_CLASSES, _RUN_NAMES),
     (_LF_CLASSES, _LF_NAMES),
     (_MASK_CLASSES, _MASK_NAMES),
     (_LINT_CLASSES, _LINT_NAMES),
