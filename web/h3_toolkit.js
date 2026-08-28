@@ -204,7 +204,14 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "H3LongFormLinks") return;
 
-    const OVERRIDDEN = { seconds_per_link: "seconds_per_link (chunk_frames wins)" };
+    // Both are live in the manual chain workflow (03 wires `length` and `seed`)
+    // and inert under chunking, where the length belongs to H3 Chunk Open and
+    // the seed to the sampler's own shared RandomNoise. A connected
+    // `chunk_frames` is the signal that you are chunking, so it greys both.
+    const OVERRIDDEN = {
+      seconds_per_link: "seconds_per_link (chunk length wins)",
+      seed: "seed (sampler noise wins)",
+    };
 
     function apply(node) {
       const wired = (node.inputs || []).some(
