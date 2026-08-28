@@ -193,3 +193,51 @@ app.registerExtension({
     };
   },
 });
+
+// A widget that is still being read is editable; one that has been overridden by
+// a wire should look overridden. `seconds_per_link` cannot be removed from the
+// node -- widgets_values is positional and deleting it would shift `seed` into
+// its slot in every saved graph -- so when `chunk_frames` is connected it is
+// greyed and relabelled instead, and the label says what took over.
+app.registerExtension({
+  name: "h3.longform.override",
+  async beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== "H3LongFormLinks") return;
+
+    const OVERRIDDEN = { seconds_per_link: "seconds_per_link (chunk_frames wins)" };
+
+    function apply(node) {
+      const wired = (node.inputs || []).some(
+        (i) => i.name === "chunk_frames" && i.link != null);
+      for (const [name, label] of Object.entries(OVERRIDDEN)) {
+        const w = node.widgets?.find((x) => x.name === name);
+        if (!w) continue;
+        if (w.h3label === undefined) w.h3label = w.label ?? w.name;
+        w.disabled = wired;
+        w.label = wired ? label : w.h3label;
+      }
+      app.graph?.setDirtyCanvas(true, true);
+    }
+
+    const created = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      created?.apply(this, arguments);
+      const node = this;
+      requestAnimationFrame(() => apply(node));
+    };
+
+    // a saved graph restores its links after construction, so re-check then
+    const configure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function () {
+      configure?.apply(this, arguments);
+      const node = this;
+      requestAnimationFrame(() => apply(node));
+    };
+
+    const changed = nodeType.prototype.onConnectionsChange;
+    nodeType.prototype.onConnectionsChange = function () {
+      changed?.apply(this, arguments);
+      apply(this);
+    };
+  },
+});
