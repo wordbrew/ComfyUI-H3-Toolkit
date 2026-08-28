@@ -373,15 +373,6 @@ class H3ChunkPlan:
                             "tooltip": "scene: chunks end at cuts, so a prompt "
                                        "never describes two scenes. fixed: uniform "
                                        "size, may straddle a cut."}),
-            "context": (["22", "39", "5", "1", "0"], {"default": "22",
-                         "tooltip": "Frames each chunk carries from the previous "
-                                    "one's finished output, to stop the seam "
-                                    "restarting. Chunks OVERLAP by this much and "
-                                    "the join drops it. Only 39/22/5/1 encode "
-                                    "distinctly. 1 is a still keyframe: it fixes "
-                                    "position but a keyframe-only chain eroded "
-                                    "motion 19% down the links, where 22 held "
-                                    "flat. 0 turns it off."}),
         }, "optional": {
             "source_images": ("IMAGE", {"tooltip": "The clip to chunk. Leave "
                                         "UNWIRED for fresh generation and set "
@@ -409,6 +400,18 @@ class H3ChunkPlan:
             "ref_tokens": ("INT", {"default": 0, "min": 0, "max": 1000000,
                            "tooltip": "Reference token count from H3 Reference "
                                       "Budget, to report each chunk's ref share."}),
+            # LAST, and it stays last. widgets_values is positional, so a widget
+            # inserted anywhere else shifts every one after it in every saved
+            # workflow -- silently, into fields that still look plausible.
+            "context": (["22", "39", "5", "1", "0"], {"default": "22",
+                         "tooltip": "Frames each chunk carries from the previous "
+                                    "one's finished output, to stop the seam "
+                                    "restarting. Chunks OVERLAP by this much and "
+                                    "the join drops it. Only 39/22/5/1 encode "
+                                    "distinctly. 1 is a still keyframe: it fixes "
+                                    "position but a keyframe-only chain eroded "
+                                    "motion 19% down the links, where 22 held "
+                                    "flat. 0 turns it off."}),
         }}
 
     RETURN_TYPES = ("H3_CHUNK_PLAN", "INT", "STRING")
@@ -418,10 +421,9 @@ class H3ChunkPlan:
     DESCRIPTION = ("Plan where a long clip gets cut into chunks, aligned to scene "
                    "changes or to a fixed size. Reports the plan before you run it.")
 
-    def go(self, chunk_frames, chunk_mode, context="22", source_images=None,
-           total_frames=0,
+    def go(self, chunk_frames, chunk_mode, source_images=None, total_frames=0,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
-           ref_tokens=0):
+           ref_tokens=0, context="22"):
         n = int(source_images.shape[0]) if source_images is not None else int(total_frames)
         if n <= 0:
             msg = ("Nothing to plan. Wire source_images for a V2V pass, or set "

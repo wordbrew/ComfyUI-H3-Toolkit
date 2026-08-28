@@ -1,2635 +1,2635 @@
 {
- "last_node_id": 47,
- "last_link_id": 69,
- "nodes": [
-  {
-   "id": 1,
-   "type": "CLIPLoader",
-   "pos": [
-    20,
-    20
-   ],
-   "size": [
-    400,
-    106
-   ],
-   "flags": {},
-   "order": 0,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
+  "last_node_id": 47,
+  "last_link_id": 69,
+  "nodes": [
     {
-     "name": "CLIP",
-     "type": "CLIP",
-     "links": [
-      28
-     ]
+      "id": 1,
+      "type": "CLIPLoader",
+      "pos": [
+        20,
+        20
+      ],
+      "size": [
+        400,
+        106
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            28
+          ]
+        }
+      ],
+      "widgets_values": [
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "VAELoader",
+      "pos": [
+        20,
+        150
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            29,
+            40,
+            53
+          ]
+        }
+      ],
+      "widgets_values": [
+        "H3\\minimax_h3_video_vae_fp16.safetensors"
+      ],
+      "title": "Video VAE"
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        20,
+        220
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            30,
+            43
+          ]
+        }
+      ],
+      "widgets_values": [
+        "H3\\minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "title": "Audio VAE"
+    },
+    {
+      "id": 4,
+      "type": "UNETLoader",
+      "pos": [
+        20,
+        290
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "widgets_values": [
+        "H3\\minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        20,
+        390
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "widgets_values": [
+        "h3\\minimax_h3_ref2v_lightx2v_turbo_4step_v0.1_resized_avg_rank_20_bf16.safetensors",
+        1
+      ]
+    },
+    {
+      "id": 6,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        20,
+        490
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "widgets_values": [
+        "h3\\MysticXXX_MMH3-V2.safetensors",
+        1
+      ]
+    },
+    {
+      "id": 7,
+      "type": "MiniMaxH3SigmaShift",
+      "pos": [
+        20,
+        590
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "widgets_values": [
+        12,
+        3
+      ]
+    },
+    {
+      "id": 8,
+      "type": "H3SLAAttention",
+      "pos": [
+        20,
+        690
+      ],
+      "size": [
+        400,
+        160
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            5,
+            45
+          ]
+        }
+      ],
+      "widgets_values": [
+        0.85,
+        "64",
+        8192,
+        0,
+        true,
+        true
+      ]
+    },
+    {
+      "id": 9,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        20,
+        880
+      ],
+      "size": [
+        400,
+        100
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            14
+          ]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        "sam3.1_multiplex_fp16.safetensors"
+      ],
+      "title": "SAM 3.1"
+    },
+    {
+      "id": 10,
+      "type": "CLIPTextEncode",
+      "pos": [
+        20,
+        1010
+      ],
+      "size": [
+        400,
+        90
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 6
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "widgets_values": [
+        "woman and hair"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "DownloadAndLoadDepthAnythingV2Model",
+      "pos": [
+        20,
+        1130
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "da_v2_model",
+          "type": "DAMODEL",
+          "links": [
+            24
+          ]
+        }
+      ],
+      "widgets_values": [
+        "depth_anything_v2_vitl_fp32.safetensors",
+        "auto"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "KSamplerSelect",
+      "pos": [
+        20,
+        1210
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            49
+          ]
+        }
+      ],
+      "widgets_values": [
+        "res_2s"
+      ]
+    },
+    {
+      "id": 13,
+      "type": "BasicScheduler",
+      "pos": [
+        20,
+        1290
+      ],
+      "size": [
+        400,
+        106
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            50
+          ]
+        }
+      ],
+      "widgets_values": [
+        "sgm_uniform",
+        4,
+        0.45
+      ]
+    },
+    {
+      "id": 14,
+      "type": "RandomNoise",
+      "pos": [
+        20,
+        1420
+      ],
+      "size": [
+        400,
+        82
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "NOISE",
+          "type": "NOISE",
+          "links": [
+            47
+          ]
+        }
+      ],
+      "widgets_values": [
+        399151606850116,
+        "fixed"
+      ]
+    },
+    {
+      "id": 15,
+      "type": "LoadImage",
+      "pos": [
+        20,
+        1530
+      ],
+      "size": [
+        400,
+        300
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            35
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        "ref_a.png",
+        "image"
+      ]
+    },
+    {
+      "id": 16,
+      "type": "LoadImage",
+      "pos": [
+        20,
+        1850
+      ],
+      "size": [
+        400,
+        300
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            36
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        "ref_b.png",
+        "image"
+      ]
+    },
+    {
+      "id": 17,
+      "type": "LoadAudio",
+      "pos": [
+        20,
+        2170
+      ],
+      "size": [
+        400,
+        120
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            38
+          ]
+        }
+      ],
+      "widgets_values": [
+        "voice.mp4",
+        null,
+        null
+      ]
+    },
+    {
+      "id": 18,
+      "type": "Note",
+      "pos": [
+        20,
+        2320
+      ],
+      "size": [
+        400,
+        300
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "widgets_values": [
+        "SHARED, NOT CLONED\n\nEverything in this column feeds the body from outside, so Close\nleaves it alone: one model load, one LoRA chain, one SAM encode,\none set of reference images. Close reports exactly what it kept\nexternal \u2014 check its `info` output the first time you run.\n\nThe scheduler and the sampler sit here too because they only take\nthe model. RandomNoise is shared and `fixed`: same seed, but each\nchunk is a different latent shape, so each still gets its own\nnoise, and the run repeats exactly."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 19,
+      "type": "VHS_LoadVideo",
+      "pos": [
+        460,
+        20
+      ],
+      "size": [
+        400,
+        300
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            13,
+            19
+          ]
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            12,
+            65
+          ]
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": []
+        }
+      ],
+      "widgets_values": {
+        "video": "source.mp4",
+        "force_rate": 24,
+        "custom_width": 0,
+        "custom_height": 0,
+        "frame_load_cap": 0,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "AnimateDiff"
+      },
+      "title": "frame_load_cap 0 = the WHOLE clip"
+    },
+    {
+      "id": 20,
+      "type": "H3ChunkPlan",
+      "pos": [
+        460,
+        350
+      ],
+      "size": [
+        400,
+        300
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source_images",
+          "type": "IMAGE",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "plan",
+          "type": "H3_CHUNK_PLAN",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "chunk_count",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            66
+          ]
+        }
+      ],
+      "widgets_values": [
+        90,
+        "scene",
+        0,
+        0.12,
+        39,
+        0,
+        0,
+        0,
+        "22"
+      ],
+      "title": "1. plan  (context 22 = chunks overlap by 22f)"
+    },
+    {
+      "id": 21,
+      "type": "H3ChunkOpen",
+      "pos": [
+        460,
+        680
+      ],
+      "size": [
+        400,
+        300
+      ],
+      "flags": {},
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "plan",
+          "type": "H3_CHUNK_PLAN",
+          "link": 8
+        },
+        {
+          "name": "source_images",
+          "type": "IMAGE",
+          "link": 9
+        },
+        {
+          "name": "extra_images",
+          "type": "IMAGE",
+          "link": 11
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 10
+        },
+        {
+          "name": "source_audio",
+          "type": "AUDIO",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            54
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            55
+          ]
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            44
+          ]
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "links": [
+            34
+          ]
+        },
+        {
+          "name": "chunk_index",
+          "type": "INT",
+          "links": [
+            26
+          ]
+        },
+        {
+          "name": "flow",
+          "type": "H3_CHUNK_FLOW",
+          "links": [
+            59
+          ]
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "name": "chunk_count",
+          "type": "INT",
+          "links": [
+            27
+          ]
+        },
+        {
+          "name": "keyframe",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "name": "context",
+          "type": "IMAGE",
+          "links": [
+            57
+          ]
+        },
+        {
+          "name": "extra",
+          "type": "IMAGE",
+          "links": [
+            37
+          ]
+        },
+        {
+          "name": "pin",
+          "type": "INT",
+          "links": [
+            56
+          ]
+        }
+      ],
+      "widgets_values": [
+        22
+      ],
+      "title": "2. one chunk, cropped and masked"
+    },
+    {
+      "id": 22,
+      "type": "Note",
+      "pos": [
+        460,
+        1010
+      ],
+      "size": [
+        400,
+        340
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "widgets_values": [
+        "PLAN \u2014 render_width / render_height\n\nLeave them at 0. They change nothing about the plan: not a\nboundary, not a length, not the count. They exist only so the info\ntext can quote a token share, and it needs a render size to work\none out. The crop sets the render size and its width/height go\nstraight to the conditioning node, so a number typed here would\njust be a stale second copy.\n\nchunk_frames is the lever that matters. It is the chunk LENGTH,\nsnapped up to a legal run (17n+5).\n\n`scene` mode splits on hard cuts first and fills each shot; the\nfirst chunk of every shot re-detects the mask rather than seeding\nfrom the previous one, because across a cut the old mask points at\nwhere she stood in a different shot."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 23,
+      "type": "SAM3_VideoTrack",
+      "pos": [
+        460,
+        1400
+      ],
+      "size": [
+        360,
+        130
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 13
+        },
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 14
+        },
+        {
+          "name": "initial_mask",
+          "type": "MASK",
+          "link": null
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 15
+        }
+      ],
+      "outputs": [
+        {
+          "name": "track_data",
+          "type": "SAM3_TRACK_DATA",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "widgets_values": [
+        0.3,
+        4,
+        1
+      ]
+    },
+    {
+      "id": 24,
+      "type": "SAM3_TrackToMask",
+      "pos": [
+        460,
+        1560
+      ],
+      "size": [
+        360,
+        58
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "track_data",
+          "type": "SAM3_TRACK_DATA",
+          "link": 16
+        }
+      ],
+      "outputs": [
+        {
+          "name": "masks",
+          "type": "MASK",
+          "links": [
+            17
+          ]
+        }
+      ],
+      "widgets_values": [
+        "0"
+      ]
+    },
+    {
+      "id": 25,
+      "type": "H3MaskStabilize",
+      "pos": [
+        460,
+        1650
+      ],
+      "size": [
+        360,
+        82
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 17
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            18
+          ]
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        2,
+        1
+      ]
+    },
+    {
+      "id": 26,
+      "type": "GrowMaskWithBlur",
+      "pos": [
+        460,
+        1770
+      ],
+      "size": [
+        360,
+        200
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 18
+        }
+      ],
+      "outputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            20
+          ]
+        },
+        {
+          "name": "mask_inverted",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        12,
+        0,
+        true,
+        false,
+        3,
+        1,
+        1,
+        false
+      ]
+    },
+    {
+      "id": 27,
+      "type": "H3MatchSource",
+      "pos": [
+        460,
+        2000
+      ],
+      "size": [
+        360,
+        200
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 19
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 20
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            21,
+            23,
+            62
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            22
+          ]
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "links": []
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        "fill",
+        0,
+        0,
+        0.62,
+        false
+      ]
+    },
+    {
+      "id": 28,
+      "type": "H3SubjectCrop",
+      "pos": [
+        460,
+        2230
+      ],
+      "size": [
+        360,
+        220
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 21
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 22
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            7,
+            9
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            10
+          ]
+        },
+        {
+          "name": "mask_2",
+          "type": "MASK",
+          "links": []
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            32
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            33
+          ]
+        },
+        {
+          "name": "crop_data",
+          "type": "H3_CROP",
+          "links": [
+            63
+          ]
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            69
+          ]
+        }
+      ],
+      "widgets_values": [
+        "static",
+        1.5,
+        0,
+        16,
+        32
+      ],
+      "title": "static = one box for THIS chunk"
+    },
+    {
+      "id": 29,
+      "type": "ImageScaleBy",
+      "pos": [
+        460,
+        2480
+      ],
+      "size": [
+        360,
+        82
+      ],
+      "flags": {},
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            25
+          ]
+        }
+      ],
+      "widgets_values": [
+        "nearest-exact",
+        0.5
+      ]
+    },
+    {
+      "id": 30,
+      "type": "DepthAnything_V2",
+      "pos": [
+        460,
+        2590
+      ],
+      "size": [
+        360,
+        82
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "da_model",
+          "type": "DAMODEL",
+          "link": 24
+        },
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 25
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "title": "depth on this chunk's frames"
+    },
+    {
+      "id": 31,
+      "type": "H3ChunkContext",
+      "pos": [
+        900,
+        20
+      ],
+      "size": [
+        360,
+        200
+      ],
+      "flags": {},
+      "order": 30,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 54
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 55
+        },
+        {
+          "name": "pin",
+          "type": "INT",
+          "link": 56,
+          "widget": {
+            "name": "pin"
+          }
+        },
+        {
+          "name": "context_images",
+          "type": "IMAGE",
+          "link": 57
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            41
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            42
+          ]
+        },
+        {
+          "name": "pinned",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            58
+          ]
+        }
+      ],
+      "widgets_values": [
+        22
+      ],
+      "title": "carry the seam \u2014 22 frames"
+    },
+    {
+      "id": 32,
+      "type": "PreviewAny",
+      "pos": [
+        900,
+        260
+      ],
+      "size": [
+        360,
+        160
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 58
+        }
+      ],
+      "outputs": [],
+      "title": "CONTEXT \u2014 what got pinned"
+    },
+    {
+      "id": 33,
+      "type": "H3LongFormLinks",
+      "pos": [
+        1300,
+        20
+      ],
+      "size": [
+        400,
+        460
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "link_index",
+          "type": "INT",
+          "link": 26,
+          "widget": {
+            "name": "link_index"
+          }
+        },
+        {
+          "name": "expected_count",
+          "type": "INT",
+          "link": 27,
+          "widget": {
+            "name": "expected_count"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "links": [
+            31
+          ]
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "seed",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "link_count",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "plan",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "name": "lint",
+          "type": "STRING",
+          "links": [
+            68
+          ]
+        }
+      ],
+      "widgets_values": [
+        "subject_definitions:\n<Subject 1> is the woman in <Picture 1> and <Picture 2>.\n<Audio 1> is the voice for <Subject 1> (S1).\n\nsummary:\n[reference generation] The target video shows <Subject 1>, using <Picture 1> and <Picture 2> for <Subject 1>'s identity, and <Audio 1> for <Subject 1>'s voice.\n\nretention_analysis:\n<Subject 1> (Shot 1): fully_preserved - face and body match <Picture 1> and <Picture 2> exactly.\n<Audio 1>: reference - timbre and delivery only.\n\ndetailed_description:\n[Shot 1]",
+        "<Subject 1> is where the mask is, facing the camera\n<Subject 1> continues the same action, unbroken",
+        "The camera holds the same framing and the take runs unbroken.",
+        0,
+        3.75,
+        399151606850116,
+        0,
+        "reference generation"
+      ],
+      "title": "3. one clause per chunk \u2014 index from Open"
+    },
+    {
+      "id": 34,
+      "type": "MiniMaxH3ReferenceToVideo",
+      "pos": [
+        1740,
+        20
+      ],
+      "size": [
+        400,
+        360
+      ],
+      "flags": {},
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 28
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 29
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 30
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": 31,
+          "widget": {
+            "name": "prompt"
+          }
+        },
+        {
+          "name": "ref_images.ref_image_0",
+          "type": "IMAGE",
+          "link": 35
+        },
+        {
+          "name": "ref_images.ref_image_1",
+          "type": "IMAGE",
+          "link": 36
+        },
+        {
+          "name": "ref_videos.ref_video_0",
+          "type": "IMAGE",
+          "link": 37
+        },
+        {
+          "name": "ref_audios.ref_audio_0",
+          "type": "AUDIO",
+          "link": 38
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 32,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 33,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "link": 34,
+          "widget": {
+            "name": "length"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            46
+          ]
+        },
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            39
+          ]
+        }
+      ],
+      "widgets_values": [
+        "",
+        1344,
+        768,
+        124,
+        "match"
+      ],
+      "title": "length from Open, w/h from the crop"
+    },
+    {
+      "id": 35,
+      "type": "H3MaskInpaint",
+      "pos": [
+        1740,
+        420
+      ],
+      "size": [
+        400,
+        260
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 39
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 40
+        },
+        {
+          "name": "source_images",
+          "type": "IMAGE",
+          "link": 41
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 42
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 43
+        },
+        {
+          "name": "source_audio",
+          "type": "AUDIO",
+          "link": 44
+        }
+      ],
+      "outputs": [
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            51
+          ]
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        1,
+        0.35,
+        false,
+        true,
+        0,
+        0,
+        false
+      ]
+    },
+    {
+      "id": 36,
+      "type": "BasicGuider",
+      "pos": [
+        1740,
+        720
+      ],
+      "size": [
+        400,
+        60
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 45
+        },
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 46
+        }
+      ],
+      "outputs": [
+        {
+          "name": "GUIDER",
+          "type": "GUIDER",
+          "links": [
+            48
+          ]
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "type": "SamplerCustomAdvanced",
+      "pos": [
+        1740,
+        820
+      ],
+      "size": [
+        400,
+        130
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "noise",
+          "type": "NOISE",
+          "link": 47
+        },
+        {
+          "name": "guider",
+          "type": "GUIDER",
+          "link": 48
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 49
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 50
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 51
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            52
+          ]
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": []
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "VAEDecode",
+      "pos": [
+        1740,
+        990
+      ],
+      "size": [
+        400,
+        58
+      ],
+      "flags": {},
+      "order": 37,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 52
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 53
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            60
+          ]
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "type": "H3ChunkClose",
+      "pos": [
+        2200,
+        20
+      ],
+      "size": [
+        380,
+        130
+      ],
+      "flags": {},
+      "order": 38,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "flow",
+          "type": "H3_CHUNK_FLOW",
+          "link": 59
+        },
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 60
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            61
+          ]
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            67
+          ]
+        }
+      ],
+      "title": "4. clone the body per chunk, join"
+    },
+    {
+      "id": 40,
+      "type": "H3SubjectUncrop",
+      "pos": [
+        2200,
+        190
+      ],
+      "size": [
+        380,
+        140
+      ],
+      "flags": {},
+      "order": 39,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 61
+        },
+        {
+          "name": "source_images",
+          "type": "IMAGE",
+          "link": 62
+        },
+        {
+          "name": "crop_data",
+          "type": "H3_CROP",
+          "link": 63
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            64
+          ]
+        }
+      ],
+      "widgets_values": [
+        16
+      ],
+      "title": "5. uncrop the JOINED clip, once"
+    },
+    {
+      "id": 41,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        2200,
+        360
+      ],
+      "size": [
+        380,
+        320
+      ],
+      "flags": {},
+      "order": 40,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 64
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 65
+        }
+      ],
+      "outputs": [],
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "H3/chunked_swap",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": true
+      }
+    },
+    {
+      "id": 42,
+      "type": "Note",
+      "pos": [
+        2200,
+        540
+      ],
+      "size": [
+        380,
+        320
+      ],
+      "flags": {},
+      "order": 41,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "widgets_values": [
+        "WHY THE CROP IS OUTSIDE\n\nThe carried frames have to line up pixel for pixel with what\nfollows them. A box computed per chunk would move between chunks,\nso the pin would fight the generation instead of anchoring it \u2014\nH3 Chunk Context refuses outright if it sees two sizes.\n\nOne box for the whole clip also means every chunk decodes at the\nsame size, so they join at crop size and uncrop ONCE at the end.\n\nThe cost: on a clip where she crosses the frame, that one box is\nthe union of everywhere she goes, and the subject gets fewer\npixels than a per-chunk box would give her."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 43,
+      "type": "Note",
+      "pos": [
+        2200,
+        880
+      ],
+      "size": [
+        380,
+        260
+      ],
+      "flags": {},
+      "order": 42,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "widgets_values": [
+        "AUDIO\n\nH3MaskInpaint has keep_audio TRUE, so the audio latent is pinned\nto the source and a decode would hand back the source track,\nre-rendered. The source audio goes straight to the muxer instead.\n\nTurn keep_audio off and that stops being true: Close joins IMAGE\nonly, so model-generated audio would need its own join."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 44,
+      "type": "PreviewAny",
+      "pos": [
+        2620,
+        20
+      ],
+      "size": [
+        380,
+        200
+      ],
+      "flags": {},
+      "order": 43,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 66
+        }
+      ],
+      "outputs": [],
+      "title": "PLAN \u2014 read before queueing"
+    },
+    {
+      "id": 45,
+      "type": "PreviewAny",
+      "pos": [
+        2620,
+        240
+      ],
+      "size": [
+        380,
+        220
+      ],
+      "flags": {},
+      "order": 44,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 67
+        }
+      ],
+      "outputs": [],
+      "title": "CLOSE \u2014 what got cloned"
+    },
+    {
+      "id": 46,
+      "type": "PreviewAny",
+      "pos": [
+        2620,
+        480
+      ],
+      "size": [
+        380,
+        180
+      ],
+      "flags": {},
+      "order": 45,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 68
+        }
+      ],
+      "outputs": [],
+      "title": "PROMPT LINT"
+    },
+    {
+      "id": 47,
+      "type": "PreviewAny",
+      "pos": [
+        2620,
+        680
+      ],
+      "size": [
+        380,
+        180
+      ],
+      "flags": {},
+      "order": 46,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 69
+        }
+      ],
+      "outputs": [],
+      "title": "CROP \u2014 box and render size"
     }
-   ],
-   "widgets_values": [
-    "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
-    "minimax",
-    "default"
-   ]
-  },
-  {
-   "id": 2,
-   "type": "VAELoader",
-   "pos": [
-    20,
-    150
-   ],
-   "size": [
-    400,
-    58
-   ],
-   "flags": {},
-   "order": 1,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "VAE",
-     "type": "VAE",
-     "links": [
-      29,
-      40,
-      53
-     ]
-    }
-   ],
-   "widgets_values": [
-    "H3\\minimax_h3_video_vae_fp16.safetensors"
-   ],
-   "title": "Video VAE"
-  },
-  {
-   "id": 3,
-   "type": "VAELoader",
-   "pos": [
-    20,
-    220
-   ],
-   "size": [
-    400,
-    58
-   ],
-   "flags": {},
-   "order": 2,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "VAE",
-     "type": "VAE",
-     "links": [
-      30,
-      43
-     ]
-    }
-   ],
-   "widgets_values": [
-    "H3\\minimax_h3_audio_vae_fp32.safetensors"
-   ],
-   "title": "Audio VAE"
-  },
-  {
-   "id": 4,
-   "type": "UNETLoader",
-   "pos": [
-    20,
-    290
-   ],
-   "size": [
-    400,
-    82
-   ],
-   "flags": {},
-   "order": 3,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      1
-     ]
-    }
-   ],
-   "widgets_values": [
-    "H3\\minimax_h3_ref2va_pruned_int8_convrot.safetensors",
-    "default"
-   ]
-  },
-  {
-   "id": 5,
-   "type": "LoraLoaderModelOnly",
-   "pos": [
-    20,
-    390
-   ],
-   "size": [
-    400,
-    82
-   ],
-   "flags": {},
-   "order": 4,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 1
-    }
-   ],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      2
-     ]
-    }
-   ],
-   "widgets_values": [
-    "h3\\minimax_h3_ref2v_lightx2v_turbo_4step_v0.1_resized_avg_rank_20_bf16.safetensors",
-    1
-   ]
-  },
-  {
-   "id": 6,
-   "type": "LoraLoaderModelOnly",
-   "pos": [
-    20,
-    490
-   ],
-   "size": [
-    400,
-    82
-   ],
-   "flags": {},
-   "order": 5,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 2
-    }
-   ],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      3
-     ]
-    }
-   ],
-   "widgets_values": [
-    "h3\\MysticXXX_MMH3-V2.safetensors",
-    1
-   ]
-  },
-  {
-   "id": 7,
-   "type": "MiniMaxH3SigmaShift",
-   "pos": [
-    20,
-    590
-   ],
-   "size": [
-    400,
-    82
-   ],
-   "flags": {},
-   "order": 6,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 3
-    }
-   ],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      4
-     ]
-    }
-   ],
-   "widgets_values": [
-    12,
-    3
-   ]
-  },
-  {
-   "id": 8,
-   "type": "H3SLAAttention",
-   "pos": [
-    20,
-    690
-   ],
-   "size": [
-    400,
-    160
-   ],
-   "flags": {},
-   "order": 7,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 4
-    }
-   ],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
+  ],
+  "links": [
+    [
+      1,
+      4,
+      0,
       5,
-      45
-     ]
-    }
-   ],
-   "widgets_values": [
-    0.85,
-    "64",
-    8192,
-    0,
-    true,
-    true
-   ]
-  },
-  {
-   "id": 9,
-   "type": "CheckpointLoaderSimple",
-   "pos": [
-    20,
-    880
-   ],
-   "size": [
-    400,
-    100
-   ],
-   "flags": {},
-   "order": 8,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "MODEL",
-     "type": "MODEL",
-     "links": [
-      14
-     ]
-    },
-    {
-     "name": "CLIP",
-     "type": "CLIP",
-     "links": [
-      6
-     ]
-    },
-    {
-     "name": "VAE",
-     "type": "VAE",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    "sam3.1_multiplex_fp16.safetensors"
-   ],
-   "title": "SAM 3.1"
-  },
-  {
-   "id": 10,
-   "type": "CLIPTextEncode",
-   "pos": [
-    20,
-    1010
-   ],
-   "size": [
-    400,
-    90
-   ],
-   "flags": {},
-   "order": 9,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "clip",
-     "type": "CLIP",
-     "link": 6
-    }
-   ],
-   "outputs": [
-    {
-     "name": "CONDITIONING",
-     "type": "CONDITIONING",
-     "links": [
-      15
-     ]
-    }
-   ],
-   "widgets_values": [
-    "woman and hair"
-   ]
-  },
-  {
-   "id": 11,
-   "type": "DownloadAndLoadDepthAnythingV2Model",
-   "pos": [
-    20,
-    1130
-   ],
-   "size": [
-    400,
-    58
-   ],
-   "flags": {},
-   "order": 10,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "da_v2_model",
-     "type": "DAMODEL",
-     "links": [
-      24
-     ]
-    }
-   ],
-   "widgets_values": [
-    "depth_anything_v2_vitl_fp32.safetensors",
-    "auto"
-   ]
-  },
-  {
-   "id": 12,
-   "type": "KSamplerSelect",
-   "pos": [
-    20,
-    1210
-   ],
-   "size": [
-    400,
-    58
-   ],
-   "flags": {},
-   "order": 11,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "SAMPLER",
-     "type": "SAMPLER",
-     "links": [
-      49
-     ]
-    }
-   ],
-   "widgets_values": [
-    "res_2s"
-   ]
-  },
-  {
-   "id": 13,
-   "type": "BasicScheduler",
-   "pos": [
-    20,
-    1290
-   ],
-   "size": [
-    400,
-    106
-   ],
-   "flags": {},
-   "order": 12,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 5
-    }
-   ],
-   "outputs": [
-    {
-     "name": "SIGMAS",
-     "type": "SIGMAS",
-     "links": [
-      50
-     ]
-    }
-   ],
-   "widgets_values": [
-    "sgm_uniform",
-    4,
-    0.45
-   ]
-  },
-  {
-   "id": 14,
-   "type": "RandomNoise",
-   "pos": [
-    20,
-    1420
-   ],
-   "size": [
-    400,
-    82
-   ],
-   "flags": {},
-   "order": 13,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "NOISE",
-     "type": "NOISE",
-     "links": [
-      47
-     ]
-    }
-   ],
-   "widgets_values": [
-    399151606850116,
-    "fixed"
-   ]
-  },
-  {
-   "id": 15,
-   "type": "LoadImage",
-   "pos": [
-    20,
-    1530
-   ],
-   "size": [
-    400,
-    300
-   ],
-   "flags": {},
-   "order": 14,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      35
-     ]
-    },
-    {
-     "name": "MASK",
-     "type": "MASK",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    "ref_a.png",
-    "image"
-   ]
-  },
-  {
-   "id": 16,
-   "type": "LoadImage",
-   "pos": [
-    20,
-    1850
-   ],
-   "size": [
-    400,
-    300
-   ],
-   "flags": {},
-   "order": 15,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      36
-     ]
-    },
-    {
-     "name": "MASK",
-     "type": "MASK",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    "ref_b.png",
-    "image"
-   ]
-  },
-  {
-   "id": 17,
-   "type": "LoadAudio",
-   "pos": [
-    20,
-    2170
-   ],
-   "size": [
-    400,
-    120
-   ],
-   "flags": {},
-   "order": 16,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [
-    {
-     "name": "AUDIO",
-     "type": "AUDIO",
-     "links": [
-      38
-     ]
-    }
-   ],
-   "widgets_values": [
-    "voice.mp4",
-    null,
-    null
-   ]
-  },
-  {
-   "id": 18,
-   "type": "Note",
-   "pos": [
-    20,
-    2320
-   ],
-   "size": [
-    400,
-    300
-   ],
-   "flags": {},
-   "order": 17,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [],
-   "widgets_values": [
-    "SHARED, NOT CLONED\n\nEverything in this column feeds the body from outside, so Close\nleaves it alone: one model load, one LoRA chain, one SAM encode,\none set of reference images. Close reports exactly what it kept\nexternal \u2014 check its `info` output the first time you run.\n\nThe scheduler and the sampler sit here too because they only take\nthe model. RandomNoise is shared and `fixed`: same seed, but each\nchunk is a different latent shape, so each still gets its own\nnoise, and the run repeats exactly."
-   ],
-   "color": "#432",
-   "bgcolor": "#653"
-  },
-  {
-   "id": 19,
-   "type": "VHS_LoadVideo",
-   "pos": [
-    460,
-    20
-   ],
-   "size": [
-    400,
-    300
-   ],
-   "flags": {},
-   "order": 18,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "meta_batch",
-     "type": "VHS_BatchManager",
-     "link": null
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": null
-    }
-   ],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      13,
-      19
-     ]
-    },
-    {
-     "name": "frame_count",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "audio",
-     "type": "AUDIO",
-     "links": [
-      12,
-      65
-     ]
-    },
-    {
-     "name": "video_info",
-     "type": "VHS_VIDEOINFO",
-     "links": []
-    }
-   ],
-   "widgets_values": {
-    "video": "source.mp4",
-    "force_rate": 24,
-    "custom_width": 0,
-    "custom_height": 0,
-    "frame_load_cap": 0,
-    "skip_first_frames": 0,
-    "select_every_nth": 1,
-    "format": "AnimateDiff"
-   },
-   "title": "frame_load_cap 0 = the WHOLE clip"
-  },
-  {
-   "id": 20,
-   "type": "H3ChunkPlan",
-   "pos": [
-    460,
-    350
-   ],
-   "size": [
-    400,
-    300
-   ],
-   "flags": {},
-   "order": 19,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source_images",
-     "type": "IMAGE",
-     "link": 7
-    }
-   ],
-   "outputs": [
-    {
-     "name": "plan",
-     "type": "H3_CHUNK_PLAN",
-     "links": [
-      8
-     ]
-    },
-    {
-     "name": "chunk_count",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": [
-      66
-     ]
-    }
-   ],
-   "widgets_values": [
-    90,
-    "scene",
-    "22",
-    0,
-    0.12,
-    39,
-    0,
-    0,
-    0
-   ],
-   "title": "1. plan  (context 22 = chunks overlap by 22f)"
-  },
-  {
-   "id": 21,
-   "type": "H3ChunkOpen",
-   "pos": [
-    460,
-    680
-   ],
-   "size": [
-    400,
-    300
-   ],
-   "flags": {},
-   "order": 20,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "plan",
-     "type": "H3_CHUNK_PLAN",
-     "link": 8
-    },
-    {
-     "name": "source_images",
-     "type": "IMAGE",
-     "link": 9
-    },
-    {
-     "name": "extra_images",
-     "type": "IMAGE",
-     "link": 11
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 10
-    },
-    {
-     "name": "source_audio",
-     "type": "AUDIO",
-     "link": 12
-    }
-   ],
-   "outputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "links": [
-      54
-     ]
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      55
-     ]
-    },
-    {
-     "name": "audio",
-     "type": "AUDIO",
-     "links": [
-      44
-     ]
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "links": [
-      34
-     ]
-    },
-    {
-     "name": "chunk_index",
-     "type": "INT",
-     "links": [
-      26
-     ]
-    },
-    {
-     "name": "flow",
-     "type": "H3_CHUNK_FLOW",
-     "links": [
-      59
-     ]
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": []
-    },
-    {
-     "name": "chunk_count",
-     "type": "INT",
-     "links": [
-      27
-     ]
-    },
-    {
-     "name": "keyframe",
-     "type": "IMAGE",
-     "links": []
-    },
-    {
-     "name": "context",
-     "type": "IMAGE",
-     "links": [
-      57
-     ]
-    },
-    {
-     "name": "extra",
-     "type": "IMAGE",
-     "links": [
-      37
-     ]
-    },
-    {
-     "name": "pin",
-     "type": "INT",
-     "links": [
-      56
-     ]
-    }
-   ],
-   "widgets_values": [
-    22
-   ],
-   "title": "2. one chunk, cropped and masked"
-  },
-  {
-   "id": 22,
-   "type": "Note",
-   "pos": [
-    460,
-    1010
-   ],
-   "size": [
-    400,
-    340
-   ],
-   "flags": {},
-   "order": 21,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [],
-   "widgets_values": [
-    "PLAN \u2014 render_width / render_height\n\nLeave them at 0. They change nothing about the plan: not a\nboundary, not a length, not the count. They exist only so the info\ntext can quote a token share, and it needs a render size to work\none out. The crop sets the render size and its width/height go\nstraight to the conditioning node, so a number typed here would\njust be a stale second copy.\n\nchunk_frames is the lever that matters. It is the chunk LENGTH,\nsnapped up to a legal run (17n+5).\n\n`scene` mode splits on hard cuts first and fills each shot; the\nfirst chunk of every shot re-detects the mask rather than seeding\nfrom the previous one, because across a cut the old mask points at\nwhere she stood in a different shot."
-   ],
-   "color": "#432",
-   "bgcolor": "#653"
-  },
-  {
-   "id": 23,
-   "type": "SAM3_VideoTrack",
-   "pos": [
-    460,
-    1400
-   ],
-   "size": [
-    360,
-    130
-   ],
-   "flags": {},
-   "order": 22,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 13
-    },
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 14
-    },
-    {
-     "name": "initial_mask",
-     "type": "MASK",
-     "link": null
-    },
-    {
-     "name": "conditioning",
-     "type": "CONDITIONING",
-     "link": 15
-    }
-   ],
-   "outputs": [
-    {
-     "name": "track_data",
-     "type": "SAM3_TRACK_DATA",
-     "links": [
-      16
-     ]
-    }
-   ],
-   "widgets_values": [
-    0.3,
-    4,
-    1
-   ]
-  },
-  {
-   "id": 24,
-   "type": "SAM3_TrackToMask",
-   "pos": [
-    460,
-    1560
-   ],
-   "size": [
-    360,
-    58
-   ],
-   "flags": {},
-   "order": 23,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "track_data",
-     "type": "SAM3_TRACK_DATA",
-     "link": 16
-    }
-   ],
-   "outputs": [
-    {
-     "name": "masks",
-     "type": "MASK",
-     "links": [
-      17
-     ]
-    }
-   ],
-   "widgets_values": [
-    "0"
-   ]
-  },
-  {
-   "id": 25,
-   "type": "H3MaskStabilize",
-   "pos": [
-    460,
-    1650
-   ],
-   "size": [
-    360,
-    82
-   ],
-   "flags": {},
-   "order": 24,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 17
-    }
-   ],
-   "outputs": [
-    {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      18
-     ]
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    2,
-    1
-   ]
-  },
-  {
-   "id": 26,
-   "type": "GrowMaskWithBlur",
-   "pos": [
-    460,
-    1770
-   ],
-   "size": [
-    360,
-    200
-   ],
-   "flags": {},
-   "order": 25,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 18
-    }
-   ],
-   "outputs": [
-    {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      20
-     ]
-    },
-    {
-     "name": "mask_inverted",
-     "type": "MASK",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    12,
-    0,
-    true,
-    false,
-    3,
-    1,
-    1,
-    false
-   ]
-  },
-  {
-   "id": 27,
-   "type": "H3MatchSource",
-   "pos": [
-    460,
-    2000
-   ],
-   "size": [
-    360,
-    200
-   ],
-   "flags": {},
-   "order": 26,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 19
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 20
-    },
-    {
-     "name": "mask_2",
-     "type": "MASK",
-     "link": null
-    }
-   ],
-   "outputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "links": [
-      21,
-      23,
-      62
-     ]
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      22
-     ]
-    },
-    {
-     "name": "mask_2",
-     "type": "MASK",
-     "links": []
-    },
-    {
-     "name": "width",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "height",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    "fill",
-    0,
-    0,
-    0.62,
-    false
-   ]
-  },
-  {
-   "id": 28,
-   "type": "H3SubjectCrop",
-   "pos": [
-    460,
-    2230
-   ],
-   "size": [
-    360,
-    220
-   ],
-   "flags": {},
-   "order": 27,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 21
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 22
-    },
-    {
-     "name": "mask_2",
-     "type": "MASK",
-     "link": null
-    }
-   ],
-   "outputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "links": [
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      5,
+      0,
+      6,
+      0,
+      "MODEL"
+    ],
+    [
+      3,
+      6,
+      0,
       7,
-      9
-     ]
+      0,
+      "MODEL"
+    ],
+    [
+      4,
+      7,
+      0,
+      8,
+      0,
+      "MODEL"
+    ],
+    [
+      5,
+      8,
+      0,
+      13,
+      0,
+      "MODEL"
+    ],
+    [
+      6,
+      9,
+      1,
+      10,
+      0,
+      "CLIP"
+    ],
+    [
+      7,
+      28,
+      0,
+      20,
+      0,
+      "IMAGE"
+    ],
+    [
+      8,
+      20,
+      0,
+      21,
+      0,
+      "H3_CHUNK_PLAN"
+    ],
+    [
+      9,
+      28,
+      0,
+      21,
+      1,
+      "IMAGE"
+    ],
+    [
+      10,
+      28,
+      1,
+      21,
+      3,
+      "MASK"
+    ],
+    [
+      11,
+      30,
+      0,
+      21,
+      2,
+      "IMAGE"
+    ],
+    [
+      12,
+      19,
+      2,
+      21,
+      4,
+      "AUDIO"
+    ],
+    [
+      13,
+      19,
+      0,
+      23,
+      0,
+      "IMAGE"
+    ],
+    [
+      14,
+      9,
+      0,
+      23,
+      1,
+      "MODEL"
+    ],
+    [
+      15,
+      10,
+      0,
+      23,
+      3,
+      "CONDITIONING"
+    ],
+    [
+      16,
+      23,
+      0,
+      24,
+      0,
+      "SAM3_TRACK_DATA"
+    ],
+    [
+      17,
+      24,
+      0,
+      25,
+      0,
+      "MASK"
+    ],
+    [
+      18,
+      25,
+      0,
+      26,
+      0,
+      "MASK"
+    ],
+    [
+      19,
+      19,
+      0,
+      27,
+      0,
+      "IMAGE"
+    ],
+    [
+      20,
+      26,
+      0,
+      27,
+      1,
+      "MASK"
+    ],
+    [
+      21,
+      27,
+      0,
+      28,
+      0,
+      "IMAGE"
+    ],
+    [
+      22,
+      27,
+      1,
+      28,
+      1,
+      "MASK"
+    ],
+    [
+      23,
+      27,
+      0,
+      29,
+      0,
+      "IMAGE"
+    ],
+    [
+      24,
+      11,
+      0,
+      30,
+      0,
+      "DAMODEL"
+    ],
+    [
+      25,
+      29,
+      0,
+      30,
+      1,
+      "IMAGE"
+    ],
+    [
+      26,
+      21,
+      4,
+      33,
+      0,
+      "INT"
+    ],
+    [
+      27,
+      21,
+      7,
+      33,
+      1,
+      "INT"
+    ],
+    [
+      28,
+      1,
+      0,
+      34,
+      0,
+      "CLIP"
+    ],
+    [
+      29,
+      2,
+      0,
+      34,
+      1,
+      "VAE"
+    ],
+    [
+      30,
+      3,
+      0,
+      34,
+      2,
+      "VAE"
+    ],
+    [
+      31,
+      33,
+      0,
+      34,
+      3,
+      "STRING"
+    ],
+    [
+      32,
+      28,
+      3,
+      34,
+      8,
+      "INT"
+    ],
+    [
+      33,
+      28,
+      4,
+      34,
+      9,
+      "INT"
+    ],
+    [
+      34,
+      21,
+      3,
+      34,
+      10,
+      "INT"
+    ],
+    [
+      35,
+      15,
+      0,
+      34,
+      4,
+      "IMAGE"
+    ],
+    [
+      36,
+      16,
+      0,
+      34,
+      5,
+      "IMAGE"
+    ],
+    [
+      37,
+      21,
+      10,
+      34,
+      6,
+      "IMAGE"
+    ],
+    [
+      38,
+      17,
+      0,
+      34,
+      7,
+      "AUDIO"
+    ],
+    [
+      39,
+      34,
+      1,
+      35,
+      0,
+      "LATENT"
+    ],
+    [
+      40,
+      2,
+      0,
+      35,
+      1,
+      "VAE"
+    ],
+    [
+      41,
+      31,
+      0,
+      35,
+      2,
+      "IMAGE"
+    ],
+    [
+      42,
+      31,
+      1,
+      35,
+      3,
+      "MASK"
+    ],
+    [
+      43,
+      3,
+      0,
+      35,
+      4,
+      "VAE"
+    ],
+    [
+      44,
+      21,
+      2,
+      35,
+      5,
+      "AUDIO"
+    ],
+    [
+      45,
+      8,
+      0,
+      36,
+      0,
+      "MODEL"
+    ],
+    [
+      46,
+      34,
+      0,
+      36,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      47,
+      14,
+      0,
+      37,
+      0,
+      "NOISE"
+    ],
+    [
+      48,
+      36,
+      0,
+      37,
+      1,
+      "GUIDER"
+    ],
+    [
+      49,
+      12,
+      0,
+      37,
+      2,
+      "SAMPLER"
+    ],
+    [
+      50,
+      13,
+      0,
+      37,
+      3,
+      "SIGMAS"
+    ],
+    [
+      51,
+      35,
+      0,
+      37,
+      4,
+      "LATENT"
+    ],
+    [
+      52,
+      37,
+      0,
+      38,
+      0,
+      "LATENT"
+    ],
+    [
+      53,
+      2,
+      0,
+      38,
+      1,
+      "VAE"
+    ],
+    [
+      54,
+      21,
+      0,
+      31,
+      0,
+      "IMAGE"
+    ],
+    [
+      55,
+      21,
+      1,
+      31,
+      1,
+      "MASK"
+    ],
+    [
+      56,
+      21,
+      11,
+      31,
+      2,
+      "INT"
+    ],
+    [
+      57,
+      21,
+      9,
+      31,
+      3,
+      "IMAGE"
+    ],
+    [
+      58,
+      31,
+      3,
+      32,
+      0,
+      "STRING"
+    ],
+    [
+      59,
+      21,
+      5,
+      39,
+      0,
+      "H3_CHUNK_FLOW"
+    ],
+    [
+      60,
+      38,
+      0,
+      39,
+      1,
+      "IMAGE"
+    ],
+    [
+      61,
+      39,
+      0,
+      40,
+      0,
+      "IMAGE"
+    ],
+    [
+      62,
+      27,
+      0,
+      40,
+      1,
+      "IMAGE"
+    ],
+    [
+      63,
+      28,
+      5,
+      40,
+      2,
+      "H3_CROP"
+    ],
+    [
+      64,
+      40,
+      0,
+      41,
+      0,
+      "IMAGE"
+    ],
+    [
+      65,
+      19,
+      2,
+      41,
+      1,
+      "AUDIO"
+    ],
+    [
+      66,
+      20,
+      2,
+      44,
+      0,
+      "STRING"
+    ],
+    [
+      67,
+      39,
+      1,
+      45,
+      0,
+      "STRING"
+    ],
+    [
+      68,
+      33,
+      5,
+      46,
+      0,
+      "STRING"
+    ],
+    [
+      69,
+      28,
+      6,
+      47,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "SHARED \u2014 loaded once",
+      "bounding": [
+        0,
+        -40,
+        440,
+        2700
+      ],
+      "color": "#666",
+      "font_size": 24,
+      "flags": {}
     },
     {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      10
-     ]
+      "id": 2,
+      "title": "SOURCE + PLAN + OPEN",
+      "bounding": [
+        440,
+        -40,
+        440,
+        1420
+      ],
+      "color": "#88A",
+      "font_size": 24,
+      "flags": {}
     },
     {
-     "name": "mask_2",
-     "type": "MASK",
-     "links": []
+      "id": 3,
+      "title": "BODY \u2014 everything here is cloned per chunk",
+      "bounding": [
+        880,
+        -40,
+        1300,
+        1360
+      ],
+      "color": "#8A8",
+      "font_size": 24,
+      "flags": {}
     },
     {
-     "name": "width",
-     "type": "INT",
-     "links": [
-      32
-     ]
-    },
-    {
-     "name": "height",
-     "type": "INT",
-     "links": [
-      33
-     ]
-    },
-    {
-     "name": "crop_data",
-     "type": "H3_CROP",
-     "links": [
-      63
-     ]
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": [
-      69
-     ]
+      "id": 4,
+      "title": "JOIN + OUTPUT",
+      "bounding": [
+        2180,
+        -40,
+        420,
+        1200
+      ],
+      "color": "#A88",
+      "font_size": 24,
+      "flags": {}
     }
-   ],
-   "widgets_values": [
-    "static",
-    1.5,
-    0,
-    16,
-    32
-   ],
-   "title": "static = one box for THIS chunk"
-  },
-  {
-   "id": 29,
-   "type": "ImageScaleBy",
-   "pos": [
-    460,
-    2480
-   ],
-   "size": [
-    360,
-    82
-   ],
-   "flags": {},
-   "order": 28,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "image",
-     "type": "IMAGE",
-     "link": 23
-    }
-   ],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      25
-     ]
-    }
-   ],
-   "widgets_values": [
-    "nearest-exact",
-    0.5
-   ]
-  },
-  {
-   "id": 30,
-   "type": "DepthAnything_V2",
-   "pos": [
-    460,
-    2590
-   ],
-   "size": [
-    360,
-    82
-   ],
-   "flags": {},
-   "order": 29,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "da_model",
-     "type": "DAMODEL",
-     "link": 24
-    },
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 25
-    }
-   ],
-   "outputs": [
-    {
-     "name": "image",
-     "type": "IMAGE",
-     "links": [
-      11
-     ]
-    }
-   ],
-   "title": "depth on this chunk's frames"
-  },
-  {
-   "id": 31,
-   "type": "H3ChunkContext",
-   "pos": [
-    900,
-    20
-   ],
-   "size": [
-    360,
-    200
-   ],
-   "flags": {},
-   "order": 30,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 54
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 55
-    },
-    {
-     "name": "pin",
-     "type": "INT",
-     "link": 56,
-     "widget": {
-      "name": "pin"
-     }
-    },
-    {
-     "name": "context_images",
-     "type": "IMAGE",
-     "link": 57
-    }
-   ],
-   "outputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "links": [
-      41
-     ]
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "links": [
-      42
-     ]
-    },
-    {
-     "name": "pinned",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": [
-      58
-     ]
-    }
-   ],
-   "widgets_values": [
-    22
-   ],
-   "title": "carry the seam \u2014 22 frames"
-  },
-  {
-   "id": 32,
-   "type": "PreviewAny",
-   "pos": [
-    900,
-    260
-   ],
-   "size": [
-    360,
-    160
-   ],
-   "flags": {},
-   "order": 31,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source",
-     "type": "*",
-     "link": 58
-    }
-   ],
-   "outputs": [],
-   "title": "CONTEXT \u2014 what got pinned"
-  },
-  {
-   "id": 33,
-   "type": "H3LongFormLinks",
-   "pos": [
-    1300,
-    20
-   ],
-   "size": [
-    400,
-    460
-   ],
-   "flags": {},
-   "order": 32,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "link_index",
-     "type": "INT",
-     "link": 26,
-     "widget": {
-      "name": "link_index"
-     }
-    },
-    {
-     "name": "expected_count",
-     "type": "INT",
-     "link": 27,
-     "widget": {
-      "name": "expected_count"
-     }
-    }
-   ],
-   "outputs": [
-    {
-     "name": "prompt",
-     "type": "STRING",
-     "links": [
-      31
-     ]
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "seed",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "link_count",
-     "type": "INT",
-     "links": []
-    },
-    {
-     "name": "plan",
-     "type": "STRING",
-     "links": []
-    },
-    {
-     "name": "lint",
-     "type": "STRING",
-     "links": [
-      68
-     ]
-    }
-   ],
-   "widgets_values": [
-    "subject_definitions:\n<Subject 1> is the woman in <Picture 1> and <Picture 2>.\n<Audio 1> is the voice for <Subject 1> (S1).\n\nsummary:\n[reference generation] The target video shows <Subject 1>, using <Picture 1> and <Picture 2> for <Subject 1>'s identity, and <Audio 1> for <Subject 1>'s voice.\n\nretention_analysis:\n<Subject 1> (Shot 1): fully_preserved - face and body match <Picture 1> and <Picture 2> exactly.\n<Audio 1>: reference - timbre and delivery only.\n\ndetailed_description:\n[Shot 1]",
-    "<Subject 1> is where the mask is, facing the camera\n<Subject 1> continues the same action, unbroken",
-    "The camera holds the same framing and the take runs unbroken.",
-    0,
-    3.75,
-    399151606850116,
-    0,
-    "reference generation"
-   ],
-   "title": "3. one clause per chunk \u2014 index from Open"
-  },
-  {
-   "id": 34,
-   "type": "MiniMaxH3ReferenceToVideo",
-   "pos": [
-    1740,
-    20
-   ],
-   "size": [
-    400,
-    360
-   ],
-   "flags": {},
-   "order": 33,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "clip",
-     "type": "CLIP",
-     "link": 28
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 29
-    },
-    {
-     "name": "audio_vae",
-     "type": "VAE",
-     "link": 30
-    },
-    {
-     "name": "prompt",
-     "type": "STRING",
-     "link": 31,
-     "widget": {
-      "name": "prompt"
-     }
-    },
-    {
-     "name": "ref_images.ref_image_0",
-     "type": "IMAGE",
-     "link": 35
-    },
-    {
-     "name": "ref_images.ref_image_1",
-     "type": "IMAGE",
-     "link": 36
-    },
-    {
-     "name": "ref_videos.ref_video_0",
-     "type": "IMAGE",
-     "link": 37
-    },
-    {
-     "name": "ref_audios.ref_audio_0",
-     "type": "AUDIO",
-     "link": 38
-    },
-    {
-     "name": "width",
-     "type": "INT",
-     "link": 32,
-     "widget": {
-      "name": "width"
-     }
-    },
-    {
-     "name": "height",
-     "type": "INT",
-     "link": 33,
-     "widget": {
-      "name": "height"
-     }
-    },
-    {
-     "name": "length",
-     "type": "INT",
-     "link": 34,
-     "widget": {
-      "name": "length"
-     }
-    }
-   ],
-   "outputs": [
-    {
-     "name": "positive",
-     "type": "CONDITIONING",
-     "links": [
-      46
-     ]
-    },
-    {
-     "name": "LATENT",
-     "type": "LATENT",
-     "links": [
-      39
-     ]
-    }
-   ],
-   "widgets_values": [
-    "",
-    1344,
-    768,
-    124,
-    "match"
-   ],
-   "title": "length from Open, w/h from the crop"
-  },
-  {
-   "id": 35,
-   "type": "H3MaskInpaint",
-   "pos": [
-    1740,
-    420
-   ],
-   "size": [
-    400,
-    260
-   ],
-   "flags": {},
-   "order": 34,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "latent",
-     "type": "LATENT",
-     "link": 39
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 40
-    },
-    {
-     "name": "source_images",
-     "type": "IMAGE",
-     "link": 41
-    },
-    {
-     "name": "mask",
-     "type": "MASK",
-     "link": 42
-    },
-    {
-     "name": "audio_vae",
-     "type": "VAE",
-     "link": 43
-    },
-    {
-     "name": "source_audio",
-     "type": "AUDIO",
-     "link": 44
-    }
-   ],
-   "outputs": [
-    {
-     "name": "latent",
-     "type": "LATENT",
-     "links": [
-      51
-     ]
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": []
-    }
-   ],
-   "widgets_values": [
-    1,
-    0.35,
-    false,
-    true,
-    0,
-    0,
-    false
-   ]
-  },
-  {
-   "id": 36,
-   "type": "BasicGuider",
-   "pos": [
-    1740,
-    720
-   ],
-   "size": [
-    400,
-    60
-   ],
-   "flags": {},
-   "order": 35,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "model",
-     "type": "MODEL",
-     "link": 45
-    },
-    {
-     "name": "conditioning",
-     "type": "CONDITIONING",
-     "link": 46
-    }
-   ],
-   "outputs": [
-    {
-     "name": "GUIDER",
-     "type": "GUIDER",
-     "links": [
-      48
-     ]
-    }
-   ]
-  },
-  {
-   "id": 37,
-   "type": "SamplerCustomAdvanced",
-   "pos": [
-    1740,
-    820
-   ],
-   "size": [
-    400,
-    130
-   ],
-   "flags": {},
-   "order": 36,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "noise",
-     "type": "NOISE",
-     "link": 47
-    },
-    {
-     "name": "guider",
-     "type": "GUIDER",
-     "link": 48
-    },
-    {
-     "name": "sampler",
-     "type": "SAMPLER",
-     "link": 49
-    },
-    {
-     "name": "sigmas",
-     "type": "SIGMAS",
-     "link": 50
-    },
-    {
-     "name": "latent_image",
-     "type": "LATENT",
-     "link": 51
-    }
-   ],
-   "outputs": [
-    {
-     "name": "output",
-     "type": "LATENT",
-     "links": [
-      52
-     ]
-    },
-    {
-     "name": "denoised_output",
-     "type": "LATENT",
-     "links": []
-    }
-   ]
-  },
-  {
-   "id": 38,
-   "type": "VAEDecode",
-   "pos": [
-    1740,
-    990
-   ],
-   "size": [
-    400,
-    58
-   ],
-   "flags": {},
-   "order": 37,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "samples",
-     "type": "LATENT",
-     "link": 52
-    },
-    {
-     "name": "vae",
-     "type": "VAE",
-     "link": 53
-    }
-   ],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      60
-     ]
-    }
-   ]
-  },
-  {
-   "id": 39,
-   "type": "H3ChunkClose",
-   "pos": [
-    2200,
-    20
-   ],
-   "size": [
-    380,
-    130
-   ],
-   "flags": {},
-   "order": 38,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "flow",
-     "type": "H3_CHUNK_FLOW",
-     "link": 59
-    },
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 60
-    }
-   ],
-   "outputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "links": [
-      61
-     ]
-    },
-    {
-     "name": "info",
-     "type": "STRING",
-     "links": [
-      67
-     ]
-    }
-   ],
-   "title": "4. clone the body per chunk, join"
-  },
-  {
-   "id": 40,
-   "type": "H3SubjectUncrop",
-   "pos": [
-    2200,
-    190
-   ],
-   "size": [
-    380,
-    140
-   ],
-   "flags": {},
-   "order": 39,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 61
-    },
-    {
-     "name": "source_images",
-     "type": "IMAGE",
-     "link": 62
-    },
-    {
-     "name": "crop_data",
-     "type": "H3_CROP",
-     "link": 63
-    }
-   ],
-   "outputs": [
-    {
-     "name": "IMAGE",
-     "type": "IMAGE",
-     "links": [
-      64
-     ]
-    }
-   ],
-   "widgets_values": [
-    16
-   ],
-   "title": "5. uncrop the JOINED clip, once"
-  },
-  {
-   "id": 41,
-   "type": "VHS_VideoCombine",
-   "pos": [
-    2200,
-    360
-   ],
-   "size": [
-    380,
-    320
-   ],
-   "flags": {},
-   "order": 40,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "images",
-     "type": "IMAGE",
-     "link": 64
-    },
-    {
-     "name": "audio",
-     "type": "AUDIO",
-     "link": 65
-    }
-   ],
-   "outputs": [],
-   "widgets_values": {
-    "frame_rate": 24,
-    "loop_count": 0,
-    "filename_prefix": "H3/chunked_swap",
-    "format": "video/h264-mp4",
-    "pix_fmt": "yuv420p",
-    "crf": 19,
-    "save_metadata": true,
-    "pingpong": false,
-    "save_output": true
-   }
-  },
-  {
-   "id": 42,
-   "type": "Note",
-   "pos": [
-    2200,
-    540
-   ],
-   "size": [
-    380,
-    320
-   ],
-   "flags": {},
-   "order": 41,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [],
-   "widgets_values": [
-    "WHY THE CROP IS OUTSIDE\n\nThe carried frames have to line up pixel for pixel with what\nfollows them. A box computed per chunk would move between chunks,\nso the pin would fight the generation instead of anchoring it \u2014\nH3 Chunk Context refuses outright if it sees two sizes.\n\nOne box for the whole clip also means every chunk decodes at the\nsame size, so they join at crop size and uncrop ONCE at the end.\n\nThe cost: on a clip where she crosses the frame, that one box is\nthe union of everywhere she goes, and the subject gets fewer\npixels than a per-chunk box would give her."
-   ],
-   "color": "#432",
-   "bgcolor": "#653"
-  },
-  {
-   "id": 43,
-   "type": "Note",
-   "pos": [
-    2200,
-    880
-   ],
-   "size": [
-    380,
-    260
-   ],
-   "flags": {},
-   "order": 42,
-   "mode": 0,
-   "inputs": [],
-   "outputs": [],
-   "widgets_values": [
-    "AUDIO\n\nH3MaskInpaint has keep_audio TRUE, so the audio latent is pinned\nto the source and a decode would hand back the source track,\nre-rendered. The source audio goes straight to the muxer instead.\n\nTurn keep_audio off and that stops being true: Close joins IMAGE\nonly, so model-generated audio would need its own join."
-   ],
-   "color": "#432",
-   "bgcolor": "#653"
-  },
-  {
-   "id": 44,
-   "type": "PreviewAny",
-   "pos": [
-    2620,
-    20
-   ],
-   "size": [
-    380,
-    200
-   ],
-   "flags": {},
-   "order": 43,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source",
-     "type": "*",
-     "link": 66
-    }
-   ],
-   "outputs": [],
-   "title": "PLAN \u2014 read before queueing"
-  },
-  {
-   "id": 45,
-   "type": "PreviewAny",
-   "pos": [
-    2620,
-    240
-   ],
-   "size": [
-    380,
-    220
-   ],
-   "flags": {},
-   "order": 44,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source",
-     "type": "*",
-     "link": 67
-    }
-   ],
-   "outputs": [],
-   "title": "CLOSE \u2014 what got cloned"
-  },
-  {
-   "id": 46,
-   "type": "PreviewAny",
-   "pos": [
-    2620,
-    480
-   ],
-   "size": [
-    380,
-    180
-   ],
-   "flags": {},
-   "order": 45,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source",
-     "type": "*",
-     "link": 68
-    }
-   ],
-   "outputs": [],
-   "title": "PROMPT LINT"
-  },
-  {
-   "id": 47,
-   "type": "PreviewAny",
-   "pos": [
-    2620,
-    680
-   ],
-   "size": [
-    380,
-    180
-   ],
-   "flags": {},
-   "order": 46,
-   "mode": 0,
-   "inputs": [
-    {
-     "name": "source",
-     "type": "*",
-     "link": 69
-    }
-   ],
-   "outputs": [],
-   "title": "CROP \u2014 box and render size"
-  }
- ],
- "links": [
-  [
-   1,
-   4,
-   0,
-   5,
-   0,
-   "MODEL"
   ],
-  [
-   2,
-   5,
-   0,
-   6,
-   0,
-   "MODEL"
-  ],
-  [
-   3,
-   6,
-   0,
-   7,
-   0,
-   "MODEL"
-  ],
-  [
-   4,
-   7,
-   0,
-   8,
-   0,
-   "MODEL"
-  ],
-  [
-   5,
-   8,
-   0,
-   13,
-   0,
-   "MODEL"
-  ],
-  [
-   6,
-   9,
-   1,
-   10,
-   0,
-   "CLIP"
-  ],
-  [
-   7,
-   28,
-   0,
-   20,
-   0,
-   "IMAGE"
-  ],
-  [
-   8,
-   20,
-   0,
-   21,
-   0,
-   "H3_CHUNK_PLAN"
-  ],
-  [
-   9,
-   28,
-   0,
-   21,
-   1,
-   "IMAGE"
-  ],
-  [
-   10,
-   28,
-   1,
-   21,
-   3,
-   "MASK"
-  ],
-  [
-   11,
-   30,
-   0,
-   21,
-   2,
-   "IMAGE"
-  ],
-  [
-   12,
-   19,
-   2,
-   21,
-   4,
-   "AUDIO"
-  ],
-  [
-   13,
-   19,
-   0,
-   23,
-   0,
-   "IMAGE"
-  ],
-  [
-   14,
-   9,
-   0,
-   23,
-   1,
-   "MODEL"
-  ],
-  [
-   15,
-   10,
-   0,
-   23,
-   3,
-   "CONDITIONING"
-  ],
-  [
-   16,
-   23,
-   0,
-   24,
-   0,
-   "SAM3_TRACK_DATA"
-  ],
-  [
-   17,
-   24,
-   0,
-   25,
-   0,
-   "MASK"
-  ],
-  [
-   18,
-   25,
-   0,
-   26,
-   0,
-   "MASK"
-  ],
-  [
-   19,
-   19,
-   0,
-   27,
-   0,
-   "IMAGE"
-  ],
-  [
-   20,
-   26,
-   0,
-   27,
-   1,
-   "MASK"
-  ],
-  [
-   21,
-   27,
-   0,
-   28,
-   0,
-   "IMAGE"
-  ],
-  [
-   22,
-   27,
-   1,
-   28,
-   1,
-   "MASK"
-  ],
-  [
-   23,
-   27,
-   0,
-   29,
-   0,
-   "IMAGE"
-  ],
-  [
-   24,
-   11,
-   0,
-   30,
-   0,
-   "DAMODEL"
-  ],
-  [
-   25,
-   29,
-   0,
-   30,
-   1,
-   "IMAGE"
-  ],
-  [
-   26,
-   21,
-   4,
-   33,
-   0,
-   "INT"
-  ],
-  [
-   27,
-   21,
-   7,
-   33,
-   1,
-   "INT"
-  ],
-  [
-   28,
-   1,
-   0,
-   34,
-   0,
-   "CLIP"
-  ],
-  [
-   29,
-   2,
-   0,
-   34,
-   1,
-   "VAE"
-  ],
-  [
-   30,
-   3,
-   0,
-   34,
-   2,
-   "VAE"
-  ],
-  [
-   31,
-   33,
-   0,
-   34,
-   3,
-   "STRING"
-  ],
-  [
-   32,
-   28,
-   3,
-   34,
-   8,
-   "INT"
-  ],
-  [
-   33,
-   28,
-   4,
-   34,
-   9,
-   "INT"
-  ],
-  [
-   34,
-   21,
-   3,
-   34,
-   10,
-   "INT"
-  ],
-  [
-   35,
-   15,
-   0,
-   34,
-   4,
-   "IMAGE"
-  ],
-  [
-   36,
-   16,
-   0,
-   34,
-   5,
-   "IMAGE"
-  ],
-  [
-   37,
-   21,
-   10,
-   34,
-   6,
-   "IMAGE"
-  ],
-  [
-   38,
-   17,
-   0,
-   34,
-   7,
-   "AUDIO"
-  ],
-  [
-   39,
-   34,
-   1,
-   35,
-   0,
-   "LATENT"
-  ],
-  [
-   40,
-   2,
-   0,
-   35,
-   1,
-   "VAE"
-  ],
-  [
-   41,
-   31,
-   0,
-   35,
-   2,
-   "IMAGE"
-  ],
-  [
-   42,
-   31,
-   1,
-   35,
-   3,
-   "MASK"
-  ],
-  [
-   43,
-   3,
-   0,
-   35,
-   4,
-   "VAE"
-  ],
-  [
-   44,
-   21,
-   2,
-   35,
-   5,
-   "AUDIO"
-  ],
-  [
-   45,
-   8,
-   0,
-   36,
-   0,
-   "MODEL"
-  ],
-  [
-   46,
-   34,
-   0,
-   36,
-   1,
-   "CONDITIONING"
-  ],
-  [
-   47,
-   14,
-   0,
-   37,
-   0,
-   "NOISE"
-  ],
-  [
-   48,
-   36,
-   0,
-   37,
-   1,
-   "GUIDER"
-  ],
-  [
-   49,
-   12,
-   0,
-   37,
-   2,
-   "SAMPLER"
-  ],
-  [
-   50,
-   13,
-   0,
-   37,
-   3,
-   "SIGMAS"
-  ],
-  [
-   51,
-   35,
-   0,
-   37,
-   4,
-   "LATENT"
-  ],
-  [
-   52,
-   37,
-   0,
-   38,
-   0,
-   "LATENT"
-  ],
-  [
-   53,
-   2,
-   0,
-   38,
-   1,
-   "VAE"
-  ],
-  [
-   54,
-   21,
-   0,
-   31,
-   0,
-   "IMAGE"
-  ],
-  [
-   55,
-   21,
-   1,
-   31,
-   1,
-   "MASK"
-  ],
-  [
-   56,
-   21,
-   11,
-   31,
-   2,
-   "INT"
-  ],
-  [
-   57,
-   21,
-   9,
-   31,
-   3,
-   "IMAGE"
-  ],
-  [
-   58,
-   31,
-   3,
-   32,
-   0,
-   "STRING"
-  ],
-  [
-   59,
-   21,
-   5,
-   39,
-   0,
-   "H3_CHUNK_FLOW"
-  ],
-  [
-   60,
-   38,
-   0,
-   39,
-   1,
-   "IMAGE"
-  ],
-  [
-   61,
-   39,
-   0,
-   40,
-   0,
-   "IMAGE"
-  ],
-  [
-   62,
-   27,
-   0,
-   40,
-   1,
-   "IMAGE"
-  ],
-  [
-   63,
-   28,
-   5,
-   40,
-   2,
-   "H3_CROP"
-  ],
-  [
-   64,
-   40,
-   0,
-   41,
-   0,
-   "IMAGE"
-  ],
-  [
-   65,
-   19,
-   2,
-   41,
-   1,
-   "AUDIO"
-  ],
-  [
-   66,
-   20,
-   2,
-   44,
-   0,
-   "STRING"
-  ],
-  [
-   67,
-   39,
-   1,
-   45,
-   0,
-   "STRING"
-  ],
-  [
-   68,
-   33,
-   5,
-   46,
-   0,
-   "STRING"
-  ],
-  [
-   69,
-   28,
-   6,
-   47,
-   0,
-   "STRING"
-  ]
- ],
- "groups": [
-  {
-   "id": 1,
-   "title": "SHARED \u2014 loaded once",
-   "bounding": [
-    0,
-    -40,
-    440,
-    2700
-   ],
-   "color": "#666",
-   "font_size": 24,
-   "flags": {}
-  },
-  {
-   "id": 2,
-   "title": "SOURCE + PLAN + OPEN",
-   "bounding": [
-    440,
-    -40,
-    440,
-    1420
-   ],
-   "color": "#88A",
-   "font_size": 24,
-   "flags": {}
-  },
-  {
-   "id": 3,
-   "title": "BODY \u2014 everything here is cloned per chunk",
-   "bounding": [
-    880,
-    -40,
-    1300,
-    1360
-   ],
-   "color": "#8A8",
-   "font_size": 24,
-   "flags": {}
-  },
-  {
-   "id": 4,
-   "title": "JOIN + OUTPUT",
-   "bounding": [
-    2180,
-    -40,
-    420,
-    1200
-   ],
-   "color": "#A88",
-   "font_size": 24,
-   "flags": {}
-  }
- ],
- "config": {},
- "extra": {},
- "version": 0.4
+  "config": {},
+  "extra": {},
+  "version": 0.4
 }
