@@ -1,6 +1,6 @@
 {
-  "last_node_id": 22,
-  "last_link_id": 33,
+  "last_node_id": 23,
+  "last_link_id": 37,
   "nodes": [
     {
       "id": 1,
@@ -139,7 +139,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe."
+        "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe.\n\nSIZE IS SET IN ONE PLACE. H3 Canvas takes megapixels plus an aspect\nratio and its width/height drive both the conditioning node and the\nplan's render_width/render_height. 0.72 MP at 4:7 is 640x1120, the\ncanvas this recipe was measured at. The plan needs the size only to\nreport token cost and reference share \u2014 it changes no boundary \u2014 but\nwith it wired those columns actually appear."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -158,7 +158,24 @@
       "flags": {},
       "order": 5,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "name": "render_width",
+          "type": "INT",
+          "link": 34,
+          "widget": {
+            "name": "render_width"
+          }
+        },
+        {
+          "name": "render_height",
+          "type": "INT",
+          "link": 35,
+          "widget": {
+            "name": "render_height"
+          }
+        }
+      ],
       "outputs": [
         {
           "name": "plan",
@@ -539,6 +556,22 @@
           "name": "keyframe",
           "type": "IMAGE",
           "link": 14
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 36,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 37,
+          "widget": {
+            "name": "height"
+          }
         }
       ],
       "outputs": [
@@ -975,6 +1008,56 @@
       ],
       "outputs": [],
       "title": "CLOSE \u2014 what gets cloned"
+    },
+    {
+      "id": 23,
+      "type": "H3Canvas",
+      "pos": [
+        20,
+        850
+      ],
+      "size": [
+        400,
+        130
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            34,
+            36
+          ]
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            35,
+            37
+          ]
+        },
+        {
+          "name": "tokens_per_frame",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "widgets_values": [
+        0.72,
+        4,
+        7
+      ],
+      "title": "0. the canvas \u2014 set the size ONCE, here"
     }
   ],
   "links": [
@@ -1241,6 +1324,38 @@
       9,
       5,
       "H3_CHUNK_PLAN"
+    ],
+    [
+      34,
+      23,
+      0,
+      6,
+      0,
+      "INT"
+    ],
+    [
+      35,
+      23,
+      1,
+      6,
+      1,
+      "INT"
+    ],
+    [
+      36,
+      23,
+      0,
+      10,
+      9,
+      "INT"
+    ],
+    [
+      37,
+      23,
+      1,
+      10,
+      10,
+      "INT"
     ]
   ],
   "groups": [

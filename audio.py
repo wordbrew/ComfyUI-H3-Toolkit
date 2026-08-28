@@ -566,11 +566,72 @@ class H3AudioLength:
         return (n, n / FPS, describe(n))
 
 
+class H3AudioTrimFrames:
+    """Cut frames off the front of an audio track, at exact sample boundaries.
+
+    WHY NOT TrimAudioDuration
+      Core's trim takes SECONDS as a float. That happens to be exact on H3's
+      grid -- a run that lands on both clocks divides by 3, so frames/24 is a
+      multiple of 1/8 of a second and binary-exact -- but it is exact by luck,
+      and one off-grid caller turns it into a rounding at every join. Frames in,
+      samples out, one round, stated where it happens.
+
+    WHY IT MATTERS AT A CHUNK JOIN
+      This is the audio half of what H3 Chunk Close does to the picture: a chunk
+      regenerates the frames its pin held, and both streams have to drop exactly
+      the same span or the audio walks away from the picture a little further at
+      every seam. Wave 15 measured what resampling or crossfading a join costs
+      instead -- it smears the beat -- so this only ever slices.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "audio": ("AUDIO",),
+            "skip_frames": ("INT", {"default": 0, "min": 0, "max": 100000,
+                            "tooltip": "Frames to remove from the START. In a "
+                                       "chunk graph this is keep_from - start, "
+                                       "the same span the picture drops."}),
+        }, "optional": {
+            "keep_frames": ("INT", {"default": 0, "min": 0, "max": 100000,
+                            "tooltip": "Frames to keep after the skip. 0 keeps "
+                                       "everything that is left."}),
+            "fps": ("FLOAT", {"default": 24.0, "min": 1.0, "max": 240.0,
+                     "step": 0.001, "tooltip": "H3 is 24."}),
+        }}
+
+    RETURN_TYPES = ("AUDIO", "STRING")
+    RETURN_NAMES = ("audio", "info")
+    FUNCTION = "go"
+    CATEGORY = "MiniMax H3/audio"
+    DESCRIPTION = ("Drop a frame count off the front of an audio track (and "
+                   "optionally cap its length), rounded once to whole samples.")
+
+    def go(self, audio, skip_frames, keep_frames=0, fps=24.0):
+        wf = audio.get("waveform")
+        sr = int(audio.get("sample_rate", 32000))
+        if wf is None:
+            return (audio, "H3 AUDIO TRIM: no waveform")
+        total = int(wf.shape[-1])
+        a = min(total, int(round(int(skip_frames) / float(fps) * sr)))
+        b = total
+        if int(keep_frames) > 0:
+            b = min(total, a + int(round(int(keep_frames) / float(fps) * sr)))
+        out = {"waveform": wf[..., a:b], "sample_rate": sr}
+        info = (f"H3 AUDIO TRIM: dropped {skip_frames}f = {a} sample(s) at "
+                f"{sr} Hz; {b - a} of {total} kept "
+                f"({(b - a) / float(sr):.3f}s)")
+        return (out, info)
+
+
+
 NODE_CLASS_MAPPINGS = {
     "H3AudioPrompt": H3AudioPrompt,
     "H3AudioLength": H3AudioLength,
+    "H3AudioTrimFrames": H3AudioTrimFrames,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3AudioPrompt": "MiniMax H3 Audio Prompt (song/speech)",
     "H3AudioLength": "MiniMax H3 Audio Length",
+    "H3AudioTrimFrames": "H3 Audio Trim (frames)",
 }

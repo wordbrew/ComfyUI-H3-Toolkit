@@ -7,7 +7,8 @@ than in a report that quietly lies.
 
 import sys
 
-from budget import _FALLBACK, frame_rows, ref_image_encoded_size
+from budget import (H3RefBudget, _FALLBACK, frame_rows,
+                    ref_image_encoded_size)
 
 C = _FALLBACK
 fails = []
@@ -82,6 +83,22 @@ assert abs(share(3, 2048, "max", 294) - share(3, 1024, "match", 39)) < 3.0
 # tripling the references does NOT recover a 7x dilution
 check("294f 9x match", share(9, 1024, "match", 294), 9.1)
 assert share(9, 1024, "match", 294) < share(3, 1024, "match", 39)
+
+# --- the reference count is its own output ---------------------------------- #
+# `seq_len` is the WHOLE sequence -- video + audio + refs + text -- so feeding it
+# into H3 Chunk Plan's ref_tokens would report a share of far more than the
+# references. ref_tokens is the fourth output for exactly that wiring.
+check("ref_tokens is the LAST output, appended",
+      H3RefBudget.RETURN_NAMES[-1], "ref_tokens")
+check("the earlier slots did not move",
+      H3RefBudget.RETURN_NAMES[:3], ("info", "ref_share", "seq_len"))
+check("types line up with names",
+      len(H3RefBudget.RETURN_TYPES), len(H3RefBudget.RETURN_NAMES))
+check("and every output is documented",
+      len(H3RefBudget.OUTPUT_TOOLTIPS), len(H3RefBudget.RETURN_NAMES))
+
+# `go` itself needs the package (relative imports), so it is not exercised here;
+# the slot CONTRACT above is the part a new output can silently break.
 
 if fails:
     print("FAIL")

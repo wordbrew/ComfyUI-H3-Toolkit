@@ -91,7 +91,14 @@ goes into any display node. It reports the number and shows where the levers mov
 it — it does not tell you what is good.
 
 **`MiniMax H3/long-form`** — `H3Assemble`, `H3AudioSlice`, `H3AudioLock`,
-`H3ChainFrame`, `H3Take`, `H3Resolution`
+`H3ChainFrame`, `H3Take`, `H3Canvas`, `H3Resolution`
+
+`H3Canvas` sizes a render by AREA rather than from a preset list, because area is
+what costs: a canvas contributes `(w/32)*(h/32)` tokens per latent frame and
+attention goes as roughly the square of the sequence, while the aspect ratio is
+nearly free. Give it megapixels and a ratio — or an image to take the ratio from —
+and it reports the size the 32-px grid actually delivered (0.62 MP asked is 0.608
+delivered), the token count, and the distance to H3's 1.03 MP canvas cap.
 
 ## Things that are easy to get wrong, and are enforced here
 

@@ -1,6 +1,6 @@
 {
-  "last_node_id": 47,
-  "last_link_id": 71,
+  "last_node_id": 50,
+  "last_link_id": 75,
   "nodes": [
     {
       "id": 1,
@@ -677,7 +677,8 @@
           "type": "H3_CHUNK_PLAN",
           "links": [
             8,
-            71
+            71,
+            73
           ]
         },
         {
@@ -852,7 +853,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "PLAN \u2014 render_width / render_height\n\nLeave them at 0. They change nothing about the plan: not a\nboundary, not a length, not the count. They exist only so the info\ntext can quote a token share, and it needs a render size to work\none out. The crop sets the render size and its width/height go\nstraight to the conditioning node, so a number typed here would\njust be a stale second copy.\n\nchunk_frames is the lever that matters. It is the chunk LENGTH,\nsnapped up to a legal run (17n+5).\n\n`scene` mode splits on hard cuts first and fills each shot; the\nfirst chunk of every shot re-detects the mask rather than seeding\nfrom the previous one, because across a cut the old mask points at\nwhere she stood in a different shot."
+        "PLAN \u2014 render_width / render_height\n\nLeave them at 0. source_images is wired here, so the plan reads the\nrender size straight off the clip and IGNORES these two entirely \u2014\nits info line says `(from source_images)` so you can see which it\nused. They exist for fresh generation, where there is no clip to read.\n\nThe size changes nothing about the plan: not a boundary, not a length,\nnot the count. It only lets the report quote the two numbers a chunk\nlength actually decides \u2014 the picture tokens the chunk costs, and the\nshare the references hold against them.\n\nchunk_frames is the lever that matters. It is the chunk LENGTH,\nsnapped up to a legal run (17n+5).\n\n`scene` mode splits on hard cuts first and fills each shot; the\nfirst chunk of every shot re-detects the mask rather than seeding\nfrom the previous one, because across a cut the old mask points at\nwhere she stood in a different shot."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -1850,7 +1851,8 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            64
+            64,
+            72
           ]
         }
       ],
@@ -2037,6 +2039,124 @@
       ],
       "outputs": [],
       "title": "CROP \u2014 box and render size"
+    },
+    {
+      "id": 48,
+      "type": "H3SeamCheck",
+      "pos": [
+        2200,
+        610
+      ],
+      "size": [
+        360,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 72
+        },
+        {
+          "name": "plan",
+          "type": "H3_CHUNK_PLAN",
+          "link": 73
+        },
+        {
+          "name": "frames_each_side",
+          "type": "INT",
+          "link": null
+        },
+        {
+          "name": "scale",
+          "type": "FLOAT",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "strips",
+          "type": "IMAGE",
+          "links": [
+            74
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            75
+          ],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3SeamCheck"
+      },
+      "widgets_values": [
+        4,
+        0.5
+      ],
+      "title": "SEAM CHECK \u2014 look here first"
+    },
+    {
+      "id": 49,
+      "type": "PreviewImage",
+      "pos": [
+        2600,
+        610
+      ],
+      "size": [
+        420,
+        400
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 74
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "title": "SEAM STRIPS \u2014 the red line is the cut"
+    },
+    {
+      "id": 50,
+      "type": "PreviewAny",
+      "pos": [
+        2600,
+        1030
+      ],
+      "size": [
+        420,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 75
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [],
+      "title": "SEAM DELTAS"
     }
   ],
   "links": [
@@ -2607,6 +2727,38 @@
       33,
       3,
       "H3_CHUNK_PLAN"
+    ],
+    [
+      72,
+      40,
+      0,
+      48,
+      0,
+      "IMAGE"
+    ],
+    [
+      73,
+      20,
+      0,
+      48,
+      1,
+      "H3_CHUNK_PLAN"
+    ],
+    [
+      74,
+      48,
+      0,
+      49,
+      0,
+      "IMAGE"
+    ],
+    [
+      75,
+      48,
+      1,
+      50,
+      0,
+      "STRING"
     ]
   ],
   "groups": [

@@ -237,10 +237,10 @@ class H3ChunkOpen:
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
                     "flow", "info", "chunk_count", "keyframe", "context",
-                    "extra", "pin")
+                    "extra", "pin", "prev_latent")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
@@ -255,7 +255,9 @@ class H3ChunkOpen:
         n = len(((plan or {}).get("chunks")) or [])
         note = (f"\n  wire your chain from here into H3 Chunk Close; it repeats "
                 f"this for all {n} chunks.") if n > 1 else ""
-        return out[:6] + (out[6] + note,) + out[7:]
+        # prev_latent is None on Open by definition: it stands in for chunk 0,
+        # and chunk 0 has nothing before it. Close fills it in for the clones.
+        return out[:6] + (out[6] + note,) + out[7:] + (None,)
 
 
 class H3ChunkClose:
@@ -266,36 +268,90 @@ class H3ChunkClose:
         return {
             "required": {
                 "flow": ("H3_CHUNK_FLOW", {"tooltip": "From H3 Chunk Open."}),
-                "images": ("IMAGE", {"tooltip": "The END of your chain — the "
+                # LAZY. This node needs the LINK, to know where your chain ends;
+                # it never needs the value. Evaluated eagerly, ComfyUI rendered
+                # the un-cloned body once to satisfy it and threw the result
+                # away, THEN expanded -- 4 sampler passes for 3 chunks, measured
+                # 2026-08-28. check_lazy_status below asks for it only on the
+                # paths that actually pass it through.
+                "images": ("IMAGE", {"lazy": True,
+                                     "tooltip": "The END of your chain — the "
                                                 "processed frames for one chunk."}),
+            },
+            "optional": {
+                "audio": ("AUDIO", {"lazy": True,
+                          "tooltip": "Optional, and only for its LINK: the "
+                                     "per-chunk VAE Decode Audio. Wire it and "
+                                     "the joined audio comes out of `audio`, cut "
+                                     "on the SAME frame boundaries as the "
+                                     "picture. Leave it unwired and the run is "
+                                     "silent — the model still generates audio "
+                                     "into the latent, it is just discarded at "
+                                     "the decode."}),
+                "latent": ("LATENT", {"lazy": True,
+                           "tooltip": "Optional, and also only for its LINK: the "
+                                      "sampler output. Wire it to chain chunks in "
+                                      "LATENT space — each chunk's latent reaches "
+                                      "the next one's `prev_latent` with no "
+                                      "decode/re-encode round trip."}),
             },
             "hidden": {"dynprompt": "DYNPROMPT", "unique_id": "UNIQUE_ID"},
         }
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "info")
+    # `audio` is APPENDED — saved graphs store slot indices by position
+    RETURN_TYPES = ("IMAGE", "STRING", "AUDIO")
+    RETURN_NAMES = ("images", "info", "audio")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
     DESCRIPTION = ("Repeat the chain between H3 Chunk Open and here for every "
                    "chunk in the plan, then join the results.")
 
-    def go(self, flow, images, dynprompt=None, unique_id=None):
+    def check_lazy_status(self, flow, images=None, audio=None, latent=None,
+                          dynprompt=None, unique_id=None):
+        """Which inputs actually have to be computed.
+
+        Returning [] on the expansion path is the whole point: the body is about
+        to be cloned once per chunk, so evaluating the original copy first is a
+        whole wasted render. Every path that falls back to passing `images`
+        through asks for it, so a misconfigured graph still returns something.
+        """
+        if GraphBuilder is None or dynprompt is None or unique_id is None:
+            return ["images"]
+        chunks = ((flow or {}).get("plan") or {}).get("chunks") or []
+        if len(chunks) <= 1:
+            return ["images"]          # nothing to repeat; the one result IS it
+        try:
+            _, opens = upstream_of(dynprompt, unique_id, OPEN_CLASS)
+        except Exception:
+            return ["images"]
+        return [] if opens else ["images"]
+
+    def go(self, flow, images=None, audio=None, latent=None, dynprompt=None,
+           unique_id=None):
+        def _bail(msg):
+            # `images` is lazy, so on a path check_lazy_status did not predict it
+            # can be None -- and handing None down the graph as an IMAGE fails
+            # somewhere far away. Fail here, where the cause is.
+            if images is None:
+                raise ValueError(f"H3 Chunk Close: {msg}")
+            return (images, msg, audio)
+
         if GraphBuilder is None:
-            return (images, f"GraphBuilder unavailable: {_IMPORT_ERROR}")
+            return _bail(f"GraphBuilder unavailable: {_IMPORT_ERROR}")
         if dynprompt is None or unique_id is None:
-            return (images, "DYNPROMPT / UNIQUE_ID were not supplied by this "
-                            "ComfyUI build, so the chain cannot be captured.")
+            return _bail("DYNPROMPT / UNIQUE_ID were not supplied by this "
+                         "ComfyUI build, so the chain cannot be captured.")
 
         plan = (flow or {}).get("plan") or {}
         chunks = plan.get("chunks") or []
         if len(chunks) <= 1:
-            return (images, "plan has one chunk or none — nothing to repeat, "
-                            "passing the single result through.")
+            return _bail("plan has one chunk or none — nothing to repeat, "
+                         "passing the single result through.")
 
         up, opens = upstream_of(dynprompt, unique_id, OPEN_CLASS)
         if not opens:
-            return (images, "No H3 Chunk Open found upstream. Wire `flow` from one.")
+            return _bail("No H3 Chunk Open found upstream. Wire `flow` from one.")
         open_id = opens[0]
         down = downstream_of(dynprompt, open_id)
 
@@ -303,22 +359,28 @@ class H3ChunkClose:
         # the chain from outside and would clone the VAE once per chunk.
         body_ids = sorted(up & down)
         if not body_ids:
-            return (images, "Nothing between Open and Close — wire your chain "
-                            "through the middle.")
+            return _bail("Nothing between Open and Close — wire your chain "
+                         "through the middle.")
         body = {nid: dynprompt.get_node(nid) for nid in body_ids}
         external = sorted(up - down)
 
         close_inputs = dynprompt.get_node(unique_id).get("inputs") or {}
         tail_link = close_inputs.get("images")
+        # the sampler, if the graph wants to chain in latent space
+        audio_link = close_inputs.get("audio")
+        latent_link = close_inputs.get("latent")
+        if is_link(latent_link) and latent_link[0] not in \
+                {n for n in (upstream_of(dynprompt, unique_id, OPEN_CLASS)[0])}:
+            latent_link = None
         if not is_link(tail_link):
-            return (images, "`images` is not connected to anything cloneable.")
+            return _bail("`images` is not connected to anything cloneable.")
         if tail_link[0] not in body:
-            return (images, f"`images` comes from node {tail_link[0]}, which is "
-                            f"not inside the Open..Close section. Wire the END of "
-                            f"your chain into `images`.")
+            return _bail(f"`images` comes from node {tail_link[0]}, which is "
+                         f"not inside the Open..Close section. Wire the END of "
+                         f"your chain into `images`.")
 
         graph = GraphBuilder()
-        outs = []
+        outs, lat_outs, aud_outs = [], [], []
         for ci, c in enumerate(chunks):
             # feed the slicer from whatever fed Open -- the video loader is a
             # shared external node, referenced not cloned
@@ -337,6 +399,12 @@ class H3ChunkClose:
             # the source pins both sides of every seam.
             if outs:
                 src_kw["prev_images"] = outs[-1]
+            if lat_outs:
+                # LATENT chaining: chunk N's context prefix is copied straight
+                # from chunk N-1's sampler output, so nothing is decoded and
+                # re-encoded between links. The re-encode is what climbed
+                # contrast down a chain.
+                src_kw["prev_latent"] = lat_outs[-1]
             src_kw["context_frames"] = int(open_widgets.get("context_frames", 39))
             src = graph.node("H3ChunkSlice", id=f"slice{ci}", **src_kw)
             mapping = {nid: graph.node(body[nid]["class_type"], id=f"c{ci}_{nid}")
@@ -366,12 +434,55 @@ class H3ChunkClose:
                                   length=int(c["end"]) - int(c["keep_from"])).out(0)
             outs.append(tail)
 
+            # AUDIO gets the same treatment as the picture and on the same
+            # boundaries: a chunk regenerates the span its pin held, so both
+            # streams drop it, or the sound walks away from the picture a little
+            # further at every seam. Sliced, never resampled or crossfaded --
+            # wave 15 measured that smearing the beat.
+            if is_link(audio_link) and audio_link[0] in mapping:
+                a = mapping[audio_link[0]].out(audio_link[1])
+                if skip > 0:
+                    a = graph.node("H3AudioTrimFrames", id=f"atrim{ci}", audio=a,
+                                   skip_frames=skip,
+                                   keep_frames=int(c["end"]) - int(c["keep_from"])
+                                   ).out(0)
+                aud_outs.append(a)
+            if is_link(latent_link) and latent_link[0] in mapping:
+                lat_outs.append(mapping[latent_link[0]].out(latent_link[1]))
+
         joined = outs[0]
         for nxt in outs[1:]:
             joined = graph.node("ImageBatch", image1=joined, image2=nxt).out(0)
 
+        # A fresh-generation tail grows FORWARD to reach a legal run its pin can
+        # cover, so the last chunk can end past what was asked for -- 300 frames
+        # requested comes back as 345. Trim to the ask, so the number typed into
+        # the plan is the number delivered. V2V never overshoots (there is no
+        # footage past the end), so this is a no-op there.
+        joined_audio = None
+        if aud_outs:
+            joined_audio = aud_outs[0]
+            for nxt in aud_outs[1:]:
+                joined_audio = graph.node("AudioConcat", audio1=joined_audio,
+                                          audio2=nxt, direction="after").out(0)
+
+        want = int(plan.get("total_frames") or 0)
+        made = sum(int(c["end"]) - int(c.get("keep_from", c["start"]))
+                   for c in chunks)
+        if want and made > want:
+            joined = graph.node("ImageFromBatch", id="fit", image=joined,
+                                batch_index=0, length=want).out(0)
+            if joined_audio is not None:
+                joined_audio = graph.node("H3AudioTrimFrames", id="afit",
+                                          audio=joined_audio, skip_frames=0,
+                                          keep_frames=want).out(0)
+
         report = [
             f"H3 CHUNK CLOSE — {len(chunks)} chunks",
+            ("  chaining in LATENT space — no decode/re-encode between chunks"
+             if lat_outs else
+             "  `latent` not wired — chunks carry only what you route through "
+             "Open's own outputs"),
             f"  body ({len(body_ids)} node(s), cloned per chunk):",
         ]
         for nid in body_ids:
@@ -382,6 +493,14 @@ class H3ChunkClose:
                 report.append(f"      {nid}  {dynprompt.get_node(nid)['class_type']}")
             except Exception:
                 pass
+        report.append("  audio joined on the same frame boundaries as the picture"
+                      if aud_outs else
+                      "  `audio` not wired — the model generates audio into the "
+                      "latent and the decode throws it away")
+        if want and made > want:
+            report.append(f"  generated {made} frames for the {want} asked — the "
+                          f"tail grew forward so its pin could reach the cut; "
+                          f"the extra is trimmed off the end")
         expanded = graph.finalize()
         overlap = sum(int(c.get("keep_from", c["start"])) - int(c["start"])
                       for c in chunks)
@@ -390,7 +509,8 @@ class H3ChunkClose:
                           f"at the join, so a short tail still gets a legal run")
         report.append(f"  emitted {len(expanded)} nodes across {len(chunks)} chunks")
         logging.info("H3ChunkClose: %s", report[0])
-        return {"expand": expanded, "result": (joined, "\n".join(report))}
+        return {"expand": expanded,
+                "result": (joined, "\n".join(report), joined_audio)}
 
 
 class H3ChunkSlice:
@@ -412,15 +532,16 @@ class H3ChunkSlice:
             "prev_images": ("IMAGE",),
             "extra_images": ("IMAGE",),
             "context_frames": ("INT", {"default": 39}),
+            "prev_latent": ("LATENT",),
         }}
 
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
                     "flow", "info", "chunk_count", "keyframe", "context",
-                    "extra", "pin")
+                    "extra", "pin", "prev_latent")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DEPRECATED = True          # keeps it out of the node menu
@@ -428,9 +549,10 @@ class H3ChunkSlice:
 
     def go(self, plan, chunk_index, source_images=None, mask=None,
            source_audio=None, prev_images=None, extra_images=None,
-           context_frames=39):
+           context_frames=39, prev_latent=None):
         return slice_chunk(plan, chunk_index, source_images, mask, source_audio,
-                           prev_images, context_frames, extra_images)
+                           prev_images, context_frames,
+                           extra_images) + (prev_latent,)
 
 
 class H3ChunkContext:
@@ -536,10 +658,109 @@ class H3ChunkContext:
         return {"ui": {"h3char": [info]}, "result": (out, msk, k, info)}
 
 
+class H3ChunkLatentContext:
+    """Copy the previous chunk's latent tail into this chunk's prefix.
+
+    WHY THIS WRAPPER EXISTS AND DOES NOT REIMPLEMENT ANYTHING
+      `MiniMaxH3GeneratedAVMaskedContext` (ComfyUI-H3-Motion-Context-MultiRef)
+      already does the copy correctly -- exact AV prefix runs, per-stream mask 0,
+      the half-cosine audio release -- and it is what that pack's own six-link
+      example uses for links 2..6. What it cannot do is sit in a body that is
+      cloned per chunk, because `source_latent` is REQUIRED and chunk 0 has no
+      previous chunk. So this delegates to it when there is a prefix to copy and
+      passes the latent straight through when there is not.
+
+    WHY LATENT HERE AND PIXELS IN H3ChunkContext
+      They are different jobs. A V2V swap already has a mask writer -- H3 Mask
+      Inpaint owns `samples` and `noise_mask` and rebuilds the latent from
+      `vae.encode(source_images)` -- so a second latent writer is discarded, and
+      the carry has to happen in pixels before anything encodes. Generating from
+      nothing, no one else owns the latent, and going through pixels would mean
+      a decode and re-encode per link, which is the round trip that climbed
+      contrast down a chain.
+
+    THE PREFIX IS REGENERATED, NOT FREE
+      `context_length` frames of every chunk reproduce what the last one already
+      delivered. Wire `pin` from H3 Chunk Open: the plan sizes the overlap, marks
+      `keep_from` past it, and H3 Chunk Close drops it at the join, so the prefix
+      costs compute and never appears twice. Set the plan's `context` to 39 --
+      that node floors at 39 because it protects audio too, and 39 is the
+      smallest count landing on both the 24 fps and 40 Hz grids.
+    """
+
+    CONTEXT_NODE = "MiniMaxH3GeneratedAVMaskedContext"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "latent": ("LATENT", {"tooltip": "This chunk's fresh target latent, "
+                                             "from the H3 conditioning node."}),
+        }, "optional": {
+            "source_latent": ("LATENT", {"tooltip": "The PREVIOUS chunk's sampler "
+                              "output, from H3 Chunk Open's `prev_latent`. Empty "
+                              "on the first chunk, which is why this node exists "
+                              "rather than the upstream one."}),
+            "context_length": ("INT", {"default": 39, "min": 0, "max": 4096,
+                               "tooltip": "Wire H3 Chunk Open's `pin`, so the "
+                                          "number copied is the number the plan "
+                                          "overlapped and the join drops. 0 "
+                                          "passes through."}),
+            "audio_feather_ticks": ("INT", {"default": 8, "min": 0, "max": 256,
+                                    "tooltip": "Half-cosine release across the "
+                                               "final audio-latent ticks of the "
+                                               "prefix. 8 = 0.2s at 40 Hz."}),
+        }}
+
+    RETURN_TYPES = ("LATENT", "INT", "STRING")
+    RETURN_NAMES = ("latent", "trim_frames", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    EXPERIMENTAL = True
+    DESCRIPTION = ("Chain generated chunks in latent space: the previous chunk's "
+                   "tail becomes this one's protected prefix, with no decode and "
+                   "re-encode in between.")
+
+    def go(self, latent, source_latent=None, context_length=39,
+           audio_feather_ticks=8):
+        if source_latent is None or int(context_length) <= 0:
+            why = ("first chunk — nothing before it to continue from"
+                   if source_latent is None else "context_length 0")
+            return (latent, 0, f"H3 CHUNK LATENT CONTEXT: passthrough ({why})")
+
+        # resolve by NODE ID through the registry: the class name and the id
+        # differ in these packs, and the id is what stays stable
+        cls = None
+        try:
+            import nodes as comfy_nodes
+            cls = getattr(comfy_nodes, "NODE_CLASS_MAPPINGS", {}).get(
+                self.CONTEXT_NODE)
+        except Exception:
+            pass
+        if cls is None:
+            raise ValueError(
+                f"{self.CONTEXT_NODE} is not installed. Latent chunk chaining "
+                f"needs ComfyUI-H3-Motion-Context-MultiRef — install it, or "
+                f"leave `source_latent` unwired to run the chunks independently.")
+
+        out = cls().prepare(latent=latent, source_latent=source_latent,
+                            context_length=int(context_length),
+                            audio_feather_ticks=int(audio_feather_ticks))
+        new_latent, trim = (out[0], out[1]) if isinstance(out, (list, tuple)) \
+            else (out, int(context_length))
+        info = (f"H3 CHUNK LATENT CONTEXT: {trim} frame(s) copied from the "
+                f"previous chunk and masked to 0\n  the plan overlapped by this "
+                f"much, so H3 Chunk Close drops it at the join")
+        logging.info("H3ChunkLatentContext: prefix %s frames", trim)
+        return {"ui": {"h3char": [info]}, "result": (new_latent, int(trim), info)}
+
+
 NODE_CLASS_MAPPINGS = {"H3ChunkOpen": H3ChunkOpen, "H3ChunkClose": H3ChunkClose,
                        "H3ChunkSlice": H3ChunkSlice,
-                       "H3ChunkContext": H3ChunkContext}
+                       "H3ChunkContext": H3ChunkContext,
+                       "H3ChunkLatentContext": H3ChunkLatentContext}
 NODE_DISPLAY_NAME_MAPPINGS = {"H3ChunkOpen": "H3 Chunk Open",
                               "H3ChunkClose": "H3 Chunk Close",
                               "H3ChunkSlice": "H3 Chunk Slice (internal)",
-                              "H3ChunkContext": "H3 Chunk Context (carry the seam)"}
+                              "H3ChunkContext": "H3 Chunk Context (carry the seam)",
+                              "H3ChunkLatentContext":
+                                  "H3 Chunk Latent Context (chain generated chunks)"}

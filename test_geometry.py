@@ -70,6 +70,41 @@ for sw, sh, tw, th in ((1920, 1080, 640, 1120), (640, 1120, 1024, 576),
     if abs((sw - cw - x0) - x0) > 1 or abs((sh - ch - y0) - y0) > 1:
         fails.append(f"{what}: not centred")
 
+# --- canvas_for_megapixels (what H3 Canvas is) ------------------------------
+# both axes on the 32 grid, every time — H3 requires it
+for mp, aw, ah in ((0.62, 9, 16), (0.62, 16, 9), (0.05, 1, 1), (1.0, 21, 9),
+                   (0.31, 4, 5), (0.9, 3, 2)):
+    w, h, _ = g.canvas_for_megapixels(mp, aw, ah, cap_mp=1.03)
+    if w % 32 or h % 32:
+        fails.append(f"canvas({mp}, {aw}:{ah}) -> {w}x{h}, not /32")
+    # the ratio can only be held to within a 32-px step on the short axis, which
+    # is a far coarser tolerance than a pixel-exact crop's — not the same check
+    if abs(w / h - aw / ah) > 32.0 * (aw / ah) / min(w, h):
+        fails.append(f"canvas({mp}, {aw}:{ah}) -> {w}x{h} is {w / h:.4f}:1, "
+                     f"further from {aw / ah:.4f}:1 than the grid explains")
+
+# the delivered area is NOT the area asked for: rounding each axis to 32 moves
+# it, and reporting that is the whole reason this node exists rather than a
+# preset list. 0.62 at 9:16 delivers 0.608.
+eq(g.canvas_for_megapixels(0.62, 9, 16, cap_mp=1.03)[:2], (576, 1056),
+   "0.62 MP at 9:16")
+eq(round(576 * 1056 / 1e6, 4), 0.6083, "and that is 0.608 MP delivered, not 0.62")
+# an aspect that is already a 32-multiple pair lands exactly on it
+eq(g.canvas_for_megapixels(0.72, 640, 1120, cap_mp=1.03)[:2], (640, 1120),
+   "0.72 MP at 640:1120 is exactly the chain default")
+
+# the cap clamps the REQUEST, and the caller can see that it did
+w, h, used = g.canvas_for_megapixels(4.0, 9, 16, cap_mp=1.03)
+eq((w, h), (768, 1344), "4 MP clamps to H3's own 768x1344 canvas cap")
+eq(used, 1.03, "and reports the clamped value so the node can say so")
+eq(g.canvas_for_megapixels(0.62, 9, 16, cap_mp=1.03)[2], 0.62,
+   "under the cap, nothing is clamped")
+eq(g.canvas_for_megapixels(4.0, 9, 16)[:2] != (768, 1344), True,
+   "cap_mp 0 disables the clamp")
+# rounding to NEAREST can leave the delivered area a hair over the cap. 768x1344
+# is 1.032 against a 1.03 cap — a rounding, not an overshoot to refuse.
+eq(768 * 1344 > 1.03e6, True, "the cap is on the request, not on the result")
+
 # --- timing -----------------------------------------------------------------
 eq(t.av_aligned_runs_through(400), [39, 90, 141, 192, 243, 294, 345, 396],
    "AV-aligned runs")

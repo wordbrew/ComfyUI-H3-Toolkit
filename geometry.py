@@ -12,9 +12,14 @@ a region that gets regenerated anyway. And a stretch additionally hands the mode
 squashed body to match, which fights everything it knows about anatomy. So: crop to
 the target aspect first (free), and only rescale if the size still differs.
 
-Both functions return (x0, y0, w, h) so the caller can slice, and both centre the
-crop, which keeps the subject in frame for the usual case of a centred subject.
+Both crop functions return (x0, y0, w, h) so the caller can slice, and both centre
+the crop, which keeps the subject in frame for the usual case of a centred subject.
+
+`canvas_for_megapixels` is the other direction — no source rectangle, just an area
+budget and a shape — and lives here because it obeys the same 32-px rule.
 """
+
+import math
 
 
 def crop_to_multiple(w, h, multiple=32):
@@ -46,3 +51,32 @@ def cover_crop(sw, sh, tw, th):
     else:                                       # source is taller -> trim top/bottom
         cw, ch = sw, max(1, round(sw * th / tw))
     return (sw - cw) // 2, (sh - ch) // 2, cw, ch
+
+
+def canvas_for_megapixels(mp, aspect_w, aspect_h, multiple=32, cap_mp=0.0):
+    """-> (width, height, used_mp). A render canvas from an AREA and a shape.
+
+    Area is the thing that decides cost — H3 denoises every token every step and
+    the token count is `(w/32)*(h/32)` per latent frame — so an area budget is
+    the useful handle, and the aspect ratio is a separate, free choice. Same form
+    as the crop detailer's upscale in crop.py: solve w*h = mp and w/h = ar, then
+    round each axis to the grid independently.
+
+    Rounding each axis moves BOTH the area and the ratio a little, so the
+    delivered megapixels are rarely the ones asked for and the caller is expected
+    to report what it got rather than what it wanted. Rounding to nearest (not
+    down) also means a request already at `cap_mp` can land a hair above it —
+    768x1344 is 1.032 MP against a 1.03 cap — which is a rounding, not an
+    overshoot worth refusing.
+
+    `cap_mp` clamps the REQUEST. 0 disables it. `used_mp` is what was actually
+    solved for, so a caller can tell a clamp happened and say so.
+    """
+    want = float(mp)
+    if cap_mp and want > float(cap_mp):
+        want = float(cap_mp)
+    div = max(1, int(multiple))
+    ar = float(aspect_w) / float(aspect_h)
+    w = max(div, int(round(math.sqrt(want * 1e6 * ar) / div)) * div)
+    h = max(div, int(round(math.sqrt(want * 1e6 / ar) / div)) * div)
+    return w, h, want

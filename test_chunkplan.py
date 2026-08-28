@@ -2,8 +2,8 @@
 
 import sys
 
-from chunkplan import (find_cuts, legal_run, on_both_clocks, plan, ref_share,
-                       describe)
+from chunkplan import (find_cuts, latent_frames, legal_run, on_both_clocks, plan,
+                       ref_share, describe, tokens_per_frame, video_tokens)
 
 fails = []
 
@@ -155,11 +155,110 @@ over = [x for x in c if x["keep_from"] > x["start"]]
 check("only one chunk overlaps", len(over), 1)
 check("and it is the last one", over[0]["end"], c[-1]["end"])
 
+# --- a generated-audio tail prefers a run on BOTH clocks -------------------- #
+# 300 frames at 141 with context 39 leaves a 96-frame tail. It rounds up to 107,
+# which is a legal video run but does not divide by 3, so it rounds against the
+# 40 Hz audio latent. Preserved audio absorbs that; GENERATED audio accumulates
+# it down the chain, so the tail reaches back to 141 instead.
+# generated_audio OFF: the tail is allowed to stay off the audio grid, so it
+# takes 107 rather than reaching for 141. (grow_tail is on here, so this is a
+# fresh generation that simply is not being held to the audio clock -- it is
+# not the V2V path, which cannot grow forward at all.)
+c, i = plan(300, 141, "fixed", context=39, grow_tail=True)
+check("without the audio-grid preference the tail stays at 107",
+      (c[-1]["start"], c[-1]["keep_from"], c[-1]["run"]), (204, 243, 107))
+ok("but its pin still reaches the cut",
+   c[-1]["start"] + c[-1]["pin"] >= c[-1]["keep_from"])
+ok("and marks it off the grid", not c[-1]["both_clocks"])
+
+c, i = plan(300, 141, "fixed", context=39, grow_tail=True, generated_audio=True)
+# It used to reach BACK to 159 for this run. That put the cut 45 frames past
+# where the 39-frame pin holds, and the seam there measured 3.56x the clip's
+# median frame delta. It grows FORWARD now: same 141-frame both-clocks run, but
+# starting where the pin can reach it.
+check("generated audio takes a shared run its pin can reach",
+      (c[-1]["start"], c[-1]["keep_from"], c[-1]["run"]), (204, 243, 141))
+ok("every chunk now lands on both clocks", all(x["both_clocks"] for x in c))
+ok("and says why the tail moved",
+   any("lands on both clocks" in n for n in i["notes"]))
+# keep_from is ABSOLUTE and must not follow the start backwards: the chunk simply
+# throws more of its head away
+check("keep_from did not move", c[-1]["keep_from"], 243)
+kept = [f for x in c for f in range(x["keep_from"], x["end"])]
+check("coverage is still contiguous from 0", kept, list(range(len(kept))))
+ok("and never SHORT of the ask — the tail overshoots and Close trims the end",
+   len(kept) >= 300)
+# the "preserved audio absorbs it" note is a V2V fact and must not be printed on
+# a chain that generates its own audio
+c2, i2 = plan(300, 141, "scene", cuts=[47], context=39, generated_audio=True)
+ok("no preserved-audio reassurance when the audio is generated",
+   not any("PRESERVED" in n for n in i2["notes"]))
+
+# it never reaches back past the start of its own shot. (It may still run PAST a
+# cut: grow_tail extends a short shot forward, which is older behaviour and not
+# what this flag touches.)
+crossed = []
+for cuts_at in ([150], [90, 200], [47, 120, 260]):
+    for ga in (False, True):
+        c, _ = plan(300, 141, "scene", cuts=cuts_at, context=39, grow_tail=True,
+                    generated_audio=ga)
+        firsts = {}
+        for x in c:
+            firsts.setdefault(x["shot"], x["start"])
+            if x["start"] < firsts[x["shot"]] or x["start"] < 0:
+                crossed.append(f"{cuts_at}/{ga}: chunk reached back out of its shot")
+ok("back-extension never leaves its own shot", not crossed)
+
+# the invariants, with the flag ON, across the same spread the V2V sweep uses
+bad3 = []
+for total in (39, 100, 150, 200, 300, 400, 564, 601, 1000, 1201):
+    for cf in (39, 90, 141, 192):
+        for ctx in (0, 22, 39):
+            c, _ = plan(total, cf, context=ctx, grow_tail=True,
+                        generated_audio=True)
+            for x in c:
+                if x["run"] != x["length"]:
+                    bad3.append(f"{total}/{cf}/{ctx}: run {x['run']} != "
+                                f"length {x['length']}")
+                if legal_run(x["run"]) != x["run"]:
+                    bad3.append(f"{total}/{cf}/{ctx}: run {x['run']} is not 17n+5")
+                if x["start"] < 0:
+                    bad3.append(f"{total}/{cf}/{ctx}: starts before the clip")
+                if x["keep_from"] < x["start"] or x["keep_from"] > x["end"]:
+                    bad3.append(f"{total}/{cf}/{ctx}: keep_from escaped the chunk")
+            kept = [f for x in c for f in range(x["keep_from"], x["end"])]
+            if kept != list(range(len(kept))) or len(kept) < total:
+                bad3.append(f"{total}/{cf}/{ctx}: coverage is not exact")
+ok("generated_audio keeps every invariant across 120 combinations", not bad3)
+fails.extend(bad3[:6])
+
+# and it is OFF by default, so no plan that already exists moves
+moved = []
+for total in (100, 200, 300, 564, 1000):
+    for cf in (39, 90, 141):
+        for ctx in (0, 22, 39):
+            if plan(total, cf, context=ctx, grow_tail=True)[0] != \
+                    plan(total, cf, context=ctx, grow_tail=True,
+                         generated_audio=False)[0]:
+                moved.append(f"{total}/{cf}/{ctx}")
+ok("generated_audio defaults to off and changes nothing", not moved)
+
 # --- the identity lever ---------------------------------------------------- #
 r = 3 * 676  # three 832px references
 share = {n: round(ref_share(n, r, 640, 1120) * 100, 1) for n in (39, 90, 294)}
 check("ref share by chunk length", share, {39: 19.4, 90: 9.7, 294: 3.2})
 ok("shorter chunks hold identity better", share[39] > share[90] > share[294])
+
+# --- the cost column ------------------------------------------------------- #
+# (w/32)*(h/32) per latent frame, and a run's latent frames under (1,4,4,4,4)
+check("tokens per frame 640x1120", tokens_per_frame(640, 1120), 20 * 35)
+check("tokens per frame 768x1344", tokens_per_frame(768, 1344), 24 * 42)
+check("latent frames 90", latent_frames(90), 27)
+check("latent frames 5", latent_frames(5), 2)
+check("video tokens 90f at 640x1120", video_tokens(90, 640, 1120), 27 * 700)
+# doubling the chunk length roughly doubles the tokens, which is why the same
+# reference set is worth half as much in it
+ok("cost tracks length", video_tokens(192, 640, 1120) > 2 * video_tokens(90, 640, 1120) * 0.9)
 
 # --- the report renders ---------------------------------------------------- #
 c, i = plan(1440, 90, "scene", cuts=[124, 400])
@@ -167,6 +266,77 @@ text = describe(c, i, render=(640, 1120), ref_tokens=r)
 ok("report names the mode", "chunk_mode: scene" in text)
 ok("report lists cuts", "cuts detected at: 124, 400" in text)
 ok("report flags a track restart", "[track restarts]" in text)
+# both numbers that a chunk length decides, on every chunk line
+ok("report prints the token cost", "18,900 tokens" in text)
+ok("report prints the reference share", "refs  9.7%" in text)
+ok("report prints the render size and its per-frame cost",
+   "render 640x1120" in text and "700 tokens per latent frame" in text)
+ok("report says the references were counted", "2,028 reference tokens" in text)
+# the flags all survive alongside the new columns
+ok("clock flag still on the chunk line",
+   all(("both clocks" in ln or "OFF grid" in ln)
+       for ln in text.splitlines() if ln.strip().startswith(("01 ", "02 ", "03 "))))
+ok("overlap note survives", "dropped at the join" in describe(
+    plan(1200, 100)[0], plan(1200, 100)[1], render=(640, 1120), ref_tokens=r))
+
+# where the size came from is part of the report: a size derived from the clip
+# and a size typed into a widget are different claims
+ok("names source_images", "render 896x672 (from source_images)"
+   in describe(c, i, render=(896, 672), render_from="from source_images"))
+ok("names the widgets", "(from the widgets)"
+   in describe(c, i, render=(640, 1120), render_from="from the widgets"))
+# with no render size there is no cost column and no render line at all
+plain = describe(c, i)
+ok("no render size, no columns",
+   "tokens" not in plain and "refs" not in plain and "render " not in plain)
+# ref_tokens alone cannot produce a share -- it needs a canvas to be a share OF
+ok("tokens without references still print",
+   "tokens" in describe(c, i, render=(640, 1120)) and
+   "refs" not in describe(c, i, render=(640, 1120)))
+# columns line up: every chunk line puts "tokens" at the same offset
+offsets = {ln.index("tokens") for ln in text.splitlines()
+           if " frames " in ln and "tokens" in ln}
+check("token column is aligned", len(offsets), 1)
+
+# --- the pin has to REACH the cut ------------------------------------------- #
+# Everything from `start` to `keep_from` is dropped at the join, but only the
+# first `pin` frames of it are HELD. Reach back further than the pin covers and
+# the rest runs unheld, drifts, and the join cuts to a chunk that has gone
+# somewhere else. Measured 2026-08-28 on a 300-frame T2V chain: the chunk whose
+# pin ended exactly on its cut seamed at 0.81x the clip's median frame delta,
+# and the chunk reached back 84 frames behind a 39-frame pin seamed at 3.56x --
+# the single largest step in the clip.
+bad3 = []
+for total in (150, 200, 300, 301, 400, 447, 600, 1000):
+    for cf in (39, 90, 141, 192):
+        for ctxv in (0, 1, 5, 22, 39):
+            for fresh in (False, True):
+                c, _ = plan(total, cf, context=ctxv, grow_tail=fresh,
+                            generated_audio=fresh)
+                for x in c:
+                    # ctx 0 means no carry at all, so there is no pin to outrun
+                    if x["pin"] and x["start"] + x["pin"] < x["keep_from"]:
+                        bad3.append(f"{total}/{cf}/ctx{ctxv}/fresh{fresh}: pin "
+                                    f"{x['pin']} at {x['start']} does not reach "
+                                    f"{x['keep_from']}")
+                    if x["run"] != x["length"] or legal_run(x["run"]) != x["run"]:
+                        bad3.append(f"{total}/{cf}/ctx{ctxv}: run != length")
+                kept = [f for x in c for f in range(x["keep_from"], x["end"])]
+                if kept != list(range(len(kept))):
+                    bad3.append(f"{total}/{cf}/ctx{ctxv}: coverage broken")
+ok("every pin that exists reaches its own cut, across 320 combinations", not bad3)
+fails.extend(bad3[:6])
+
+# the exact case that was measured
+c, i = plan(300, 141, context=39, grow_tail=True, generated_audio=True)
+check("the tail starts where its pin can reach",
+      (c[-1]["start"], c[-1]["keep_from"]), (204, 243))
+check("and it is still a legal both-clocks run", c[-1]["run"], 141)
+ok("it grew forward rather than back", c[-1]["end"] > 300)
+# V2V cannot grow forward, so it trims and says how much went
+c, i = plan(300, 141, context=39)
+check("V2V trims instead", (c[-1]["start"], c[-1]["end"]), (204, 294))
+ok("and says why", any("pin holds" in n for n in i["notes"]))
 
 if fails:
     print("FAIL")

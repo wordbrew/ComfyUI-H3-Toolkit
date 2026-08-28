@@ -83,10 +83,15 @@ import chunkrun  # noqa: E402
 import chunkplan  # noqa: E402
 
 
-def make_plan(total, chunk_frames=90, context=0):
-    """The H3_CHUNK_PLAN shape the nodes pass around."""
+def make_plan(total, chunk_frames=90, context=0, fresh=False):
+    """The H3_CHUNK_PLAN shape the nodes pass around.
+
+    `fresh` is the no-source-clip case: the tail may grow past the ask, and
+    H3 Chunk Close trims the joined result back down to it.
+    """
     chunks, info = chunkplan.plan(total, chunk_frames=chunk_frames,
-                                  context=context)
+                                  context=context, grow_tail=fresh,
+                                  generated_audio=fresh)
     return {"chunks": chunks, "info": info, "total_frames": total}
 
 
@@ -267,7 +272,14 @@ def test_context_overlap_plan():
     check("each advances run - context", c[1]["start"] - c[0]["start"], 68)
     check("new content starts after the pin", c[1]["keep_from"] - c[1]["start"], 22)
     kept = [f for x in c for f in range(x["keep_from"], x["end"])]
-    check("still exactly one pass over the clip", kept, list(range(400)))
+    check("still exactly one pass, contiguous from 0", kept,
+          list(range(len(kept))))
+    # V2V cannot grow the tail forward past the end of the footage, so when a
+    # legal run would put the cut beyond where the pin holds, it takes the run
+    # BELOW and drops the remainder. 4 frames of 400, against a visible jump.
+    check("and never past the end of the clip", len(kept) <= 400, True)
+    check("the drop is reported",
+          any("dropped" in n for n in p["info"]["notes"]), True)
     check("and every run still legal",
           all(x["run"] == x["length"] and x["run"] % 17 == 5 for x in c), True)
 
@@ -288,14 +300,18 @@ def test_pin_lines_up_with_the_source():
     ctx = chunkrun.slice_chunk(p, 1, Fake(400), prev_images=prev0)[9]
     check("chunk 1 pins the previous tail", ctx.tag, "c0[68:90]")
 
-    # chunk 4 reached BACK 13 frames for a legal 141 run, so it starts at 259
-    # while chunk 3 ran to 294. Its head is in the MIDDLE of chunk 3's output.
-    check("chunk 4 was back-extended", (c[4]["start"], c[3]["end"]), (259, 294))
+    # The tail no longer reaches back past its pin, but its head still sits in
+    # the MIDDLE of the previous chunk's output rather than at the end of it:
+    # chunk 4 starts at 272 while chunk 3 ran to 294. Taking "the last 22" there
+    # would pin frames 272..294 onto a chunk beginning at 272 only by luck --
+    # the index has to come from the absolute frame position.
+    check("chunk 4 starts inside chunk 3's range",
+          (c[4]["start"], c[3]["end"]), (272, 294))
     prev3 = Fake(c[3]["end"] - c[3]["keep_from"], "c3")     # covers 226..294
     ctx = chunkrun.slice_chunk(p, 4, Fake(400), prev_images=prev3)[9]
-    check("chunk 4 pins from the middle, not the tail", ctx.tag, "c3[33:55]")
-    check("and that is source 259-281",
-          (c[3]["keep_from"] + 33, c[3]["keep_from"] + 55),
+    check("chunk 4 pins by absolute position", ctx.tag, "c3[46:68]")
+    check("and that is exactly its own head",
+          (c[3]["keep_from"] + 46, c[3]["keep_from"] + 68),
           (c[4]["start"], c[4]["start"] + 22))
 
     # with no context the plan pins nothing and the tail behaviour is unchanged
@@ -376,20 +392,150 @@ def test_context_node():
         check("a changed crop box names the cause", "ONE crop box" in str(exc), True)
 
 
+def test_lazy_images():
+    print("Close does not evaluate the un-cloned body just to satisfy an input")
+    close = chunkrun.H3ChunkClose()
+    dp = _swap_graph()
+    p = make_plan(180, chunk_frames=90)
+    check("expansion path asks for nothing",
+          close.check_lazy_status({"plan": p}, dynprompt=dp, unique_id="close"), [])
+    one = make_plan(90, chunk_frames=90)
+    check("a single chunk still needs the value",
+          close.check_lazy_status({"plan": one}, dynprompt=dp, unique_id="close"),
+          ["images"])
+    bare = DynPrompt({"close": {"class_type": "H3ChunkClose", "inputs": {}}})
+    check("no Open upstream needs the value",
+          close.check_lazy_status({"plan": p}, dynprompt=bare, unique_id="close"),
+          ["images"])
+    # and when it was not asked for and cannot be produced, fail loudly rather
+    # than handing None down the graph as an IMAGE
+    try:
+        close.go({"plan": p}, images=None, dynprompt=bare, unique_id="close")
+        check("a None passthrough raises", "no error", "ValueError")
+    except ValueError as exc:
+        check("a None passthrough names the cause",
+              "No H3 Chunk Open" in str(exc), True)
+
+
+def test_latent_chaining():
+    print("the sampler latent threads chunk to chunk, no decode in between")
+    dp = DynPrompt({
+        "load": {"class_type": "VHS_LoadVideo", "inputs": {}},
+        "open": {"class_type": "H3ChunkOpen", "inputs": {"plan": ["plan", 0]}},
+        "plan": {"class_type": "H3ChunkPlan", "inputs": {}},
+        "cond": {"class_type": "H3ReferenceToVideoLongForm",
+                 "inputs": {"length": ["open", 3]}},
+        "ctx": {"class_type": "H3ChunkLatentContext",
+                "inputs": {"latent": ["cond", 1], "source_latent": ["open", 12],
+                           "context_length": ["open", 11]}},
+        "samp": {"class_type": "SamplerCustomAdvanced",
+                 "inputs": {"latent_image": ["ctx", 0]}},
+        "dec": {"class_type": "VAEDecode", "inputs": {"samples": ["samp", 0]}},
+        "close": {"class_type": "H3ChunkClose",
+                  "inputs": {"flow": ["open", 5], "images": ["dec", 0],
+                             "latent": ["samp", 0]}},
+    })
+    p = make_plan(300, chunk_frames=141, context=39)
+    g = chunkrun.H3ChunkClose().go({"plan": p}, Fake(90), dynprompt=dp,
+                                   unique_id="close")["expand"]
+    check("chunk 0 has no previous latent",
+          "prev_latent" in g["slice0"]["inputs"], False)
+    check("chunk 1 takes chunk 0's SAMPLER output",
+          g["slice1"]["inputs"]["prev_latent"], ["c0_samp", 0])
+    check("chunk 2 takes chunk 1's, not the decode",
+          g["slice2"]["inputs"]["prev_latent"], ["c1_samp", 0])
+    check("the context node reads it off the slicer",
+          g["c1_ctx"]["inputs"]["source_latent"], ["slice1", 12])
+    check("and its length is the plan's pin",
+          g["c1_ctx"]["inputs"]["context_length"], ["slice1", 11])
+    check("pin is 39 on a chained chunk", p["chunks"][1]["pin"], 39)
+
+
+def test_latent_context_node():
+    print("the latent context node passes through on the first chunk")
+    n = chunkrun.H3ChunkLatentContext()
+    out = n.go("LATENT-A", source_latent=None, context_length=39)
+    check("chunk 0 returns its latent untouched", out[0], "LATENT-A")
+    check("and trims nothing", out[1], 0)
+    check("and says why", "first chunk" in out[2], True)
+    check("context_length 0 also passes through",
+          n.go("LATENT-A", source_latent="B", context_length=0)[1], 0)
+    try:
+        n.go("LATENT-A", source_latent="B", context_length=39)
+        check("a missing pack raises", "no error", "ValueError")
+    except ValueError as exc:
+        check("a missing pack names what to install",
+              "Motion-Context" in str(exc), True)
+
+
+def test_audio_join():
+    print("audio is cut on the same boundaries as the picture, then joined")
+    dp = DynPrompt({
+        "open": {"class_type": "H3ChunkOpen", "inputs": {"plan": ["plan", 0]}},
+        "plan": {"class_type": "H3ChunkPlan", "inputs": {}},
+        "cond": {"class_type": "H3ReferenceToVideoLongForm",
+                 "inputs": {"length": ["open", 3]}},
+        "samp": {"class_type": "SamplerCustomAdvanced",
+                 "inputs": {"latent_image": ["cond", 1]}},
+        "dec": {"class_type": "VAEDecode", "inputs": {"samples": ["samp", 0]}},
+        "adec": {"class_type": "VAEDecodeAudio", "inputs": {"samples": ["samp", 0]}},
+        "close": {"class_type": "H3ChunkClose",
+                  "inputs": {"flow": ["open", 5], "images": ["dec", 0],
+                             "audio": ["adec", 0]}},
+    })
+    # fresh generation: the tail overshoots, so the fit trim fires and the
+    # audio has to be capped with it
+    p = make_plan(300, chunk_frames=141, context=39, fresh=True)
+    g = chunkrun.H3ChunkClose().go({"plan": p}, dynprompt=dp,
+                                   unique_id="close")["expand"]
+    trims = {k: v["inputs"] for k, v in g.items()
+             if v["class_type"] == "H3AudioTrimFrames"}
+    joins = [k for k, v in g.items() if v["class_type"] == "AudioConcat"]
+    check("one audio join per seam", len(joins), len(p["chunks"]) - 1)
+    check("chunk 0 keeps its whole track",
+          any(t["audio"] == ["c0_adec", 0] for t in trims.values()), False)
+    for ci, c in enumerate(p["chunks"]):
+        skip = c["keep_from"] - c["start"]
+        if not skip:
+            continue
+        t = trims[f"atrim{ci}"]
+        check(f"chunk {ci} drops the same span the picture drops",
+              t["skip_frames"], skip)
+        check(f"chunk {ci} keeps the same span the picture keeps",
+              t["keep_frames"], c["end"] - c["keep_from"])
+        check(f"chunk {ci} trims its OWN decode", t["audio"], [f"c{ci}_adec", 0])
+    # the picture is capped back to the ask, and the audio has to follow it
+    check("the fit trim caps the audio too", "afit" in g, True)
+    check("to the same length", g["afit"]["inputs"]["keep_frames"],
+          g["fit"]["inputs"]["length"])
+
+    # unwired, nothing audio is emitted at all
+    dp2 = _swap_graph()
+    g2 = chunkrun.H3ChunkClose().go({"plan": make_plan(180, chunk_frames=90)},
+                                    dynprompt=dp2, unique_id="close")["expand"]
+    check("the joined audio comes out of the third slot",
+          len(chunkrun.H3ChunkClose.RETURN_NAMES), 3)
+    check("and it is APPENDED, not inserted",
+          chunkrun.H3ChunkClose.RETURN_NAMES, ("images", "info", "audio"))
+    check("no audio wired means no audio nodes",
+          any(v["class_type"] in ("AudioConcat", "H3AudioTrimFrames")
+              for v in g2.values()), False)
+
+
 def test_refuses_bad_wiring():
     print("Close refuses rather than silently rendering one chunk")
     p = make_plan(180, chunk_frames=90)
     dp = DynPrompt({"dec": {"class_type": "VAEDecode", "inputs": {}},
                     "close": {"class_type": "H3ChunkClose",
                               "inputs": {"images": ["dec", 0]}}})
-    _, info = chunkrun.H3ChunkClose().go({"plan": p}, Fake(90),
-                                         dynprompt=dp, unique_id="close")
+    _, info, _ = chunkrun.H3ChunkClose().go({"plan": p}, Fake(90),
+                                            dynprompt=dp, unique_id="close")
     check("no Open upstream is reported", info.startswith("No H3 Chunk Open"), True)
 
     one = make_plan(90, chunk_frames=90)
-    _, info = chunkrun.H3ChunkClose().go({"plan": one}, Fake(90),
-                                         dynprompt=_swap_graph(),
-                                         unique_id="close")
+    _, info, _ = chunkrun.H3ChunkClose().go({"plan": one}, Fake(90),
+                                            dynprompt=_swap_graph(),
+                                            unique_id="close")
     check("single chunk passes through", "one chunk" in info, True)
 
 
@@ -398,6 +544,8 @@ def main():
                test_context_clamped, test_body_capture, test_links_remapped,
                test_overlap_trimmed_at_the_join, test_context_overlap_plan,
                test_pin_lines_up_with_the_source, test_context_node,
+               test_lazy_images, test_latent_chaining,
+               test_latent_context_node, test_audio_join,
                test_refuses_bad_wiring):
         fn()
     print()
