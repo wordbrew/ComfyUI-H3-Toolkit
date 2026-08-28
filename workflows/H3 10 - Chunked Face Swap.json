@@ -1,6 +1,6 @@
 {
   "last_node_id": 47,
-  "last_link_id": 69,
+  "last_link_id": 71,
   "nodes": [
     {
       "id": 1,
@@ -676,7 +676,8 @@
           "name": "plan",
           "type": "H3_CHUNK_PLAN",
           "links": [
-            8
+            8,
+            71
           ]
         },
         {
@@ -772,7 +773,8 @@
           "name": "length",
           "type": "INT",
           "links": [
-            34
+            34,
+            70
           ]
         },
         {
@@ -1396,6 +1398,16 @@
           "widget": {
             "name": "expected_count"
           }
+        },
+        {
+          "name": "chunk_frames",
+          "type": "INT",
+          "link": 70
+        },
+        {
+          "name": "chunk_plan",
+          "type": "H3_CHUNK_PLAN",
+          "link": 71
         }
       ],
       "outputs": [
@@ -1432,6 +1444,12 @@
           "links": [
             68
           ]
+        },
+        {
+          "name": "clause",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 6
         }
       ],
       "widgets_values": [
@@ -2573,6 +2591,22 @@
       47,
       0,
       "STRING"
+    ],
+    [
+      70,
+      21,
+      3,
+      33,
+      2,
+      "INT"
+    ],
+    [
+      71,
+      20,
+      0,
+      33,
+      3,
+      "H3_CHUNK_PLAN"
     ]
   ],
   "groups": [

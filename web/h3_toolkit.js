@@ -14,6 +14,27 @@ const USED = {
 };
 const ALL = ["style", "instrumentation", "voice", "room", "script"];
 
+// Grow to fit, never shrink past what the user set.
+//
+// `computeSize()` is the node's MINIMUM, so `setSize(computeSize())` throws away
+// any manual resize. These nodes ran it on every execution -- and H3LongFormLinks
+// is registered by two extensions, so it collapsed twice per run -- which meant
+// the prompt fields you had just dragged open shut again the moment you queued.
+function fitAtLeast(node) {
+  const min = node.computeSize();
+  node.setSize([Math.max(node.size[0], min[0]), Math.max(node.size[1], min[1])]);
+}
+
+// The multiline field that actually gets written in. Its default height is the
+// same as every other text widget, which is not enough for a shot description.
+function roomToWrite(node, name, px) {
+  const el = node.widgets?.find((x) => x.name === name)?.inputEl;
+  if (el && !el.dataset.h3sized) {
+    el.style.minHeight = px + "px";
+    el.dataset.h3sized = "1";
+  }
+}
+
 function setShown(node, name, shown) {
   const w = node.widgets?.find((x) => x.name === name);
   if (!w) return;
@@ -42,7 +63,7 @@ function applyMode(node) {
   const autofit = node.widgets?.find((w) => w.name === "auto_fit_duration")?.value;
   setShown(node, "seconds", !(autofit && mode !== "instrumental"));
 
-  node.setSize(node.computeSize());
+  fitAtLeast(node);
   app.graph.setDirtyCanvas(true, true);
 }
 
@@ -100,17 +121,27 @@ app.registerExtension({
       onExecuted?.apply(this, arguments);
       const text = message?.h3lint?.[0];
       if (text === undefined) return;
+      // colour the node by worst severity so a bad prompt is obvious at a glance
+      const clean = text.startsWith("clean");
+      this.color = clean ? "#233" : /^\s*0 error/.test(text) ? "#432" : "#533";
       let w = this.widgets?.find((x) => x.name === "__report");
+      if (clean) {
+        // nothing to say, and the colour already says it -- give the height back
+        // to the fields you are actually typing in
+        if (w) {
+          w.inputEl?.remove();
+          this.widgets.splice(this.widgets.indexOf(w), 1);
+        }
+        app.graph.setDirtyCanvas(true, true);
+        return;
+      }
       if (!w) {
         w = this.addWidget("text", "__report", "", () => {}, { multiline: true });
         if (w.inputEl) w.inputEl.readOnly = true;
         w.serialize = false;
       }
       w.value = text;
-      // colour the node by worst severity so a bad prompt is obvious at a glance
-      this.color = text.startsWith("clean") ? "#233" :
-                   /^\s*0 error/.test(text) ? "#432" : "#533";
-      this.setSize(this.computeSize());
+      fitAtLeast(this);
       app.graph.setDirtyCanvas(true, true);
     };
   },
@@ -136,7 +167,12 @@ app.registerExtension({
         p.callback = function () { const r = prev?.apply(this, arguments); applyPreset(node); return r; };
       }
       const node = this;
-      requestAnimationFrame(() => applyMode(node));
+      requestAnimationFrame(() => {
+        applyMode(node);
+        roomToWrite(node, "beats", 220);   // one line per chunk, and they are long
+        roomToWrite(node, "head", 140);
+        roomToWrite(node, "script", 140);
+      });
     };
 
     // draw the plan (line times, pauses, pacing warnings) on the node itself
@@ -152,7 +188,7 @@ app.registerExtension({
         w.serialize = false;
       }
       w.value = text;
-      this.setSize(this.computeSize());
+      fitAtLeast(this);
       app.graph.setDirtyCanvas(true, true);
     };
   },

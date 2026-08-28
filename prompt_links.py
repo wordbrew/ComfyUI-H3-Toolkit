@@ -115,12 +115,21 @@ class H3LongFormLinks:
                                           "frame in as the keyframe."}),
                 "seconds_per_link": ("FLOAT", {"default": 15.0, "min": 1.0, "max": 15.5,
                                      "step": 0.5,
-                                     "tooltip": "15.08s (362 frames) is the top of the "
-                                                "documented trained range for VIDEO."}),
+                                     "tooltip": "IGNORED when `chunk_frames` is "
+                                                "wired — under chunking the plan "
+                                                "sets each chunk's length and the "
+                                                "tail is never the same as the "
+                                                "rest. For the manual chain "
+                                                "workflow: 15.08s (362 frames) is "
+                                                "the top of the documented trained "
+                                                "range for VIDEO."}),
                 "seed": ("INT", {"default": 2024, "min": 0, "max": 0xffffffffffffffff,
                          "tooltip": "Passed through unchanged. Use the SAME seed on every "
                                     "link — varying it per link measurably broke "
-                                    "continuity."}),
+                                    "continuity. Under chunking the sampler's own "
+                                    "RandomNoise is shared across chunks and does "
+                                    "this already, so the `seed` output goes "
+                                    "unused."}),
             },
             "optional": {
                 # typed OR wired, same as H3 Scene Prompt
@@ -139,11 +148,39 @@ class H3LongFormLinks:
                                               "0 = no check."}),
                 "task_type": (["reference generation", "keyframe completion"],
                               {"default": "keyframe completion"}),
+                # APPENDED, and they stay appended. widgets_values is positional.
+                "chunk_frames": ("INT", {"default": 0, "min": 0, "max": 4096,
+                                 "tooltip": "Wire H3 Chunk Open's `length`. Under "
+                                            "chunking the chunk decides the "
+                                            "length, so this REPLACES "
+                                            "seconds_per_link — which is then "
+                                            "ignored, and the plan stops quoting "
+                                            "it. Leave at 0 for the manual chain "
+                                            "workflow, where seconds_per_link is "
+                                            "still the real setting."}),
+                "chunk_plan": ("H3_CHUNK_PLAN", {"tooltip": "Optional, from H3 "
+                               "Chunk Plan. Only so the plan text can line each "
+                               "clause up against the chunk it will actually be "
+                               "rendered on."}),
             },
         }
 
-    RETURN_TYPES = ("STRING", "INT", "INT", "INT", "STRING", "STRING")
-    RETURN_NAMES = ("prompt", "length", "seed", "link_count", "plan", "lint")
+    RETURN_TYPES = ("STRING", "INT", "INT", "INT", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("prompt", "length", "seed", "link_count", "plan", "lint",
+                    "clause")
+    # `length` and `seed` are for the MANUAL CHAIN workflow. Under chunking the
+    # length belongs to H3 Chunk Open (the tail chunk differs from the rest) and
+    # the seed to the shared RandomNoise. Wiring `length` from here is how a
+    # chunk ends up asking for 56 generated frames against 39 source ones.
+    OUTPUT_TOOLTIPS = ("The finished prompt for this link or chunk.",
+                       "MANUAL CHAIN ONLY — under chunking use H3 Chunk Open's "
+                       "`length`, which knows this chunk's own run.",
+                       "MANUAL CHAIN ONLY — under chunking the shared RandomNoise "
+                       "already holds the seed across chunks.",
+                       "How many clauses `beats` holds.",
+                       "The clause-to-chunk map. Read it before you queue.",
+                       "Errors and warnings. Wire this one if you wire only one.",
+                       "Just this link's clause, for previewing.")
     FUNCTION = "build"
     CATEGORY = "MiniMax H3/prompt"
     DESCRIPTION = ("Build one link's prompt for a chained long-form take: HEAD + CLAUSE + "
@@ -153,8 +190,12 @@ class H3LongFormLinks:
 
     def build(self, head, beats, tail, link_index, seconds_per_link, seed,
               subject_def_1="", retention_1="", task_type="keyframe completion",
-              expected_count=0):
-        frames = align_frames(seconds_per_link)
+              expected_count=0, chunk_frames=0, chunk_plan=None):
+        # A chunk's length comes from the plan, not from a seconds widget: the
+        # tail chunk is never the same length as the rest, so a single duration
+        # cannot describe the run. When it is wired, it wins outright.
+        chunked = int(chunk_frames or 0) > 0
+        frames = int(chunk_frames) if chunked else align_frames(seconds_per_link)
         dur = frames / FPS
         clauses = parse_beats(beats)
         if not clauses:
@@ -173,6 +214,10 @@ class H3LongFormLinks:
         idx = max(0, min(link_index, len(clauses) - 1))
         h, t = head.strip(), tail.strip()
         clause = clauses[idx]
+        # Line the clauses up against the chunks they will be RENDERED on. A
+        # clause list on its own does not tell you whether clause 3 describes the
+        # part of the clip you think it does.
+        chunks = (chunk_plan or {}).get("chunks") or []
 
         body = f"{h} {clause} {t}".strip()
         defs, rets = subject_def_1.strip(), retention_1.strip()
@@ -191,6 +236,10 @@ class H3LongFormLinks:
         notes = []
         if _mismatch:
             notes.append(_mismatch)
+        if chunks and len(chunks) != len(clauses):
+            notes.append(f"ERROR count: the wired plan has {len(chunks)} chunk(s) "
+                         f"but `beats` has {len(clauses)} clause(s). Extra chunks "
+                         f"REPEAT the last clause; extra clauses are never used.")
         for label, txt in (("head", h), ("tail", t)):
             hits = RELATIVE_HINT.findall(txt)
             if hits:
@@ -213,14 +262,37 @@ class H3LongFormLinks:
         notes += [f"{s} {r}: {m}" for s, r, m in lint(prompt, long_form=True)
                   if r != "longform/relative"]      # already reported per-part above
 
-        plan = [f"link {i + 1}/{len(clauses)}{'  <-- emitting' if i == idx else ''}: "
-                f"{c[:72]}" for i, c in enumerate(clauses)]
-        plan_text = (f"{len(clauses)} links x {dur:.2f}s = {len(clauses) * dur:.1f}s total"
-                     f"  |  {frames} frames/link  |  seed {seed} on every link\n"
-                     + "\n".join(plan))
+        rows = []
+        for i, c in enumerate(clauses):
+            here = "  <-- emitting" if i == idx else ""
+            span = ""
+            if i < len(chunks):
+                k = chunks[i]
+                span = (f"  frames {k['keep_from']}-{k['end']} ({k['run']}f"
+                        f"{'' if k['both_clocks'] else ', OFF audio grid'})")
+            rows.append(f"  clause {i + 1}/{len(clauses)}{span}{here}\n"
+                        f"      {c[:88]}")
+
+        if chunked:
+            gen = sum(k["run"] for k in chunks) if chunks else frames * len(clauses)
+            head_line = (f"{len(clauses)} clause(s) against "
+                         f"{len(chunks) or '?'} chunk(s)  |  this chunk is "
+                         f"{frames} frames ({frames / FPS:.2f}s)")
+            if chunks:
+                kept = sum(k["end"] - k["keep_from"] for k in chunks)
+                head_line += (f"\n{kept} frames kept ({kept / FPS:.1f}s), "
+                              f"{gen} generated")
+            head_line += ("\nlength and seed come from the chunk runner — "
+                          "seconds_per_link is ignored")
+        else:
+            head_line = (f"{len(clauses)} links x {dur:.2f}s = "
+                         f"{len(clauses) * dur:.1f}s total  |  {frames} "
+                         f"frames/link  |  seed {seed} on every link")
+        plan_text = head_line + "\n" + "\n".join(rows)
         report = "\n".join(notes) if notes else "clean - no issues found"
         return {"ui": {"h3plan": [plan_text], "h3lint": [report]},
-                "result": (prompt, frames, seed, len(clauses), plan_text, report)}
+                "result": (prompt, frames, seed, len(clauses), plan_text, report,
+                           clause)}
 
 
 NODE_CLASS_MAPPINGS = {"H3LongFormLinks": H3LongFormLinks}
