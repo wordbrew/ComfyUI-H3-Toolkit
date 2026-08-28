@@ -158,6 +158,23 @@ class H3LongFormLinks:
                                             "it. Leave at 0 for the manual chain "
                                             "workflow, where seconds_per_link is "
                                             "still the real setting."}),
+                # APPENDED. Both sections used to be hardcoded "N/A", which is
+                # not a neutral default -- it is the prompt actively saying
+                # there is no ambience and no music, so a graph that decoded the
+                # audio still got near-silence and the cause was invisible.
+                "soundscape": ("STRING", {"multiline": True, "default": "",
+                               "tooltip": "Diegetic sound: the room, the "
+                                          "surfaces, what is physically making "
+                                          "noise. IDENTICAL on every chunk, like "
+                                          "head and tail — it describes the "
+                                          "place, not the moment. Empty means "
+                                          "N/A, which asks for silence."}),
+                "music": ("STRING", {"multiline": True, "default": "",
+                          "tooltip": "Non-diegetic score. Empty means N/A. "
+                                     "Generated music compounds down a chain "
+                                     "('photocopy of a photocopy'); an external "
+                                     "track sliced per chunk into ref_audio does "
+                                     "not, and beat it in testing."}),
                 "chunk_plan": ("H3_CHUNK_PLAN", {"tooltip": "Optional, from H3 "
                                "Chunk Plan. Only so the plan text can line each "
                                "clause up against the chunk it will actually be "
@@ -191,7 +208,8 @@ class H3LongFormLinks:
 
     def build(self, head, beats, tail, link_index, seconds_per_link, seed,
               subject_def_1="", retention_1="", task_type="keyframe completion",
-              expected_count=0, chunk_frames=0, chunk_plan=None):
+              expected_count=0, soundscape="", music="", chunk_frames=0,
+              chunk_plan=None):
         # A chunk's length comes from the plan, not from a seconds widget: the
         # tail chunk is never the same length as the rest, so a single duration
         # cannot describe the run. When it is wired, it wins outright.
@@ -229,12 +247,17 @@ class H3LongFormLinks:
                       f"{len(clauses)}, using the listed references for identity.\n\n"
                       "retention_analysis:\n" + (rets or "N/A") + "\n\n"
                       "detailed_description:\n" + body + "\n\n"
-                      "overall_soundscape: N/A\n\nnon_diegetic_music: N/A")
+                      "overall_soundscape: " + (soundscape.strip() or "N/A") +
+                      "\n\nnon_diegetic_music: " + (music.strip() or "N/A"))
         else:
             prompt = body
 
         # --- guidance, checked per part so the message points at the right box
         notes = []
+        if defs and not soundscape.strip() and not music.strip():
+            notes.append("WARN audio: overall_soundscape and non_diegetic_music "
+                         "are both N/A, which asks for SILENCE. If you are "
+                         "decoding the audio, describe the room here.")
         if _mismatch:
             notes.append(_mismatch)
         if chunks and len(chunks) != len(clauses):

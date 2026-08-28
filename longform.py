@@ -12,7 +12,9 @@ import torch
 
 from .avlatent import av
 from .chunkplan import describe as describe_plan
-from .chunkplan import find_cuts, plan as build_plan
+from .chunkplan import find_cuts, plan as build_plan, tokens_per_frame
+from .crop import H3_CANVAS_MP
+from .geometry import canvas_for_megapixels
 from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
                      is_av_aligned, snap_av_aligned)
 
@@ -213,7 +215,9 @@ class H3Resolution:
                    "findings do not decay into folklore: 640x1120 chained cleanly, "
                    "768x1152 produced cuts in chains with everything else equal, and the "
                    "open weights are 768p-class — 768x1344 is the documented cap and was "
-                   "no better than 768x1152.")
+                   "no better than 768x1152.\n\nIf you size by AREA rather than by "
+                   "picking from a list, use H3 Canvas instead: it takes megapixels and "
+                   "an aspect ratio and reports what the 32-px grid actually delivered.")
 
     def go(self, preset, custom_width, custom_height):
         notes = ""
@@ -234,6 +238,101 @@ class H3Resolution:
         return {"ui": {"h3char": [info]}, "result": (w, h, info)}
 
 
+class H3Canvas:
+    """Canvas from an AREA budget and a shape, instead of from a list.
+
+    A preset list answers the wrong question. What costs money is AREA: H3
+    denoises every token every step, a canvas contributes `(w/32)*(h/32)` tokens
+    per latent frame, and attention goes as roughly the square of the sequence.
+    The aspect ratio is nearly free by comparison. So the two decisions are
+    separate and this node keeps them separate — set the budget, then set the
+    shape.
+
+    THE 32-PX GRID IS THE POINT
+      Solving w*h = megapixels and w/h = aspect and then rounding each axis to 32
+      independently moves both the area and the ratio. 0.62 MP at 9:16 delivers
+      0.61; some requests land 5% out. That is not an error to hide, it is the
+      number you are actually paying for, so `info` reports what was delivered
+      rather than what was asked for.
+
+    Capped at H3's own canvas ceiling (`MAX_PIXELS`, 768x1344). Past it the model
+    is out of its trained range and the cost is quadratic, so the request is
+    clamped and `info` says it was — a silent clamp would make the reported
+    numbers describe a render nobody asked for.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "megapixels": ("FLOAT", {"default": 0.62, "min": 0.05,
+                               "max": H3_CANVAS_MP, "step": 0.01,
+                               "tooltip": "Area budget. This is the cost dial: "
+                                          "0.62 MP is roughly 640x1120, and "
+                                          "doubling it roughly quadruples the "
+                                          "attention. Capped at H3's own "
+                                          f"{H3_CANVAS_MP:.2f} MP canvas."}),
+                "aspect_w": ("INT", {"default": 9, "min": 1, "max": 4096,
+                             "tooltip": "Ratio, not pixels. 9:16 portrait, "
+                                        "16:9 landscape, 1:1 square."}),
+                "aspect_h": ("INT", {"default": 16, "min": 1, "max": 4096}),
+            },
+            "optional": {
+                "like_image": ("IMAGE", {"tooltip": "Take the aspect ratio from "
+                                         "this image instead of aspect_w / "
+                                         "aspect_h, which are then IGNORED. The "
+                                         "megapixels still come from the widget "
+                                         "— this matches the shape of a source "
+                                         "clip, not its size."}),
+            },
+        }
+
+    RETURN_TYPES = ("INT", "INT", "INT", "STRING")
+    RETURN_NAMES = ("width", "height", "tokens_per_frame", "info")
+    FUNCTION = "go"
+    CATEGORY = "MiniMax H3/long-form"
+    DESCRIPTION = ("A render canvas from megapixels plus an aspect ratio, snapped to "
+                   "32. Reports the area you actually got, the per-latent-frame token "
+                   "count, and how far it sits from H3's canvas cap. Wire width/height "
+                   "into the conditioning node and into H3 Chunk Plan so the size is "
+                   "set in one place.")
+
+    def go(self, megapixels, aspect_w, aspect_h, like_image=None):
+        aw, ah = int(aspect_w), int(aspect_h)
+        shape_from = f"{aw}:{ah}"
+        if like_image is not None:
+            aw, ah = int(like_image.shape[2]), int(like_image.shape[1])
+            shape_from = f"{aw}:{ah} from like_image"
+
+        asked = float(megapixels)
+        w, h, used = canvas_for_megapixels(asked, aw, ah, multiple=32,
+                                           cap_mp=H3_CANVAS_MP)
+        cells = tokens_per_frame(w, h)
+        got = w * h / 1e6
+
+        info = (f"{w}x{h}  {got:.3f} MP  {cells:,} tokens per latent frame  "
+                f"({shape_from} -> {w / h:.3f})")
+        if used < asked - 1e-9:
+            info += (f"\n  CLAMPED: {asked:.2f} MP asked, {used:.2f} MP used — that is "
+                     f"H3's canvas cap (MAX_PIXELS 768x1344) and past it the model is "
+                     f"out of its trained range.")
+        # the delivered area is the number worth reading, so say how far the grid
+        # moved it rather than leaving the reader to assume they got what they asked
+        drift = got - used
+        if abs(drift) >= 0.005:
+            info += (f"\n  the 32-px grid moved {used:.2f} MP to {got:.3f} "
+                     f"({drift * 100 / used:+.1f}%)")
+        head = H3_CANVAS_MP - got
+        if head >= 0:
+            info += f"\n  {head:.3f} MP below the {H3_CANVAS_MP:.2f} MP canvas cap"
+        else:
+            # snapping to 32 rounds to NEAREST, so a request AT the cap can land a
+            # hair over it (768x1344 is 1.032). Say which of the two it is.
+            info += (f"\n  {-head:.3f} MP ABOVE the {H3_CANVAS_MP:.2f} MP canvas cap"
+                     + (" — the 32-px rounding, not a request past it"
+                        if used <= H3_CANVAS_MP else ""))
+        return {"ui": {"h3char": [info]},
+                "result": (int(w), int(h), int(cells), info)}
 
 
 class H3AudioLock:
@@ -407,8 +506,15 @@ class H3ChunkPlan:
                                      "neighbour rather than becoming a chunk too "
                                      "short to be worth a pass."}),
             "render_width": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
-                             "tooltip": "Only to report reference share. 0 = skip."}),
-            "render_height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32}),
+                             "tooltip": "Report only — token cost and reference "
+                                        "share. IGNORED when source_images is "
+                                        "wired, because the size is already "
+                                        "known from the clip. Fresh generation "
+                                        "has no clip, so wire H3 Canvas here and "
+                                        "into the conditioning node so the size "
+                                        "is set once. 0 = skip the columns."}),
+            "render_height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
+                              "tooltip": "See render_width."}),
             "ref_tokens": ("INT", {"default": 0, "min": 0, "max": 1000000,
                            "tooltip": "Reference token count from H3 Reference "
                                       "Budget, to report each chunk's ref share."}),
@@ -456,11 +562,32 @@ class H3ChunkPlan:
         # Growing the tail forward is only honest with nothing to cut: fresh
         # generation invents the frames, a V2V pass would be asking for footage
         # past the end of the clip.
+        #
+        # No source clip also means no source AUDIO, so the audio is generated
+        # and every off-grid link's rounding accumulates down the chain — which
+        # a V2V pass does not suffer, because it slices the source track at exact
+        # sample boundaries. Same trigger, different reason: kept as two flags so
+        # the reason stays visible.
+        fresh = source_images is None
         chunks, info = build_plan(n, int(chunk_frames), chunk_mode, cuts=cuts,
                                   min_chunk=int(min_chunk), context=int(context),
-                                  grow_tail=source_images is None)
-        render = (int(render_width), int(render_height)) if render_width and render_height else None
-        text = describe_plan(chunks, info, render=render, ref_tokens=int(ref_tokens))
+                                  grow_tail=fresh, generated_audio=fresh)
+        # A V2V pass already knows its render size — it is the size of the clip
+        # in hand, [T, H, W, C] — so asking for it again is a second copy that
+        # can only be stale. Nobody filled the widgets in, so the token and
+        # reference-share columns never appeared on the workflow that most needed
+        # them. The widgets stay for fresh generation, where there is no clip;
+        # they are INT so H3 Canvas can drive them.
+        if source_images is not None:
+            render = (int(source_images.shape[2]), int(source_images.shape[1]))
+            render_from = "from source_images"
+        elif render_width and render_height:
+            render = (int(render_width), int(render_height))
+            render_from = "from the widgets"
+        else:
+            render, render_from = None, ""
+        text = describe_plan(chunks, info, render=render, ref_tokens=int(ref_tokens),
+                             render_from=render_from)
 
         generated = sum(c["run"] for c in chunks)
         if generated > n:
@@ -473,15 +600,172 @@ class H3ChunkPlan:
                 "result": (payload, len(chunks), text)}
 
 
+class H3SeamCheck:
+    """Put the chunk seams in front of your eye, and say how big they are.
+
+    WHY THIS EXISTS
+      A join in a 300-frame clip is one frame out of 300, and finding it by
+      scrubbing is guesswork -- you end up unsure whether what you saw was a seam
+      or the motion. The plan already knows exactly which frames are joins, so
+      this cuts a strip either side of each one and reports the frame-to-frame
+      difference there against the clip's own distribution.
+
+    WHAT THE NUMBERS DO AND DO NOT DO
+      Reported as DATA. Every quality proxy this project has built has failed, so
+      there is no threshold here and no verdict -- a delta is compared to the
+      SAME CLIP's median and p95 and that is all. A join inside the clip's own
+      range of motion is not evidence of a good seam, only that the difference is
+      not unusual for this footage. The strip is what you actually judge.
+
+    THE ONE THING THE DELTA COLUMN DECIDES
+      Two different faults land at two different frames, and telling them apart
+      is the point of the `+1 +2 +3` columns:
+
+      A spike AT the join is a chunk discontinuity -- the two chunks disagree
+      about what is in frame, and the pin is not doing its job.
+
+      A spike ONE TO THREE FRAMES AFTER it is the pin RELEASING. Inside a chunk
+      the first `pin` frames are held at denoise mask 0 and the rest are
+      generated, which is a hard edge in time; H3LatentPin in this pack carries a
+      warning from nine rounds of measurement that the model reproduces a pinned
+      run and then splices to its own version at the frame the pin ends. The join
+      currently cuts at exactly that frame, so the release transient becomes the
+      first frame you see. That is a planner fix, not a prompt or setting one,
+      and these columns are how you tell it apart from the other case.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "images": ("IMAGE", {"tooltip": "The JOINED clip — H3 Chunk Close's "
+                                            "output, or after the uncrop."}),
+        }, "optional": {
+            "plan": ("H3_CHUNK_PLAN", {"tooltip": "From H3 Chunk Plan, to locate "
+                     "the joins. Without it this still reports the delta "
+                     "distribution, but it cannot tell you where to look."}),
+            "frames_each_side": ("INT", {"default": 4, "min": 1, "max": 16,
+                                 "tooltip": "How many frames either side of each "
+                                            "join go in the strip."}),
+            "scale": ("FLOAT", {"default": 0.5, "min": 0.1, "max": 1.0,
+                      "step": 0.05,
+                      "tooltip": "Shrink the contact sheet. A 900px-wide strip of "
+                                 "eight frames is unreadable at 1.0."}),
+        }}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("strips", "info")
+    FUNCTION = "go"
+    CATEGORY = "MiniMax H3/long-form"
+    DESCRIPTION = ("One labelled strip per chunk join, plus the frame-to-frame "
+                   "difference at each one against the clip's own spread.")
+
+    @staticmethod
+    def _deltas(images):
+        """Mean |frame - previous frame|, one value per frame after the first."""
+        a = images[1:, ..., :3].float()
+        b = images[:-1, ..., :3].float()
+        return (a - b).abs().mean(dim=(1, 2, 3))
+
+    @staticmethod
+    def _joins(plan, n):
+        """Where each chunk's kept frames begin IN THE JOINED CLIP.
+
+        Not the same as `keep_from`, which is a SOURCE index. They coincide while
+        coverage starts at 0 and stays contiguous, but the join is the cumulative
+        length of what came before it, so compute that and stay correct if the
+        plan ever changes.
+        """
+        chunks = (plan or {}).get("chunks") or []
+        joins, pos = [], 0
+        for i in range(len(chunks) - 1):
+            pos += int(chunks[i]["end"]) - int(chunks[i]["keep_from"])
+            if 0 < pos < n:
+                joins.append((pos, chunks[i + 1]))
+        return joins
+
+    def go(self, images, plan=None, frames_each_side=4, scale=0.5):
+        import torch.nn.functional as Fn
+
+        n = int(images.shape[0])
+        if n < 2:
+            msg = "H3 SEAM CHECK: needs at least two frames."
+            return {"ui": {"h3char": [msg]}, "result": (images[:1], msg)}
+
+        d = self._deltas(images)
+        srt = d.sort().values
+        med = float(srt[len(srt) // 2])
+        p95 = float(srt[min(len(srt) - 1, int(len(srt) * 0.95))])
+        joins = self._joins(plan, n)
+
+        L = [f"H3 SEAM CHECK — {n} frames joined, {len(joins)} seam(s)"]
+        L.append(f"  frame-to-frame delta over the whole clip: "
+                 f"median {med:.4f}  p95 {p95:.4f}  max {float(srt[-1]):.4f}")
+        if not joins:
+            L.append("  no plan wired (or a single chunk) — nothing to point at. "
+                     "Wire H3 Chunk Plan's `plan` to locate the joins.")
+
+        k = max(1, int(frames_each_side))
+        rows = []
+        for i, (j, chunk) in enumerate(joins, 1):
+            # d[x] is the step from frame x to x+1, so the join's own step is d[j-1]
+            at = float(d[j - 1])
+            after = [float(d[min(len(d) - 1, j - 1 + t)]) for t in (1, 2, 3)]
+            pin = int(chunk.get("pin", 0))
+            L.append(f"  seam {i}  frame {j:>5}   at join {at:.4f} "
+                     f"({at / p95 if p95 else 0:.2f}x p95)"
+                     f"   +1 {after[0]:.4f}  +2 {after[1]:.4f}  +3 {after[2]:.4f}"
+                     + (f"   [{pin}f pinned]" if pin else ""))
+
+            a, b = max(0, j - k), min(n, j + k)
+            strip = images[a:b, ..., :3]
+            row = torch.cat([strip[t] for t in range(strip.shape[0])], dim=1)
+            # a bright column exactly on the cut, so the strip is readable at a
+            # glance rather than counted through
+            w = int(images.shape[2])
+            x = (j - a) * w
+            if 0 < x < row.shape[1]:
+                row[:, max(0, x - 1):x + 1, :] = torch.tensor(
+                    [1.0, 0.2, 0.2], device=row.device, dtype=row.dtype)
+            rows.append(row)
+
+        if not rows:
+            blank = images[:1]
+            return {"ui": {"h3char": ["\n".join(L)]},
+                    "result": (blank, "\n".join(L))}
+
+        width = max(r.shape[1] for r in rows)
+        padded = [Fn.pad(r.permute(2, 0, 1), (0, width - r.shape[1])).permute(1, 2, 0)
+                  for r in rows]
+        sheet = torch.cat(padded, dim=0).unsqueeze(0)
+        s = float(scale)
+        if s < 0.999:
+            sheet = Fn.interpolate(sheet.permute(0, 3, 1, 2),
+                                   scale_factor=s, mode="bilinear",
+                                   align_corners=False).permute(0, 2, 3, 1)
+
+        L.append("")
+        L.append("  a spike AT the join is the two chunks disagreeing; a spike at")
+        L.append("  +1..+3 is the pin releasing, which is a different fault. The")
+        L.append("  red line in each strip is the cut.")
+        text = "\n".join(L)
+        logging.info("H3SeamCheck: %s", L[0])
+        return {"ui": {"h3char": [text]}, "result": (sheet, text)}
+
+
+
 NODE_CLASS_MAPPINGS = {"H3Assemble": H3Assemble, "H3AudioSlice": H3AudioSlice,
                        "H3Take": H3Take, "H3Resolution": H3Resolution,
+                       "H3Canvas": H3Canvas,
                        "H3AudioLock": H3AudioLock,
                        "H3ChainFrame": H3ChainFrame,
-                       "H3ChunkPlan": H3ChunkPlan}
+                       "H3ChunkPlan": H3ChunkPlan,
+                       "H3SeamCheck": H3SeamCheck}
 NODE_DISPLAY_NAME_MAPPINGS = {"H3Assemble": "H3 Assemble Links",
                               "H3AudioSlice": "H3 Audio Slice (per link)",
                               "H3Take": "H3 Take (re-roll seed)",
                               "H3Resolution": "H3 Resolution",
+                              "H3Canvas": "H3 Canvas (megapixels)",
                               "H3AudioLock": "H3 Audio Lock",
                               "H3ChainFrame": "H3 Chain Frame",
-                              "H3ChunkPlan": "H3 Chunk Plan"}
+                              "H3ChunkPlan": "H3 Chunk Plan",
+                              "H3SeamCheck": "H3 Seam Check"}

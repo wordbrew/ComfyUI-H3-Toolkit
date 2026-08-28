@@ -71,7 +71,13 @@ def _core_adapt_canvas():
 
 
 def frame_rows(px_w, px_h):
-    """Tokens in ONE latent frame: the DiT's 2x2 patch grid over the /16 latent."""
+    """Tokens in ONE latent frame: the DiT's 2x2 patch grid over the /16 latent.
+
+    Identical to `chunkplan.tokens_per_frame`, which writes the same number as
+    `(w/32)*(h/32)` from the canvas side. Not imported from there: this module is
+    loaded as a flat module by test_budget.py, so a top-level relative import
+    would break the torch-free test path.
+    """
     return (int(px_w) // 16 // 2) * (int(px_h) // 16 // 2)
 
 
@@ -142,8 +148,18 @@ class H3RefBudget:
                                                "picture-only and do not use it."})
         return {"required": req, "optional": opt}
 
-    RETURN_TYPES = ("STRING", "FLOAT", "INT")
-    RETURN_NAMES = ("info", "ref_share", "seq_len")
+    # ref_tokens is APPENDED, never inserted -- saved workflows store slot
+    # indices, so a new output goes on the end or every existing link shifts.
+    RETURN_TYPES = ("STRING", "FLOAT", "INT", "INT")
+    RETURN_NAMES = ("info", "ref_share", "seq_len", "ref_tokens")
+    OUTPUT_TOOLTIPS = ("The full budget report.",
+                       "References as a fraction of the PICTURE tokens, 0-1.",
+                       "The WHOLE packed sequence: video + audio + references + "
+                       "text. Not a reference count — wiring this where a "
+                       "reference count is wanted reports a nonsense share.",
+                       "Just the reference rows. This is what H3 Chunk Plan's "
+                       "`ref_tokens` wants, so it can report each chunk's share "
+                       "as its length changes.")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     OUTPUT_NODE = False
@@ -283,7 +299,7 @@ class H3RefBudget:
         L.append("       re-read comfy_extras/nodes_minimax_h3.py.")
         L.append("       ref_image_size here must match the reference node's widget.")
 
-        return ("\n".join(L), float(share), int(seq))
+        return ("\n".join(L), float(share), int(seq), int(ref_tok))
 
 
 NODE_CLASS_MAPPINGS = {"H3RefBudget": H3RefBudget}

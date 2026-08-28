@@ -25,16 +25,6 @@ function fitAtLeast(node) {
   node.setSize([Math.max(node.size[0], min[0]), Math.max(node.size[1], min[1])]);
 }
 
-// The multiline field that actually gets written in. Its default height is the
-// same as every other text widget, which is not enough for a shot description.
-function roomToWrite(node, name, px) {
-  const el = node.widgets?.find((x) => x.name === name)?.inputEl;
-  if (el && !el.dataset.h3sized) {
-    el.style.minHeight = px + "px";
-    el.dataset.h3sized = "1";
-  }
-}
-
 function setShown(node, name, shown) {
   const w = node.widgets?.find((x) => x.name === name);
   if (!w) return;
@@ -94,7 +84,7 @@ app.registerExtension({
   name: "h3.character",
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (!["H3Character", "H3CharacterSave", "H3Assemble", "H3AudioSlice",
-          "H3Take", "H3Resolution"].includes(nodeData.name)) return;
+          "H3Take", "H3Resolution", "H3Canvas"].includes(nodeData.name)) return;
     const onExecuted = nodeType.prototype.onExecuted;
     nodeType.prototype.onExecuted = function (message) {
       onExecuted?.apply(this, arguments);
@@ -167,12 +157,12 @@ app.registerExtension({
         p.callback = function () { const r = prev?.apply(this, arguments); applyPreset(node); return r; };
       }
       const node = this;
-      requestAnimationFrame(() => {
-        applyMode(node);
-        roomToWrite(node, "beats", 220);   // one line per chunk, and they are long
-        roomToWrite(node, "head", 140);
-        roomToWrite(node, "script", 140);
-      });
+      // No forced field heights. A minHeight on the text areas reserved space
+      // whether or not the text needed it, so a one-line `head` sat above a
+      // 140px gap. fitAtLeast() already stops the node collapsing on every run,
+      // which is what was actually wrong — the size you drag it to is now the
+      // size it keeps, and the fields fill it.
+      requestAnimationFrame(() => applyMode(node));
     };
 
     // draw the plan (line times, pauses, pacing warnings) on the node itself
