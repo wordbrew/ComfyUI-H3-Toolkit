@@ -362,8 +362,12 @@ class H3ChunkPlan:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "chunk_frames": ("INT", {"default": 90, "min": 5, "max": 3600, "step": 1,
-                             "tooltip": "Target chunk size. 39/90/141/192/243/294/"
+            # min 5 with step 17 IS the legal-run grid (17n+5), so the arrows
+            # can only land on one. A typed value still snaps in plan(), which
+            # says so in `info` -- the step just stops it happening silently.
+            "chunk_frames": ("INT", {"default": 90, "min": 5, "max": 3600, "step": 17,
+                             "tooltip": "Target chunk size, a legal run (17n+5). "
+                                        "39/90/141/192/243/294/"
                                         "345 land on BOTH clocks. Shorter chunks "
                                         "also hold identity better — a reference "
                                         "is a fixed token count while the target "
@@ -382,16 +386,24 @@ class H3ChunkPlan:
             "total_frames": ("INT", {"default": 0, "min": 0, "max": 36000,
                              "step": 1,
                              "tooltip": "Fresh generation only: how long the "
-                                        "finished piece should be. Ignored when "
-                                        "source_images is wired."}),
+                                        "finished piece should be. Free-form — "
+                                        "the CHUNKS have to be legal runs, the "
+                                        "total does not (564 = 4x141 is not one "
+                                        "itself). A piece shorter than one chunk "
+                                        "is the exception: there the total IS the "
+                                        "run, and it grows up to the next legal "
+                                        "one. Ignored when source_images is "
+                                        "wired."}),
             "scene_threshold": ("FLOAT", {"default": 0.12, "min": 0.005, "max": 1.0,
                                 "step": 0.005,
                                 "tooltip": "Mean absolute frame difference that "
                                            "counts as a cut, 0-1. Lower finds more. "
                                            "Check the detected list in `info` "
                                            "against the clip before trusting it."}),
-            "min_chunk": ("INT", {"default": 39, "min": 5, "max": 3600,
-                          "tooltip": "Shots shorter than this merge into a "
+            "min_chunk": ("INT", {"default": 39, "min": 5, "max": 3600, "step": 17,
+                          "tooltip": "Also a legal run, because a shot this "
+                                     "length becomes a chunk of its own. "
+                                     "Shots shorter than this merge into a "
                                      "neighbour rather than becoming a chunk too "
                                      "short to be worth a pass."}),
             "render_width": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
@@ -441,8 +453,12 @@ class H3ChunkPlan:
             deltas = (a - b).abs().mean(dim=(1, 2, 3)).tolist()
             cuts = find_cuts([0.0] + deltas, float(scene_threshold))
 
+        # Growing the tail forward is only honest with nothing to cut: fresh
+        # generation invents the frames, a V2V pass would be asking for footage
+        # past the end of the clip.
         chunks, info = build_plan(n, int(chunk_frames), chunk_mode, cuts=cuts,
-                                  min_chunk=int(min_chunk), context=int(context))
+                                  min_chunk=int(min_chunk), context=int(context),
+                                  grow_tail=source_images is None)
         render = (int(render_width), int(render_height)) if render_width and render_height else None
         text = describe_plan(chunks, info, render=render, ref_tokens=int(ref_tokens))
 

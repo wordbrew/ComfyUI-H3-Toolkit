@@ -94,7 +94,7 @@ def snap_context(frames):
 
 
 def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
-         context=0):
+         context=0, grow_tail=False):
     """-> (chunks, info)
 
     Each chunk is a dict:
@@ -131,6 +131,14 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
     if size != asked:
         notes.append(f"chunk_frames {asked} is not a legal run — using {size} "
                      f"(runs are 17n+5)")
+
+    # min_chunk gates whether a short shot is merged or becomes a chunk of its
+    # own, and a chunk of its own has to be a legal run -- so the threshold is
+    # snapped for the same reason the size is.
+    asked_min = max(5, int(min_chunk))
+    min_chunk = legal_run(asked_min, "up")
+    if min_chunk != asked_min:
+        notes.append(f"min_chunk {asked_min} is not a legal run — using {min_chunk}")
 
     ctx = snap_context(context)
     if ctx != int(context or 0):
@@ -219,9 +227,18 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                 # keep_from is an ABSOLUTE frame index and does not move: the
                 # chunk simply starts earlier and throws more of its head away.
                 start -= deficit
+            elif deficit and grow_tail:
+                # FRESH GENERATION has no source to run out of, so a chunk with
+                # nothing behind it grows FORWARD to the next legal run instead
+                # of being trimmed. You asked for 150 and get 158, rather than
+                # asking for 150 and getting 141.
+                notes.append(f"{end - start} frames is not a legal run — grew to "
+                             f"{run}, so nothing is dropped (generating, not "
+                             f"cutting footage)")
+                end = start + run
             elif deficit:
-                # nothing behind it: a shot shorter than one legal run. Trim to
-                # the run below rather than generate frames that do not exist.
+                # V2V: nothing behind it AND no footage past the end. Trim to the
+                # run below rather than ask for frames that do not exist.
                 run = legal_run(end - start, "down")
                 dropped = (end - start) - run
                 end = start + run

@@ -110,12 +110,41 @@ for total in (39, 40, 90, 100, 199, 200, 201, 400, 447, 1200, 1201):
 ok("legal run and exact coverage across 55 clip/chunk combinations", not bad)
 fails.extend(bad[:6])
 
-# a clip shorter than one legal run cannot be extended from footage that does
-# not exist, so it trims down and says how many frames went
+# V2V: a clip shorter than one legal run cannot be extended from footage that
+# does not exist, so it trims down and says how many frames went
 c, i = plan(100, 90)
 check("short clip trims to a legal run", (c[0]["start"], c[0]["end"]), (0, 90))
 ok("and reports the dropped frames",
    any("10 frame(s) dropped" in n for n in i["notes"]))
+
+# FRESH GENERATION has nothing to run out of, so the same clip grows forward
+c, i = plan(100, 90, grow_tail=True)
+check("fresh generation grows instead of trimming",
+      (c[0]["start"], c[0]["end"], c[0]["run"]), (0, 107, 107))
+ok("and says nothing was dropped", any("grew to 107" in n for n in i["notes"]))
+check("150 asked -> 158, not 141",
+      plan(150, 141, grow_tail=True)[0][0]["run"], 158)
+# growing is ONLY for the case with nothing behind it; a tail that can reach
+# back is exact either way and must not overshoot
+c, _ = plan(600, 141, grow_tail=True)
+check("a reachable tail still lands exactly", sum(x["end"] - x["keep_from"]
+                                                  for x in c), 600)
+bad2 = []
+for total in (39, 100, 150, 200, 564, 601, 1000):
+    for cf in (39, 90, 141):
+        c, _ = plan(total, cf, grow_tail=True)
+        if any(x["run"] != x["length"] or x["run"] % 17 != 5 for x in c):
+            bad2.append(f"{total}/{cf}")
+        kept = [f for x in c for f in range(x["keep_from"], x["end"])]
+        if kept != list(range(len(kept))) or len(kept) < total:
+            bad2.append(f"{total}/{cf} coverage")
+ok("growing never drops a frame and never breaks a run", not bad2)
+fails.extend(bad2[:4])
+
+# min_chunk is a threshold for becoming a chunk, so it snaps like the size does
+c, i = plan(600, 90, min_chunk=50)
+ok("min_chunk snaps to a legal run",
+   any("min_chunk 50 is not a legal run" in n for n in i["notes"]))
 
 # chunk_frames is snapped first, so every full part is legal by construction and
 # only a tail can ever need correcting
