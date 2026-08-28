@@ -1,0 +1,18 @@
+diff --git a/nodes.py b/nodes.py
+index ac5559a..c494265 100644
+--- a/nodes.py
++++ b/nodes.py
+@@ -167,7 +167,12 @@ https://depth-anything-v2.github.io
+         model.to(offload_device)
+         mm.soft_empty_cache()
+         depth_out = torch.cat(out, dim=0)
+-        depth_out = depth_out.unsqueeze(-1).expand(-1, -1, -1, 3).cpu().float()
++        # .contiguous() because expand() aliases all three channels onto one
++        # memory location, and the sub_/div_/clamp_ below are in-place. The
++        # F.interpolate a few lines down materialises it, but only when the
++        # input's height or width is NOT a multiple of 14 -- on 896x672 both
++        # are, that branch is skipped, and the in-place op raises.
++        depth_out = depth_out.unsqueeze(-1).expand(-1, -1, -1, 3).contiguous().cpu().float()
+         
+         final_H = (orig_H // 2) * 2
+         final_W = (orig_W // 2) * 2
