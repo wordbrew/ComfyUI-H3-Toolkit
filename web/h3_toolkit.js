@@ -204,14 +204,14 @@ app.registerExtension({
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "H3LongFormLinks") return;
 
-    // Both are live in the manual chain workflow (03 wires `length` and `seed`)
-    // and inert under chunking, where the length belongs to H3 Chunk Open and
-    // the seed to the sampler's own shared RandomNoise. A connected
-    // `chunk_frames` is the signal that you are chunking, so it greys both.
-    const OVERRIDDEN = {
-      seconds_per_link: "seconds_per_link (chunk length wins)",
-      seed: "seed (sampler noise wins)",
-    };
+    // Only `seconds_per_link`. It has an OVERRIDE -- a wired chunk_frames
+    // supersedes it, and the node ignores it -- so showing it live is a lie.
+    //
+    // `seed` has no override. It is unwired in the chunked example workflows,
+    // which is not the same thing: feeding it to the sampler's noise_seed works
+    // under chunking exactly as it does in the chain, and holds one seed across
+    // every chunk. Greying it would be greying a working connection.
+    const OVERRIDDEN = { seconds_per_link: "seconds_per_link (chunk length wins)" };
 
     function apply(node) {
       const wired = (node.inputs || []).some(

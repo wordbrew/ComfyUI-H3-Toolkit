@@ -126,10 +126,10 @@ class H3LongFormLinks:
                 "seed": ("INT", {"default": 2024, "min": 0, "max": 0xffffffffffffffff,
                          "tooltip": "Passed through unchanged. Use the SAME seed on every "
                                     "link — varying it per link measurably broke "
-                                    "continuity. Under chunking the sampler's own "
-                                    "RandomNoise is shared across chunks and does "
-                                    "this already, so the `seed` output goes "
-                                    "unused."}),
+                                    "continuity. Wire the `seed` output to the "
+                                    "sampler's noise_seed under chunking too — "
+                                    "one seed for every chunk is the same rule, "
+                                    "and it keeps the seed next to the prompt."}),
             },
             "optional": {
                 # typed OR wired, same as H3 Scene Prompt
@@ -175,8 +175,9 @@ class H3LongFormLinks:
     OUTPUT_TOOLTIPS = ("The finished prompt for this link or chunk.",
                        "MANUAL CHAIN ONLY — under chunking use H3 Chunk Open's "
                        "`length`, which knows this chunk's own run.",
-                       "MANUAL CHAIN ONLY — under chunking the shared RandomNoise "
-                       "already holds the seed across chunks.",
+                       "One seed for every link or chunk — varying it per link "
+                       "measurably broke continuity. Wire it to the sampler's "
+                       "noise_seed, or leave the sampler to hold its own.",
                        "How many clauses `beats` holds.",
                        "The clause-to-chunk map. Read it before you queue.",
                        "Errors and warnings. Wire this one if you wire only one.",
