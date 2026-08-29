@@ -5,13 +5,42 @@ They live here rather than in the install because a Manager update reverts a
 custom node folder with `git pull` or a hard reset, and the patch goes silently.
 Nothing here is applied automatically.
 
-After any Manager update, check whether a patch survived:
+After any ComfyUI or Manager update, run:
 
-    git -C "<pack folder>" diff --stat
+    python3 patches/apply.py            # what is applied, what is not
+    python3 patches/apply.py --apply    # apply whatever is missing
+    python3 patches/apply.py --revert   # take them all back out
 
-Nothing printed means it went. Reapply with the command under each heading.
+It is idempotent -- an applied patch is reported and skipped, never applied
+twice -- and it reports CONFLICT when core has moved under a patch, which means
+the patch needs rebasing rather than forcing.
+
+An update reverts these silently. Nothing errors afterwards: H3 context windows
+simply go back to windowing the wrong axis and placing every window at the clip
+origin, which reads as a flicker rather than as a missing patch. That is the
+reason to run it every time rather than when something looks wrong.
 
 ---
+
+## h3-modality-dim-context-windows.patch
+
+**Files:** `comfy/context_windows.py`, `comfy/model_base.py` (ComfyUI core).
+**Symptom without it:** context windows on H3 window the wrong axis, and the
+audio modality is sliced on its stereo-pair dimension instead of time.
+
+Core's windowing assumes every modality's temporal axis sits at the primary's
+`dim`. H3's video latent is `[B, 24, T, H/16, W/16]` -- time at dim 2 -- but its
+audio latent is `[B, 32, 2, T]`, where dim 2 is the stereo pair and time is dim
+3. LTXAV has time at dim 2 for both, so the assumption held until H3.
+
+The patch adds a `context_modality_dim(modality_index, latent_shapes, dim)` hook
+that a model can override, and consults it wherever a modality is sliced or
+recombined -- including `combine_context_window_results`, which is called PER
+MODALITY, so the fix there is `self.dim` -> `window.dim` rather than a new
+parameter. `windowing.py` installs H3's implementations.
+
+Was never saved when it was written and was found missing on 2026-08-29, live
+in the install with no copy anywhere.
 
 ## depthanythingv2-contiguous.patch
 

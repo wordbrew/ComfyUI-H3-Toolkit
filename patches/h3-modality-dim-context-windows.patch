@@ -1,0 +1,202 @@
+diff --git a/comfy/context_windows.py b/comfy/context_windows.py
+index 5f9899c6..121a7748 100644
+--- a/comfy/context_windows.py
++++ b/comfy/context_windows.py
+@@ -223,6 +223,11 @@ class WindowingState:
+     dim: int = 0                                 # primary modality temporal dim for context windowing
+     is_multimodal: bool = False
+     temporal_downscale_ratio: int = 1            # model's pixel-to-latent temporal compression ratio
++    modality_dims: list[int] | None = None       # per-modality temporal dim; defaults to dim for every modality
++
++    def __post_init__(self):
++        if self.modality_dims is None:
++            self.modality_dims = [self.dim] * len(self.latents)
+ 
+     def prepare_window(self, window: IndexListContextWindow, model) -> IndexListContextWindow:
+         """Reformat window for multimodal contexts by deriving per-modality index lists.
+@@ -248,11 +253,12 @@ class WindowingState:
+                 f"{type(model).__name__} must implement map_context_window_to_modalities for multimodal context windows.")
+         modality_windows = {}
+         for mod_idx in range(1, len(self.latents)):
+-            modality_total_frames = self.latents[mod_idx].shape[self.dim]
++            mod_dim = self.modality_dims[mod_idx]
++            modality_total_frames = self.latents[mod_idx].shape[mod_dim]
+             ratio = modality_total_frames / primary_total if primary_total > 0 else 1
+             modality_overlap = max(round(primary_overlap * ratio), 0)
+             modality_windows[mod_idx] = IndexListContextWindow(
+-                per_modality_indices[mod_idx], dim=self.dim,
++                per_modality_indices[mod_idx], dim=mod_dim,
+                 total_frames=modality_total_frames,
+                 context_overlap=modality_overlap)
+         return IndexListContextWindow(
+@@ -283,7 +289,7 @@ class WindowingState:
+             if guide_frame_counts[idx] > 0:
+                 window_len = len(window.get_window_for_modality(idx).index_list)
+                 for ci in range(len(out_per_modality)):
+-                    out_per_modality[ci][idx] = out_per_modality[ci][idx].narrow(self.dim, 0, window_len)
++                    out_per_modality[ci][idx] = out_per_modality[ci][idx].narrow(self.modality_dims[idx], 0, window_len)
+ 
+     def _inject_guide_frames(self, latent_slice: torch.Tensor, window: IndexListContextWindow, modality_idx: int = 0) -> tuple[torch.Tensor, int]:
+         guide_entries = self.guide_entries[modality_idx]
+@@ -310,8 +316,9 @@ class WindowingState:
+         window.guide_downscale_factors = guide_downscale_factors
+ 
+         if guide_frame_count > 0:
+-            idx = tuple([slice(None)] * self.dim + [suffix_idx])
+-            return torch.cat([latent_slice, guide_frames[idx]], dim=self.dim), guide_frame_count
++            mod_dim = self.modality_dims[modality_idx]
++            idx = tuple([slice(None)] * mod_dim + [suffix_idx])
++            return torch.cat([latent_slice, guide_frames[idx]], dim=mod_dim), guide_frame_count
+         return latent_slice, 0
+ 
+     def patch_latent_shapes(self, sub_conds, new_shapes):
+@@ -393,7 +400,18 @@ class IndexListContextHandler(ContextHandlerABC):
+                     return kf.cond
+         return None
+ 
+-    def _apply_freenoise(self, noise: torch.Tensor, conds: list[list[dict]], seed: int) -> torch.Tensor:
++    def _get_modality_dims(self, model: BaseModel, latent_shapes, count: int) -> list[int]:
++        """Temporal dim of each modality's latent. The primary modality always uses the handler's
++        configured dim; non-primary modalities may report a different one via the model.
++        """
++        dims = [self.dim] * count
++        modality_dim = getattr(model, "context_modality_dim", None)
++        if modality_dim is not None:
++            for i in range(1, count):
++                dims[i] = modality_dim(i, latent_shapes, self.dim)
++        return dims
++
++    def _apply_freenoise(self, noise: torch.Tensor, conds: list[list[dict]], seed: int, model: BaseModel=None) -> torch.Tensor:
+         """Apply FreeNoise shuffling, scaling context length/overlap per-modality by frame ratio.
+         If guide frames are present on the primary modality, only the video portion is shuffled.
+         """
+@@ -403,15 +421,17 @@ class IndexListContextHandler(ContextHandlerABC):
+         latent_shapes = self._get_latent_shapes(conds)
+         if latent_shapes is not None and len(latent_shapes) > 1:
+             modalities = comfy.utils.unpack_latents(noise, latent_shapes)
++            modality_dims = self._get_modality_dims(model, latent_shapes, len(modalities))
+             primary_total = latent_shapes[0][self.dim]
+             primary_video_count = modalities[0].size(self.dim) - guide_count
+             apply_freenoise(modalities[0].narrow(self.dim, 0, primary_video_count), self.dim, self.context_length, self.context_overlap, seed)
+             for i in range(1, len(modalities)):
+-                mod_total = latent_shapes[i][self.dim]
++                mod_dim = modality_dims[i]
++                mod_total = latent_shapes[i][mod_dim]
+                 ratio = mod_total / primary_total if primary_total > 0 else 1
+                 mod_ctx_len = max(round(self.context_length * ratio), 1)
+                 mod_ctx_overlap = max(round(self.context_overlap * ratio), 0)
+-                modalities[i] = apply_freenoise(modalities[i], self.dim, mod_ctx_len, mod_ctx_overlap, seed)
++                modalities[i] = apply_freenoise(modalities[i], mod_dim, mod_ctx_len, mod_ctx_overlap, seed)
+             noise, _ = comfy.utils.pack_latents(modalities)
+             return noise
+         video_count = noise.size(self.dim) - guide_count
+@@ -452,7 +472,8 @@ class IndexListContextHandler(ContextHandlerABC):
+             latent_shapes=latent_shapes,
+             dim=self.dim,
+             is_multimodal=is_multimodal,
+-            temporal_downscale_ratio=model.latent_format.temporal_downscale_ratio)
++            temporal_downscale_ratio=model.latent_format.temporal_downscale_ratio,
++            modality_dims=self._get_modality_dims(model, latent_shapes, len(unpacked_latents_list)))
+ 
+     def should_use_context(self, model: BaseModel, conds: list[list[dict]], x_in: torch.Tensor, timestep: torch.Tensor, model_options: dict[str]) -> bool:
+         window_state = self._build_window_state(x_in, conds, model) # build window_state to check frame counts, will be built again in execute
+@@ -581,12 +602,13 @@ class IndexListContextHandler(ContextHandlerABC):
+         total_windows = len(enumerated_context_windows)
+ 
+         # Initialize per-modality accumulators (length 1 for single-modality)
++        modality_dims = window_state.modality_dims
+         accum = [[torch.zeros_like(m) for _ in conds] for m in window_state.latents]
+         if self.fuse_method.name == ContextFuseMethods.RELATIVE:
+-            counts = [[torch.ones(get_shape_for_dim(m, self.dim), device=m.device) for _ in conds] for m in window_state.latents]
++            counts = [[torch.ones(get_shape_for_dim(m, modality_dims[mi]), device=m.device) for _ in conds] for mi, m in enumerate(window_state.latents)]
+         else:
+-            counts = [[torch.zeros(get_shape_for_dim(m, self.dim), device=m.device) for _ in conds] for m in window_state.latents]
+-        biases = [[([0.0] * m.shape[self.dim]) for _ in conds] for m in window_state.latents]
++            counts = [[torch.zeros(get_shape_for_dim(m, modality_dims[mi]), device=m.device) for _ in conds] for mi, m in enumerate(window_state.latents)]
++        biases = [[([0.0] * m.shape[modality_dims[mi]]) for _ in conds] for mi, m in enumerate(window_state.latents)]
+ 
+         for callback in comfy.patcher_extension.get_all_callbacks(IndexListCallbacks.EXECUTE_START, self.callbacks):
+             callback(self, model, x_in, conds, timestep, model_options)
+@@ -618,7 +640,7 @@ class IndexListContextHandler(ContextHandlerABC):
+ 
+                     # if guide frames were injected, append them to the end of the fused latents for the next step
+                     if window_state.guide_latents[mod_idx] is not None:
+-                        f = torch.cat([f, window_state.guide_latents[mod_idx]], dim=self.dim)
++                        f = torch.cat([f, window_state.guide_latents[mod_idx]], dim=modality_dims[mod_idx])
+                     finalized.append(f)
+ 
+                 # pack modalities together if needed
+@@ -710,6 +732,9 @@ class IndexListContextHandler(ContextHandlerABC):
+ 
+     def combine_context_window_results(self, x_in: torch.Tensor, sub_conds_out, sub_conds, window: IndexListContextWindow, window_idx: int, total_windows: int, timestep: torch.Tensor,
+                                     conds_final: list[torch.Tensor], counts_final: list[torch.Tensor], biases_final: list[torch.Tensor]):
++        # x_in and window are the tensors/window of a single modality, so use the window's own
++        # temporal dim rather than the handler's primary dim
++        dim = window.dim
+         if self.fuse_method.name == ContextFuseMethods.RELATIVE:
+             for pos, idx in enumerate(window.index_list):
+                 # bias is the influence of a specific index in relation to the whole context window
+@@ -721,15 +746,15 @@ class IndexListContextHandler(ContextHandlerABC):
+                     prev_weight = (bias_total / (bias_total + bias))
+                     new_weight = (bias / (bias_total + bias))
+                     # account for dims of tensors
+-                    idx_window = tuple([slice(None)] * self.dim + [idx])
+-                    pos_window = tuple([slice(None)] * self.dim + [pos])
++                    idx_window = tuple([slice(None)] * dim + [idx])
++                    pos_window = tuple([slice(None)] * dim + [pos])
+                     # apply new values
+                     conds_final[i][idx_window] = conds_final[i][idx_window] * prev_weight + sub_conds_out[i][pos_window] * new_weight
+                     biases_final[i][idx] = bias_total + bias
+         else:
+             # add conds and counts based on weights of fuse method
+-            weights = get_context_weights(window.context_length, x_in.shape[self.dim], window.index_list, self, sigma=timestep, context_overlap=window.context_overlap)
+-            weights_tensor = match_weights_to_dim(weights, x_in, self.dim, device=x_in.device)
++            weights = get_context_weights(window.context_length, x_in.shape[dim], window.index_list, self, sigma=timestep, context_overlap=window.context_overlap)
++            weights_tensor = match_weights_to_dim(weights, x_in, dim, device=x_in.device)
+             for i in range(len(sub_conds_out)):
+                 window.add_window(conds_final[i], sub_conds_out[i] * weights_tensor)
+                 window.add_window(counts_final[i], weights_tensor)
+@@ -775,7 +800,7 @@ def _sampler_sample_wrapper(executor, guider, sigmas, extra_args, callback, nois
+         return executor(guider, sigmas, extra_args, callback, noise, *args, **kwargs)
+ 
+     conds = [guider.conds.get('positive', guider.conds.get('negative', []))]
+-    noise = handler._apply_freenoise(noise, conds, extra_args["seed"])
++    noise = handler._apply_freenoise(noise, conds, extra_args["seed"], guider.model_patcher.model)
+ 
+     return executor(guider, sigmas, extra_args, callback, noise, *args, **kwargs)
+ 
+diff --git a/comfy/model_base.py b/comfy/model_base.py
+index ba59d270..0c3ae3fb 100644
+--- a/comfy/model_base.py
++++ b/comfy/model_base.py
+@@ -331,6 +331,21 @@ class BaseModel(torch.nn.Module):
+         Use comfy.context_windows.slice_cond() for common cases."""
+         return None
+ 
++    def context_modality_dim(self, modality_index, latent_shapes, dim):
++        """Tensor dim holding the temporal axis of a modality's latent, for context windowing.
++
++        Only called for non-primary modalities (modality_index >= 1); the primary modality
++        always uses the dim configured on the context handler. The default assumes every
++        modality shares the primary modality's temporal dim, which is what all
++        currently-supported multimodal models do.
++
++        Override when a modality's latent does not share that axis, e.g. a video latent of
++        shape [B, C, T, H, W] (dim 2) packed alongside a stereo audio latent of shape
++        [B, C, 2, T] (dim 3). Models overriding this should use the same per-modality dims
++        inside map_context_window_to_modalities(), which is handed the primary dim only.
++        """
++        return dim
++
+     def extra_conds(self, **kwargs):
+         out = {}
+         concat_cond = self.concat_cond(**kwargs)
+@@ -1283,7 +1298,7 @@ class LTXAV(BaseModel):
+         if cond_key == "audio_denoise_mask" and hasattr(window, 'modality_windows') and window.modality_windows:
+             audio_window = window.modality_windows.get(1)
+             if audio_window is not None and hasattr(cond_value, "cond") and isinstance(cond_value.cond, torch.Tensor):
+-                sliced = audio_window.get_tensor(cond_value.cond, device, dim=2)
++                sliced = audio_window.get_tensor(cond_value.cond, device)
+                 return cond_value._copy_with(sliced)
+ 
+         # Video denoise mask — split into video + guide portions, slice each
