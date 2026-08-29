@@ -86,7 +86,8 @@ def patch_packed_layout():
         _h3_longform_patched = True
 
         def __init__(self, text_len, latent_t, latent_h, latent_w, audio_t,
-                     keyframes=None, refs=None, frame_count=None):
+                     keyframes=None, refs=None, frame_count=None,
+                     window_start=0):
             # Forward ONLY what this build's PackedLayout accepts. ComfyUI
             # 0.34.0 dropped `frame_count` from the signature, and forwarding it
             # blindly raised TypeError on the no-keyframes path -- which is most
@@ -96,6 +97,12 @@ def patch_packed_layout():
             base_kw = {k: v for k, v in base_kw.items() if k in _BASE_PARAMS}
             if "frame_count" in _BASE_PARAMS:
                 base_kw["frame_count"] = frame_count
+            # `window_start` arrives when the context-window patch is applied
+            # (patches/h3-window-absolute-positions.patch). Same rule as
+            # frame_count: forward it only if this build takes it, so the pack
+            # runs against a patched and an unpatched core alike.
+            if "window_start" in _BASE_PARAMS:
+                base_kw["window_start"] = window_start
 
             # Core no longer passes frame_count either, so a keyframe pinned to
             # the LAST frame would silently never resolve. Derive it: a legal run
@@ -200,15 +207,19 @@ def patch_packed_layout():
                 img_update.append(torch.zeros(frame_rows, dtype=torch.bool))
                 row += frame_rows
 
+            # the target sits at its real place on the clip when windowed; the
+            # REFERENCE and KEYFRAME cursors above are untouched, because they
+            # are positioned relative to the clip origin either way
+            target_cursor = cursor + FRAME_RESCALE * float(window_start)
             segments.append(("audio", audio_t * 2))
-            pos.append(_audio_grid(cursor, audio_t, *target_audio_w))
+            pos.append(_audio_grid(target_cursor, audio_t, *target_audio_w))
             audio_pos.append(torch.arange(row, row + audio_t * 2))
             audio_update.append(torch.ones(audio_t * 2, dtype=torch.bool))
             row += audio_t * 2
 
             n_video = latent_t * frame_rows
             segments.append(("video", n_video))
-            pos.append(_video_grid(latent_t, frame, cursor))
+            pos.append(_video_grid(latent_t, frame, target_cursor))
             img_pos.append(torch.arange(row, row + n_video))
             img_update.append(torch.ones(n_video, dtype=torch.bool))
             row += n_video
@@ -219,7 +230,14 @@ def patch_packed_layout():
             self.img_update = torch.cat(img_update)
             self.audio_pos = torch.cat(audio_pos)
             self.audio_update = torch.cat(audio_update)
-            self.signature = (text_len, latent_t, latent_h, latent_w, audio_t)
+            # window_start joins the signature when the core patch supplies it,
+            # so the rebuild check in _forward matches what core compares
+            # against. Two windows of the same SHAPE at different clip positions
+            # are different layouts, and sharing one is the bug the patch fixes.
+            self.signature = ((text_len, latent_t, latent_h, latent_w, audio_t,
+                               window_start) if "window_start" in _BASE_PARAMS
+                              else (text_len, latent_t, latent_h, latent_w,
+                                    audio_t))
             seg, off = [], 0
             for kind, n in segments:
                 seg.append((off, off + n, kind))
