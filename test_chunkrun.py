@@ -460,12 +460,13 @@ def test_latent_context_node():
     check("and says why", "first chunk" in out[2], True)
     check("context_length 0 also passes through",
           n.go("LATENT-A", source_latent="B", context_length=0)[1], 0)
-    try:
-        n.go("LATENT-A", source_latent="B", context_length=39)
-        check("a missing pack raises", "no error", "ValueError")
-    except ValueError as exc:
-        check("a missing pack names what to install",
-              "Motion-Context" in str(exc), True)
+    # with a prefix to copy it hands off to H3LatentPin, which is OUR node --
+    # this pack no longer needs a third-party one installed to chain chunks
+    import inspect
+    src = inspect.getsource(chunkrun.H3ChunkLatentContext.go)
+    check("it calls H3LatentPin", "H3LatentPin" in src, True)
+    check("and looks nothing up in the node registry",
+          "NODE_CLASS_MAPPINGS" in src, False)
 
 
 def test_audio_join():

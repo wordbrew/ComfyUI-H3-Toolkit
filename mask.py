@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as Fn
 
 from .avlatent import av
+from .chunkplan import snap_context
 from .geometry import cover_crop, crop_to_multiple
 from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
                      frame_groups, is_av_aligned, snap_av_aligned)
@@ -374,60 +375,138 @@ class H3MaskInpaint:
 
 
 class H3LatentPin:
-    """Seed a clip's opening with a previous clip's latents (temporal outpaint).
+    """Continue a clip: copy the previous clip's tail onto this one's opening.
 
-    HONEST WARNING, from nine rounds of measurement: this DOES NOT give a seamless
-    continuation. The model reproduces the pinned frames and then splices to its own
-    scene at exactly the frame where the pin ends — a visible cut. Feathering,
-    partial strength, whole-clip gradients and sigma-release all fail to move it.
-    For joining clips use H3KeyframeTimeline instead, which is positionally bound to
-    frame 0 and has no mask edge.
+    WHAT IT DOES TO THE LATENT
+      H3's latent is a nested pair -- video [B,24,T,h,w] and audio [B,32,2,T40].
+      The previous clip's LAST `overlap_frames` are written over this clip's
+      FIRST, in both streams, and the noise mask is set to 0 there. The mask is
+      re-applied by KSamplerX0Inpaint at EVERY denoise step, so those positions
+      are stamped back 10 or 20 times and cannot drift: the model sees fixed
+      content it has to continue from, and only the frames after the pin are
+      generated. Nothing is added to the packed sequence -- no extra rows, no
+      token cost. It is the target tensor with a pre-filled, pinned head.
 
-    It is included because temporal/region pinning is a legitimate tool for other
-    jobs — holding an opening steady, inpainting a span, style continuity where a
-    cut does not matter.
+    WHY THE OVERLAP MUST BE A LEGAL RUN
+      This node used to carry a warning that it produced a visible cut where the
+      pin ended, and the cause was here: `overlap_frames` was a free integer.
+      The VAE groups pixel frames (1,4,4,4,4), so what a latent step covers
+      depends on its index mod 5. Legal runs (17n+5) are 2 mod 5 latent steps,
+      which means the last k steps of one clip and the first k of the next start
+      at the SAME phase and a direct copy lines up. Ask for 30 and the old code
+      took 7 steps -- 22 frames of coverage -- while slicing as though it were
+      30, so the tail landed at a phase the prefix does not have. That is the
+      cut. The widget is the grid now and the value is snapped either way.
+
+    STRENGTH IS NOT A DIAL FOR SEAMS
+      1.0 holds the prefix exactly, which is what a continuation wants. Lower
+      values half-preserve it, and nine rounds of measurement found no setting
+      between 0 and 1 that softened a join -- feathering, partial strength,
+      whole-clip gradients and sigma-release all failed. It stays because
+      partial pinning is a legitimate tool for other jobs; it is not the answer
+      to a bad seam.
     """
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "latent": ("LATENT",),
-            "previous_latent": ("LATENT",),
-            "overlap_frames": ("INT", {"default": 5, "min": 5, "max": 120, "step": 1,
-                                       "tooltip": "Pixel frames of the previous clip's "
-                                                  "tail to pin. Quantised to the latent "
-                                                  "grid: 5->2, 22->7, 39->12."}),
-            "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+            "latent": ("LATENT", {"tooltip": "This clip's fresh target latent."}),
+            "previous_latent": ("LATENT", {"tooltip": "The previous clip's "
+                                "SAMPLER output. No decode and re-encode: that "
+                                "round trip is what climbed contrast down a "
+                                "chain."}),
+            "overlap_frames": (["39", "22", "5", "1", "0"], {"default": "39",
+                               "tooltip": "Pixel frames of the previous clip to "
+                                          "pin. Only these encode to distinct "
+                                          "VAE runs; anything else lands at the "
+                                          "wrong temporal phase and splices. "
+                                          "39 -> 12 video steps and 65 audio "
+                                          "steps, and is the smallest run on "
+                                          "BOTH the 24fps and 40Hz grids. 0 "
+                                          "passes through."}),
+            "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0,
+                         "step": 0.05,
+                         "tooltip": "Leave at 1.0 to continue. Lower only "
+                                    "half-preserves the prefix — it is not a "
+                                    "seam control."}),
+        }, "optional": {
+            "audio_feather_ticks": ("INT", {"default": 8, "min": 0, "max": 256,
+                                    "tooltip": "Half-cosine release over the "
+                                               "last ticks of the AUDIO prefix. "
+                                               "Video cuts from preserved to "
+                                               "generated on a hard edge; a hard "
+                                               "audio edge clicks. 8 = 0.2s at "
+                                               "40 Hz. 0 = hard."}),
         }}
 
-    RETURN_TYPES = ("LATENT",)
+    RETURN_TYPES = ("LATENT", "INT", "STRING")
+    RETURN_NAMES = ("latent", "pinned_frames", "info")
     FUNCTION = "go"
     CATEGORY = CATEGORY
-    DESCRIPTION = ("Pin the previous clip's tail into this clip's opening. Expect a "
-                   "visible cut where the pin ends — see the node description.")
+    DESCRIPTION = ("Copy the previous clip's tail into this clip's opening and "
+                   "hold it, so the take continues instead of restarting.")
 
-    def go(self, latent, previous_latent, overlap_frames, strength):
+    def go(self, latent, previous_latent, overlap_frames, strength,
+           audio_feather_ticks=8):
         import comfy.nested_tensor
         video, aud = av(latent["samples"])
         pv, pa = av(previous_latent["samples"])
 
-        kv = min(video_latent_t(max(5, overlap_frames)), video.shape[2] - 1)
-        ka = min(int(round(overlap_frames / 24.0 * 40)), aud.shape[-1] - 1)
+        n = snap_context(int(overlap_frames))
+        if n <= 0:
+            return (latent, 0, "H3 LATENT PIN: overlap 0 — passed through")
 
-        new_v = video.clone()
-        new_a = aud.clone()
+        # 17n+5 pixel frames is 5n+2 latent steps, at both ends. Deriving the
+        # step count from the run rather than rounding a ratio is what keeps the
+        # copy phase-aligned.
+        kv = 2 + 5 * ((n - 5) // 17) if n >= 5 else 1
+        ka = int(round(n / 24.0 * 40))
+        if kv >= int(video.shape[2]) or ka >= int(aud.shape[-1]):
+            raise ValueError(
+                f"H3 Latent Pin: a {n}-frame pin is {kv} video / {ka} audio "
+                f"step(s), which does not fit inside a target of "
+                f"{int(video.shape[2])} / {int(aud.shape[-1])}. Shorten the pin "
+                f"or lengthen the clip.")
+        if int(pv.shape[2]) < kv or int(pa.shape[-1]) < ka:
+            raise ValueError(
+                f"H3 Latent Pin: the previous clip has {int(pv.shape[2])} video "
+                f"step(s) and the pin needs {kv}. It is shorter than the pin.")
+        if tuple(pv.shape[3:]) != tuple(video.shape[3:]):
+            raise ValueError(
+                f"H3 Latent Pin: the previous clip is "
+                f"{int(pv.shape[4]) * 16}x{int(pv.shape[3]) * 16} and this one "
+                f"is {int(video.shape[4]) * 16}x{int(video.shape[3]) * 16}. The "
+                f"pinned frames have to line up pixel for pixel with what "
+                f"follows, so chained clips must share one resolution.")
+
+        new_v, new_a = video.clone(), aud.clone()
         new_v[:, :, :kv] = pv[:, :, -kv:].to(new_v.device, new_v.dtype)
         new_a[..., :ka] = pa[..., -ka:].to(new_a.device, new_a.dtype)
 
+        hold = 1.0 - float(strength)
         mask_v = torch.ones_like(video)
         mask_a = torch.ones_like(aud)
-        mask_v[:, :, :kv] = 1.0 - float(strength)
-        mask_a[..., :ka] = 1.0 - float(strength)
+        mask_v[:, :, :kv] = hold
+        mask_a[..., :ka] = hold
+        f = max(0, min(int(audio_feather_ticks), ka))
+        if f and strength > 0:
+            # release the audio over its last ticks. Video cuts hard from
+            # preserved to generated; audio does not survive that.
+            ramp = torch.linspace(hold, 1.0, f + 2, device=mask_a.device,
+                                  dtype=mask_a.dtype)[1:-1]
+            ramp = 0.5 - 0.5 * torch.cos(ramp * 3.141592653589793)
+            mask_a[..., ka - f:ka] = hold + (1.0 - hold) * ramp
 
         out = dict(latent)
         out["samples"] = comfy.nested_tensor.NestedTensor((new_v, new_a))
         out["noise_mask"] = comfy.nested_tensor.NestedTensor((mask_v, mask_a))
-        return (out,)
+        info = (f"H3 LATENT PIN: {n} frame(s) = {kv} video / {ka} audio step(s) "
+                f"copied and held at strength {strength:.2f}"
+                + (f", audio released over the last {f} tick(s)" if f else "")
+                + f"\n  {int(video.shape[2])} video step(s) in this clip, so "
+                f"{100.0 * kv / int(video.shape[2]):.0f}% is reproduced")
+        logging.info("H3LatentPin: %d frames = %d video / %d audio steps", n, kv, ka)
+        return {"ui": {"h3char": [info]}, "result": (out, n, info)}
 
 
 class H3MatchSource:
