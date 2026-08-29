@@ -1,5 +1,5 @@
 diff --git a/comfy/ldm/minimax/model.py b/comfy/ldm/minimax/model.py
-index 765f2198..1a02ead1 100644
+index 765f2198..8c0b5eeb 100644
 --- a/comfy/ldm/minimax/model.py
 +++ b/comfy/ldm/minimax/model.py
 @@ -14,6 +14,7 @@ video schedule (ModelSamplingAV); forward() undoes that scale and converts the
@@ -20,7 +20,7 @@ index 765f2198..1a02ead1 100644
          frame, w_grid = _frame_grid(latent_h, latent_w)
          frame_rows = frame.shape[0]
  
-@@ -405,16 +407,36 @@ class PackedLayout:
+@@ -405,16 +407,37 @@ class PackedLayout:
                      row += n
                      cursor += max(float(rt), sum(_video_t_spans(vt)))
  
@@ -49,9 +49,10 @@ index 765f2198..1a02ead1 100644
          n_video = latent_t * frame_rows
          segments.append(("video", n_video))
 -        pos.append(_video_grid(latent_t, frame, cursor))
-+        # debug, not info: one line per window per step is 180 lines on a
-+        # 9-window run. Kept because "which frame does this window think it is
-+        # at" was the question that took a whole afternoon to answer.
++        # debug: one line per window per step is 180 lines on a 9-window run.
++        # Kept because "which frame does this window think it is at" was the
++        # question that took a whole afternoon to answer. The toolkit node logs
++        # the per-RUN summary at info, which is the one you normally want.
 +        logging.debug("H3 layout: target starts at cond_t %.1f | %d latent frames "
 +                     "| text %d | %d ref block(s) | %d keyframe(s)",
 +                     target_cursor, latent_t, text_len, len(refs or ()),
@@ -60,7 +61,7 @@ index 765f2198..1a02ead1 100644
          img_pos.append(torch.arange(row, row + n_video))
          img_update.append(torch.ones(n_video, dtype=torch.bool))
          row += n_video
-@@ -425,7 +447,10 @@ class PackedLayout:
+@@ -425,7 +448,10 @@ class PackedLayout:
          self.img_update = torch.cat(img_update)
          self.audio_pos = torch.cat(audio_pos)
          self.audio_update = torch.cat(audio_update)
@@ -72,7 +73,7 @@ index 765f2198..1a02ead1 100644
          # contiguous segment table (start, stop, kind)
          # kinds: text / cond / cond_audio / ref_img / ref_audio / audio / video
          # the packed sequence is uniform per segment in (modality tag, timestep class),
-@@ -565,8 +590,11 @@ class MiniMaxH3Model(nn.Module):
+@@ -565,8 +591,11 @@ class MiniMaxH3Model(nn.Module):
          text_len = context.shape[1]
          # extra_conds prebuilds the layout once per sampling run
          layout = payload.get("layout")
