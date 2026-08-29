@@ -80,6 +80,10 @@ CONTRACT = {
         "chunkrun",
         ["images", "mask", "pin", "context_images"],
         ["images", "mask", "pinned", "info"]),
+    "H3SwapPrompt": (
+        "video",
+        ["conditioning", "clip", "prompt"],
+        ["conditioning", "info"]),
     "H3ChunkLatentContext": (
         "chunkrun",
         ["latent", "source_latent", "context_length", "audio_feather_ticks"],
@@ -117,10 +121,22 @@ def load(module):
     return mod
 
 
+# Modules that reach into comfy at import time cannot be checked outside a
+# ComfyUI install. Skip them and SAY SO rather than failing: run this from
+# inside the install to cover them too. Everything torch-free is checked here.
+skipped = []
+
 for name, (module, want_in, want_out) in CONTRACT.items():
     try:
         mod = load(module)
         cls = mod.NODE_CLASS_MAPPINGS[name]
+    except ModuleNotFoundError as exc:
+        if "comfy" in str(exc) or "node_helpers" in str(exc):
+            skipped.append(f"{name} ({module}: {exc})")
+            continue
+        fails.append(f"{name}: could not load from {module}: "
+                     f"{type(exc).__name__}: {exc}")
+        continue
     except Exception as exc:
         fails.append(f"{name}: could not load from {module}: "
                      f"{type(exc).__name__}: {exc}")
@@ -157,4 +173,9 @@ if fails:
     for f in fails:
         print("  " + f)
     sys.exit(1)
-print(f"slot contract: {len(CONTRACT)} node(s) hold their order")
+checked = len(CONTRACT) - len(skipped)
+print(f"slot contract: {checked} node(s) hold their order")
+for s_ in skipped:
+    print(f"  SKIPPED {s_}")
+if skipped:
+    print("  (run this from inside a ComfyUI install to cover those)")

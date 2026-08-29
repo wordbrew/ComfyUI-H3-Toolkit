@@ -204,8 +204,14 @@ app.registerExtension({
     const OVERRIDDEN = { seconds_per_link: "seconds_per_link (chunk length wins)" };
 
     function apply(node) {
+      // The node reads the VALUE, not the wire: `int(chunk_frames or 0) > 0` is
+      // what makes seconds_per_link inert, so a typed 192 counts exactly as much
+      // as a connection. Checking only for a link left a typed value looking
+      // live and sent me chasing a wire that was never needed.
+      const w = node.widgets?.find((x) => x.name === "chunk_frames");
       const wired = (node.inputs || []).some(
-        (i) => i.name === "chunk_frames" && i.link != null);
+          (i) => i.name === "chunk_frames" && i.link != null)
+        || Number(w?.value) > 0;
       for (const [name, label] of Object.entries(OVERRIDDEN)) {
         const w = node.widgets?.find((x) => x.name === name);
         if (!w) continue;
@@ -229,6 +235,21 @@ app.registerExtension({
       configure?.apply(this, arguments);
       const node = this;
       requestAnimationFrame(() => apply(node));
+    };
+
+    const created2 = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      created2?.apply(this, arguments);
+      const node = this;
+      const w = node.widgets?.find((x) => x.name === "chunk_frames");
+      if (w) {
+        const prev = w.callback;
+        w.callback = function () {
+          const r = prev?.apply(this, arguments);
+          apply(node);
+          return r;
+        };
+      }
     };
 
     const changed = nodeType.prototype.onConnectionsChange;

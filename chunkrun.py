@@ -661,14 +661,18 @@ class H3ChunkContext:
 class H3ChunkLatentContext:
     """Copy the previous chunk's latent tail into this chunk's prefix.
 
-    WHY THIS WRAPPER EXISTS AND DOES NOT REIMPLEMENT ANYTHING
-      `MiniMaxH3GeneratedAVMaskedContext` (ComfyUI-H3-Motion-Context-MultiRef)
-      already does the copy correctly -- exact AV prefix runs, per-stream mask 0,
-      the half-cosine audio release -- and it is what that pack's own six-link
-      example uses for links 2..6. What it cannot do is sit in a body that is
-      cloned per chunk, because `source_latent` is REQUIRED and chunk 0 has no
-      previous chunk. So this delegates to it when there is a prefix to copy and
-      passes the latent straight through when there is not.
+    WHY THIS EXISTS SEPARATELY FROM H3LatentPin
+      H3LatentPin does the copy. This wraps it for a body that is CLONED PER
+      CHUNK, where chunk 0 has no previous chunk at all: `previous_latent` is
+      required there, so the graph would not validate. This passes the latent
+      through untouched when there is nothing before it, and calls the pin when
+      there is.
+
+      It used to delegate to `MiniMaxH3GeneratedAVMaskedContext` from
+      ComfyUI-H3-Motion-Context-MultiRef. That worked, but it made this pack
+      fail to run without a GPL-3.0 third-party pack installed, for forty lines
+      of tensor slicing we already had. H3LatentPin only ever needed the phase
+      constraint -- see its docstring.
 
     WHY LATENT HERE AND PIXELS IN H3ChunkContext
       They are different jobs. A V2V swap already has a mask writer -- H3 Mask
@@ -687,8 +691,6 @@ class H3ChunkLatentContext:
       that node floors at 39 because it protects audio too, and 39 is the
       smallest count landing on both the 24 fps and 40 Hz grids.
     """
-
-    CONTEXT_NODE = "MiniMaxH3GeneratedAVMaskedContext"
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -727,26 +729,13 @@ class H3ChunkLatentContext:
                    if source_latent is None else "context_length 0")
             return (latent, 0, f"H3 CHUNK LATENT CONTEXT: passthrough ({why})")
 
-        # resolve by NODE ID through the registry: the class name and the id
-        # differ in these packs, and the id is what stays stable
-        cls = None
-        try:
-            import nodes as comfy_nodes
-            cls = getattr(comfy_nodes, "NODE_CLASS_MAPPINGS", {}).get(
-                self.CONTEXT_NODE)
-        except Exception:
-            pass
-        if cls is None:
-            raise ValueError(
-                f"{self.CONTEXT_NODE} is not installed. Latent chunk chaining "
-                f"needs ComfyUI-H3-Motion-Context-MultiRef — install it, or "
-                f"leave `source_latent` unwired to run the chunks independently.")
-
-        out = cls().prepare(latent=latent, source_latent=source_latent,
-                            context_length=int(context_length),
-                            audio_feather_ticks=int(audio_feather_ticks))
-        new_latent, trim = (out[0], out[1]) if isinstance(out, (list, tuple)) \
-            else (out, int(context_length))
+        from .mask import H3LatentPin
+        res = H3LatentPin().go(latent=latent, previous_latent=source_latent,
+                               overlap_frames=str(int(context_length)),
+                               strength=1.0,
+                               audio_feather_ticks=int(audio_feather_ticks))
+        vals = res["result"] if isinstance(res, dict) else res
+        new_latent, trim = vals[0], vals[1]
         info = (f"H3 CHUNK LATENT CONTEXT: {trim} frame(s) copied from the "
                 f"previous chunk and masked to 0\n  the plan overlapped by this "
                 f"much, so H3 Chunk Close drops it at the join")
