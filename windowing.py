@@ -101,6 +101,37 @@ def window_pixel_range(window):
     return start, end
 
 
+# Set by H3ContextWindows so the model-side hook knows which mode it is in.
+# Module-level because the hook is a bound method on the model class, installed
+# once, with no path for a per-run argument.
+ABSOLUTE_WINDOW_POSITIONS = [False]
+
+
+def core_takes_window_start():
+    """True when this ComfyUI's PackedLayout accepts a window_start.
+
+    Read from the SOURCE rather than imported: importing comfy.ldm.minimax.model
+    initialises CUDA, which a node listing must not do.
+    """
+    try:
+        from importlib.util import find_spec
+        spec = find_spec("comfy.ldm.minimax.model")
+        if not spec or not spec.origin:
+            return False
+        with open(spec.origin, encoding="utf-8") as fh:
+            return "window_start" in fh.read()
+    except Exception:
+        return False
+
+
+def window_start_pixel(window):
+    """Clip PIXEL frame where this window begins, honouring (1,4,4,4,4)."""
+    idxs = getattr(window, "index_list", None)
+    if not idxs:
+        return 0
+    return _pixel_frame_at(int(min(idxs)))
+
+
 def rebase_keyframes(payload, window):
     """Payload with keyframes rebased to this window, or None if unchanged.
 
@@ -224,9 +255,27 @@ def patch_h3_context_windows():
                 if aw is not None:
                     return cond_value._copy_with(
                         aw.get_tensor(cond, device, dim=AUDIO_TIME_DIM))
-            # keyframes carry ABSOLUTE clip positions; rebase them per window
             if cond_key == "minimax_payload" and isinstance(cond, dict):
+                # keyframes carry ABSOLUTE clip positions; rebase them per window
                 fixed = rebase_keyframes(cond, window)
+                if ABSOLUTE_WINDOW_POSITIONS[0]:
+                    # The target now sits at its real place on the clip's
+                    # timeline, so keyframe indices are already in that frame of
+                    # reference and rebasing them would move them twice. Keep
+                    # the DROP of keyframes outside the window -- they cost
+                    # attention and describe frames this window does not hold --
+                    # and put the absolute index back.
+                    base = dict(fixed if fixed is not None else cond)
+                    kept = base.get("keyframes")
+                    if kept:
+                        start = window_start_pixel(window)
+                        base["keyframes"] = [
+                            {**k, "resolved_frame_index":
+                                int(k.get("resolved_frame_index", 0)) + start}
+                            for k in kept]
+                    start = window_start_pixel(window)
+                    base["window_start_frames"] = start
+                    return cond_value._copy_with(base)
                 if fixed is not None:
                     return cond_value._copy_with(fixed)
                 return None
@@ -334,18 +383,27 @@ class H3ContextWindows:
         return {"required": {
             "model": ("MODEL", {"tooltip": "Run it through H3 Enable Context "
                                            "Windows first."}),
-            "window_frames": ("INT", {"default": 85, "min": 17, "max": 3600,
+            # min 39 with step 17 IS the legal-run grid (17n+5) from the
+            # smallest useful run up. It used to be min 17 step 17, which walks
+            # the MULTIPLES of 17 -- 17, 34, 51, 68, 85 -- and not one of those
+            # is a legal run, so the arrows could only ever produce a value the
+            # node then silently corrected. The default was 85 for the same
+            # reason: 85 is 17x5 and snaps to 90.
+            "window_frames": ("INT", {"default": 90, "min": 39, "max": 3600,
                               "step": 17,
-                              "tooltip": "Window size in PIXEL frames. Snapped to "
-                                         "a multiple of 17, which is what keeps "
-                                         "each window on a VAE chunk boundary. "
-                                         "85 frames = 25 latent frames."}),
-            "overlap_frames": ("INT", {"default": 17, "min": 0, "max": 3600,
+                              "tooltip": "Window size in PIXEL frames, a legal "
+                                         "run (17n+5). 90 frames = 27 latent "
+                                         "frames and lands on both clocks."}),
+            "overlap_frames": ("INT", {"default": 39, "min": 5, "max": 3600,
                                "step": 17,
-                               "tooltip": "Also snapped to a multiple of 17, so "
-                                          "the STRIDE stays aligned too. Overlap "
-                                          "is the only thing carrying continuity "
-                                          "across a seam."}),
+                               "tooltip": "Also a legal run, so the STRIDE stays "
+                                          "aligned too. With a 90 window, 39 "
+                                          "gives a stride of 51 — divisible by 3, "
+                                          "so every window also starts on an "
+                                          "exact 40 Hz audio tick. 22 gives 68, "
+                                          "which does not. Overlap is the only "
+                                          "thing carrying continuity across a "
+                                          "seam."}),
         }, "optional": {
             "schedule": (["standard_static", "standard_uniform", "looped_uniform",
                           "batched"], {"default": "standard_static"}),
@@ -354,6 +412,36 @@ class H3ContextWindows:
             "freenoise": ("BOOLEAN", {"default": False,
                           "tooltip": "Noise shuffling to improve blending. "
                                      "UNTESTED on H3."}),
+            # APPENDED. Core defaults this True and it was hardcoded True here,
+            # untested. Measured 2026-08-28: it makes every window after the
+            # first 28 latent frames where window 0 is 27, and 28 is NOT on H3's
+            # 5n+2 latent grid — the VAE groups pixel frames (1,4,4,4,4), so 27
+            # latent is exactly 90 pixel frames and 28 is 94, which is not a
+            # legal run. Written for causal-VAE models; unproven on this one.
+            "causal_window_fix": ("BOOLEAN", {"default": True,
+                                  "tooltip": "Core adds one 'causal fix' frame to "
+                                             "every window after the first. On H3 "
+                                             "that lands them off the VAE's 5n+2 "
+                                             "latent grid — 27 latent is 90 pixel "
+                                             "frames, 28 is 94 and is not a legal "
+                                             "run. Turn it OFF to keep every "
+                                             "window on the grid."}),
+            # APPENDED. The measurement this exists to settle: every window's
+            # target was placed at `cursor`, which does not depend on the window,
+            # so each one rendered the OPENING of the shot and the overlaps
+            # crossfaded between openings. Confirmed at runtime 2026-08-28 --
+            # 167 layout builds, one cond_t. Needs the matching core patch
+            # (patches/h3-window-absolute-positions.patch).
+            "absolute_window_positions": ("BOOLEAN", {"default": False,
+                                          "tooltip": "Give each window its real "
+                                                     "position on the clip's "
+                                                     "timeline instead of the "
+                                                     "clip origin, so a later "
+                                                     "window reads as 'this clip, "
+                                                     "N frames in' rather than "
+                                                     "'another clip'. Needs the "
+                                                     "core patch; says so if it "
+                                                     "is missing."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")
@@ -365,10 +453,35 @@ class H3ContextWindows:
                    "boundary, on the correct temporal axis.")
 
     def go(self, model, window_frames, overlap_frames, schedule="standard_static",
-           fuse_method="pyramid", freenoise=False):
+           fuse_method="pyramid", freenoise=False, causal_window_fix=True,
+           absolute_window_positions=False):
         from .timing import snap_run, video_latent_t
 
         notes = []
+
+        # A UNIFORM schedule moves every window on every step: `pad = round(
+        # num_frames * ordered_halving(step))`, so step 0 puts them at 0/15/30
+        # and step 1 at 28/43/... On this model that is actively wrong. No latent
+        # frame is rendered by a window in a consistent position, the fuse
+        # weights are computed for wherever it happened to land, and with
+        # absolute positions each frame is told a different time on every step.
+        # Measured 2026-08-28: core logged 3 windows on one step and 4 on the
+        # next, the second set starting at 28 — from a node whose widget read
+        # standard_static.
+        if schedule != "standard_static":
+            notes.append(f"SCHEDULE IS {schedule.upper()}, NOT standard_static. "
+                         f"Uniform schedules move every window on every step, so "
+                         f"no frame is rendered by a window in a consistent "
+                         f"place. Set schedule to standard_static unless you are "
+                         f"deliberately testing this.")
+
+        ABSOLUTE_WINDOW_POSITIONS[0] = bool(absolute_window_positions)
+        if absolute_window_positions and not core_takes_window_start():
+            notes.append("absolute_window_positions asked for, but this "
+                         "ComfyUI's PackedLayout does not accept window_start — "
+                         "apply patches/h3-window-absolute-positions.patch. "
+                         "Running with origin-positioned windows.")
+            ABSOLUTE_WINDOW_POSITIONS[0] = False
 
         # BOTH must be legal runs (17n+5), not merely multiples of 17.
         # A clip's latent length is always 5k+2, so the FINAL window begins at
@@ -427,7 +540,8 @@ class H3ContextWindows:
                           closed_loop=False, fuse_method=fuse_method,
                           dim=VIDEO_TIME_DIM, freenoise=freenoise,
                           cond_retain_index_list=[], split_conds_to_windows=False,
-                          latent_retain_index_list=[], causal_window_fix=True)
+                          latent_retain_index_list=[],
+                          causal_window_fix=bool(causal_window_fix))
         patched = out.result[0] if hasattr(out, "result") else (
             out[0] if isinstance(out, (list, tuple)) else out)
 
@@ -438,7 +552,17 @@ class H3ContextWindows:
             f"  both are legal runs (17n+5), so every window — including the "
             f"clamped last one — starts on a VAE chunk boundary",
             f"  dim {VIDEO_TIME_DIM} (H3's video temporal axis; core defaults to 0)",
-            f"  schedule {schedule}, fuse {fuse_method}",
+            f"  schedule {schedule}, fuse {fuse_method}"
+            + ("" if schedule == "standard_static" else "   <-- NOT static"),
+            (f"  absolute positions ON — each window is placed at its real "
+             f"frame on the clip timeline"
+             if ABSOLUTE_WINDOW_POSITIONS[0] else
+             f"  absolute positions off — every window is placed at the clip "
+             f"origin, so each renders the opening of the shot"),
+            (f"  causal_window_fix ON — every window after the first gets "
+             f"{w_lat + 1} latent frames, not {w_lat}, which is OFF H3's 5n+2 grid"
+             if causal_window_fix else
+             f"  causal_window_fix off — every window is {w_lat} latent frames"),
             "",
             "  bounds ATTENTION, not memory — the whole latent stays resident",
         ] + [f"  NOTE {n}" for n in notes])
