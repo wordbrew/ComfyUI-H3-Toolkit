@@ -518,9 +518,10 @@ class H3ChunkPlan:
             "ref_tokens": ("INT", {"default": 0, "min": 0, "max": 1000000,
                            "tooltip": "Reference token count from H3 Reference "
                                       "Budget, to report each chunk's ref share."}),
-            # LAST, and it stays last. widgets_values is positional, so a widget
-            # inserted anywhere else shifts every one after it in every saved
-            # workflow -- silently, into fields that still look plausible.
+            # APPENDED, like everything after it. widgets_values is positional,
+            # so a widget inserted anywhere else shifts every one after it in
+            # every saved workflow -- silently, into fields that still look
+            # plausible.
             "context": (["22", "39", "5", "1", "0"], {"default": "22",
                          "tooltip": "Frames each chunk carries from the previous "
                                     "one's finished output, to stop the seam "
@@ -530,6 +531,18 @@ class H3ChunkPlan:
                                     "position but a keyframe-only chain eroded "
                                     "motion 19% down the links, where 22 held "
                                     "flat. 0 turns it off."}),
+            "cut_frames": ("STRING", {"default": "", "multiline": False,
+                           "tooltip": "Frame indices where a new SHOT begins, "
+                                      "comma separated. `scene` mode finds these "
+                                      "by differencing a source clip, which "
+                                      "generating from nothing cannot do — this "
+                                      "is how a T2V take gets real shot "
+                                      "boundaries. A chunk that starts a shot "
+                                      "carries pin 0, so the chain resets there: "
+                                      "no inherited prefix, and the contrast "
+                                      "carry measured across chunks stops with "
+                                      "it. Ignored when a source clip supplies "
+                                      "its own cuts."}),
         }}
 
     RETURN_TYPES = ("H3_CHUNK_PLAN", "INT", "STRING")
@@ -541,7 +554,7 @@ class H3ChunkPlan:
 
     def go(self, chunk_frames, chunk_mode, source_images=None, total_frames=0,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
-           ref_tokens=0, context="22"):
+           ref_tokens=0, context="22", cut_frames=""):
         n = int(source_images.shape[0]) if source_images is not None else int(total_frames)
         if n <= 0:
             msg = ("Nothing to plan. Wire source_images for a V2V pass, or set "
@@ -550,7 +563,16 @@ class H3ChunkPlan:
                     "result": ({"chunks": [], "info": {}, "total_frames": 0}, 0, msg)}
 
         cuts = []
-        if chunk_mode == "scene" and source_images is not None and n > 1:
+        if cut_frames.strip():
+            try:
+                cuts = sorted({int(x) for x in cut_frames.replace(";", ",").split(",")
+                               if x.strip()})
+            except ValueError:
+                raise ValueError(
+                    f"H3 Chunk Plan: `cut_frames` must be whole frame numbers "
+                    f"separated by commas — got {cut_frames!r}.")
+            cuts = [c for c in cuts if 0 < c < n]
+        if chunk_mode == "scene" and not cuts and source_images is not None and n > 1:
             # mean |delta| per frame against its predecessor. Cheap, and a hard
             # cut changes the whole picture in one frame so it stands well clear
             # of ordinary motion.
