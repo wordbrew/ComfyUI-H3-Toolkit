@@ -115,6 +115,33 @@ def window_pixel_range(window):
 ABSOLUTE_FLAG = "_h3_absolute_window_positions"
 
 
+def frames_for_latent(latent_t):
+    """Pixel frames for a latent count on the 5n+2 grid. Inverse of video_latent_t."""
+    lt = int(latent_t)
+    return 5 if lt <= 2 else ((lt - 2) // 5) * 17 + 5
+
+
+def window_schedule(latent_len, w_lat, o_lat):
+    """The windows core will actually build. -> [(start, end_exclusive), ...]
+
+    A REPLICA of comfy.context_windows.create_windows_static_standard, kept here
+    so the plan can be read without importing comfy (which initialises CUDA).
+    The clamp is the part worth predicting: when the last window would run past
+    the end it is pulled BACK to fit, which silently makes its overlap with the
+    previous one bigger than the one you asked for -- a 141 window with a 39
+    overlap on a 192-frame clip ends up sharing 27 latent frames, not 12.
+    """
+    delta = max(1, w_lat - o_lat)
+    out = []
+    for start in range(0, latent_len, delta):
+        if start + w_lat >= latent_len:
+            final = max(0, latent_len - w_lat)
+            out.append((final, final + w_lat))
+            break
+        out.append((start, start + w_lat))
+    return out or [(0, w_lat)]
+
+
 def core_takes_window_start():
     """True when this ComfyUI's PackedLayout accepts a window_start.
 
@@ -590,8 +617,134 @@ class H3ContextWindows:
         return {"ui": {"h3char": [text]}, "result": (patched, text)}
 
 
+
+class H3WindowPlan:
+    """What the window schedule will actually be, before you spend the render.
+
+    Windowing has three numbers that have to agree and none of them tell you so:
+    the clip length, the window and the overlap. Get them wrong and it still
+    runs -- it just runs something other than what you asked for. Two ways that
+    happens, both hit while measuring this:
+
+      THE LAST WINDOW CLAMPS. When it would run past the end it is pulled BACK
+      to fit, so its overlap with the previous one is bigger than the one you
+      set. A 141 window with a 39 overlap on a 192-frame clip shares 27 latent
+      frames, not 12 -- a gentler test than the settings imply, and not
+      comparable to a run where the numbers divide.
+
+      THE STRIDE LEAVES THE AUDIO GRID. Every window has to start on an exact
+      40 Hz tick, which means the stride must divide by 3. At a 90 window that
+      leaves 39 as the only legal overlap: 5, 22 and 56 all give strides of 85,
+      68 and 34, and none of them divide.
+
+    `length` is an output so the number the schedule was planned around is the
+    number the conditioning node renders.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "window_frames": ("INT", {"default": 141, "min": 39, "max": 3600,
+                              "step": 17,
+                              "tooltip": "Same value as on H3 Context Windows."}),
+            "overlap_frames": ("INT", {"default": 39, "min": 5, "max": 3600,
+                               "step": 17,
+                               "tooltip": "Same value as on H3 Context Windows. "
+                                          "It is the ONLY channel between "
+                                          "windows, so it is the last thing to "
+                                          "cut for speed."}),
+            "mode": (["length -> windows", "windows -> length"],
+                     {"default": "windows -> length",
+                      "tooltip": "Either check a length you already have, or ask "
+                                 "for the length that gives N clean windows."}),
+        }, "optional": {
+            "total_frames": ("INT", {"default": 345, "min": 5, "max": 36000,
+                             "step": 1,
+                             "tooltip": "For `length -> windows`."}),
+            "windows": ("INT", {"default": 3, "min": 1, "max": 64,
+                        "tooltip": "For `windows -> length`."}),
+        }}
+
+    RETURN_TYPES = ("INT", "INT", "STRING")
+    RETURN_NAMES = ("length", "window_count", "info")
+    FUNCTION = "go"
+    CATEGORY = "MiniMax H3/long-form"
+    DESCRIPTION = ("Work out the clip length that gives clean context windows, "
+                   "or check the schedule a length will actually produce.")
+
+    def go(self, window_frames, overlap_frames, mode, total_frames=345,
+           windows=3):
+        from .timing import snap_run, video_latent_t
+
+        notes = []
+        wf = snap_run(max(39, int(window_frames)))
+        of = snap_run(max(5, int(overlap_frames)))
+        if of >= wf:
+            of = snap_run(max(5, wf // 3))
+            notes.append(f"overlap must be smaller than the window — cut to {of}")
+        for asked, got, what in ((int(window_frames), wf, "window_frames"),
+                                 (int(overlap_frames), of, "overlap_frames")):
+            if asked != got:
+                notes.append(f"{what} {asked} is not a legal run — using {got}")
+
+        w_lat, o_lat = video_latent_t(wf), video_latent_t(of)
+        delta = w_lat - o_lat
+        stride = frames_for_latent(delta + 2) - 5   # pixel frames per step
+        if delta % 5:
+            notes.append(f"latent stride {delta} is not a multiple of 5 — "
+                         f"windows land off the VAE's frame grid")
+        if stride % 3:
+            notes.append(f"stride {stride} frames does not divide by 3, so "
+                         f"windows start on fractional 40 Hz audio ticks. At a "
+                         f"{wf} window the overlaps that do are: "
+                         + (", ".join(str(o) for o in range(5, wf, 17)
+                                      if (wf - o) % 3 == 0) or "none"))
+
+        if mode == "windows -> length":
+            n = max(1, int(windows))
+            length = frames_for_latent(w_lat + delta * (n - 1))
+        else:
+            length = snap_run(max(5, int(total_frames)))
+            if length != int(total_frames):
+                notes.append(f"total_frames {int(total_frames)} is not a legal "
+                             f"run — using {length}")
+
+        lat = video_latent_t(length)
+        sched = window_schedule(lat, w_lat, o_lat)
+        rows, clamped = [], 0
+        for i, (a, b) in enumerate(sched):
+            px_a, px_b = _pixel_frame_at(a), _pixel_frame_at(b - 1) + 1
+            share = ""
+            if i:
+                prev_end = sched[i - 1][1]
+                ov = max(0, prev_end - a)
+                share = f"  overlap {ov} latent"
+                if ov != o_lat:
+                    share += f" (asked {o_lat} — clamped)"
+                    clamped += 1
+            rows.append(f"  {i + 1:02d}  latent {a:4d}-{b - 1:<4d}  frames "
+                        f"{px_a:5d}-{px_b:<5d}{share}")
+
+        head = [f"{len(sched)} window(s) over {length} frames ({lat} latent)",
+                f"  window {wf}f ({w_lat} latent), overlap {of}f ({o_lat}), "
+                f"stride {stride}f ({delta} latent)"
+                f"{'' if stride % 3 else '  — on both clocks'}",
+                f"  {len(sched)} forward passes per step; the whole latent stays "
+                f"resident either way"]
+        if clamped:
+            head.append(f"  {clamped} window(s) CLAMPED: the last one is pulled "
+                        f"back to fit, so it shares more than you asked for. Use "
+                        f"`windows -> length` for a length that divides.")
+        text = "\n".join(head + rows + [f"  NOTE {n}" for n in notes])
+        logging.info("H3WindowPlan: %s", head[0])
+        return {"ui": {"h3char": [text]},
+                "result": (length, len(sched), text)}
+
+
 NODE_CLASS_MAPPINGS = {"H3EnableContextWindows": H3EnableContextWindows,
-                       "H3ContextWindows": H3ContextWindows}
+                       "H3ContextWindows": H3ContextWindows,
+                       "H3WindowPlan": H3WindowPlan}
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3EnableContextWindows": "H3 Enable Context Windows",
-    "H3ContextWindows": "H3 Context Windows"}
+    "H3ContextWindows": "H3 Context Windows",
+    "H3WindowPlan": "H3 Window Plan (length <-> windows)"}
