@@ -13,8 +13,9 @@ So each link is HEAD + CLAUSE + TAIL, where HEAD and TAIL are BYTE-IDENTICAL
 across every link and only the clause changes:
 
     HEAD    who and where: subject, setting, lighting. Never "the same room".
-    CLAUSE  what changes this link: wardrobe state and action. Self-contained —
-            "She is topless in a black lace thong", not "she is now topless".
+    CLAUSE  what changes this link: the subject's STATE and action.
+            Self-contained -- "her forearms are streaked with clay", not "her
+            forearms are now streaked with clay".
     TAIL    camera and continuity, stated positively: "a single continuous take,
             the camera holds the same framing, the take runs unbroken", plus the
             audio line. NOT "no cuts / no camera movement" — naming the failure
@@ -78,33 +79,36 @@ class H3LongFormLinks:
         return {
             "required": {
                 "head": ("STRING", {"multiline": True, "default":
-                         "Realistic video. A woman with curly copper-red hair, freckled "
-                         "fair skin and a curvy figure dances at a floor-to-ceiling chrome "
-                         "pole in a dim club room. Dark walls, warm amber light spilling "
-                         "from the left, faint haze in the air.",
+                         "Realistic video. A woman in her thirties with dark "
+                         "shoulder-length hair and a rust knit jumper works at a long "
+                         "wooden bench in a bright ceramics studio. Whitewashed walls, "
+                         "tall windows on the left, shelves of unglazed pots behind her.",
                          "tooltip": "Subject, setting, lighting. IDENTICAL on every link — "
                                     "never 'the same room', which assumes a memory the "
                                     "model does not have."}),
                 "beats": ("STRING", {"multiline": True, "default":
-                          "She wears a black lace bra and matching thong. She circles the "
-                          "pole, hooks one hand high on it and spins slowly, hips rolling "
-                          "to the beat.\n"
-                          "She wears a black lace bra and matching thong. She dances "
-                          "against the pole, reaches back, unhooks the bra and slides it "
-                          "off, then keeps dancing topless.\n"
-                          "She is topless in a black lace thong. She dances at the pole, "
-                          "one hand sliding down the chrome, hips rolling to the beat.\n"
-                          "She is fully nude. She dances slowly around the pole, leaning "
-                          "back with one arm extended, hips rolling to the beat.",
+                          "Her sleeves are pushed to the elbow and her hands are "
+                          "clean. She centres a ball of clay on the wheel, both palms "
+                          "braced against it.\n"
+                          "Her forearms are streaked with wet clay. She opens the "
+                          "centre of the spinning clay with both thumbs.\n"
+                          "Her forearms and the front of her jumper are streaked with "
+                          "drying grey clay. She draws the wall of the pot upward "
+                          "between finger and thumb.\n"
+                          "Her hands are washed and her jumper is dusted pale with dried "
+                          "clay. She lifts the finished pot from the wheel with both "
+                          "hands and sets it on the bench.",
                           "tooltip": "ONE LINE PER LINK. Each must be self-contained: "
-                                     "state the wardrobe as a fact ('She is topless'), not "
-                                     "as a change ('she is now topless')."}),
+                                     "state it as a FACT ('her forearms are "
+                                     "streaked with clay'), not as a change "
+                                     "('her forearms are now streaked'). Each "
+                                     "link is rendered on its own and has no "
+                                     "memory of the one before it."}),
                 "tail": ("STRING", {"multiline": True, "default":
-                         "A single continuous take from one locked-off tripod at waist "
-                         "height; the camera holds the same framing of her full body for "
-                         "the entire duration and the take runs unbroken from the first "
-                         "frame to the last. Audio: a slow sultry R&B track, steady "
-                         "bassline, quiet room reverb, no speech.",
+                         "A single continuous take from one locked-off tripod at bench "
+                         "height; the camera holds the same framing of her hands and "
+                         "upper body for the entire duration and the take runs unbroken "
+                         "from the first frame to the last.",
                          "tooltip": "Camera + continuity + audio. IDENTICAL on every link. "
                                     "Say what the camera DOES. Do NOT write 'no cuts / no "
                                     "camera movement' — naming the failure produces it "
