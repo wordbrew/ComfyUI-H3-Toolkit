@@ -80,10 +80,6 @@ CONTRACT = {
         "chunkrun",
         ["images", "mask", "pin", "context_images"],
         ["images", "mask", "pinned", "info"]),
-    "H3SwapPrompt": (
-        "video",
-        ["conditioning", "clip", "prompt"],
-        ["conditioning", "info"]),
     "H3ChunkLatentContext": (
         "chunkrun",
         ["latent", "source_latent", "context_length", "audio_feather_ticks"],

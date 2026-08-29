@@ -514,100 +514,11 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
 
 
 
-class H3SwapPrompt:
-    """Re-prompt an H3 conditioning WITHOUT re-showing the references to Qwen.
-
-    WHY THIS IS THE CHEAP PATH
-      References reach the model twice, by two independent routes:
-
-        the LANGUAGE MODEL sees the resized PIXELS. `tokenize` builds
-        "<Picture 1>: <vision> <Picture 2>: <vision> ... <your text>", so the
-        images are a prefix of vision tokens and only the trailing text differs
-        between prompts. Qwen3VL 32B re-processes that whole prefix for every
-        distinct prompt, which is the expensive half of a conditioning build.
-
-        the DiT gets the VAE latents, carried on the conditioning as
-        `minimax_refs` and packed as `ref_img` rows in its own sequence. Those
-        are already encoded and cost nothing to reuse.
-
-      Every reference finding this project has measured is about the SECOND
-      route -- a reference is a fixed token count against a target that grows,
-      19.4% of the picture tokens at 39 frames and 3.2% at 294, and 3.2% is
-      where the replacement character's hair colour was lost. So this node
-      encodes the new text ALONE and carries the reference latents across.
-
-      N prompts then cost one full build plus N-1 text-only encodes, instead of
-      N full builds. That is the difference between three passes over three
-      832px images and none.
-
-    WHAT IT TRADES, AND HOW TO TELL
-      The language model does not see the pictures for the swapped prompt, so
-      `<Picture 1>` in that text refers to nothing in its own token sequence.
-      DESCRIBE the subject in the swapped prompt rather than citing a picture
-      number. If identity holds, the DiT route was carrying it; if identity
-      drifts on the swapped windows and not the first, it was not, and the
-      answer is a full reference node for that prompt.
-
-      UNPROVEN. This is the hypothesis the node exists to test, not a result.
-    """
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {
-            "conditioning": ("CONDITIONING", {"tooltip": "From a MiniMax H3 "
-                             "Reference to Video node — the one that already "
-                             "encoded your references."}),
-            "clip": ("CLIP",),
-            "prompt": ("STRING", {"multiline": True, "default": "",
-                       "tooltip": "The replacement text. Describe the subject "
-                                  "rather than citing <Picture N>: the language "
-                                  "model does not see the pictures here, though "
-                                  "the DiT still receives their latents."}),
-        }}
-
-    RETURN_TYPES = ("CONDITIONING", "STRING")
-    RETURN_NAMES = ("conditioning", "info")
-    FUNCTION = "go"
-    CATEGORY = "MiniMax H3/prompt"
-    EXPERIMENTAL = True
-    DESCRIPTION = ("Swap the prompt on an H3 conditioning, keeping its already "
-                   "encoded reference latents. For per-window or per-chunk "
-                   "prompts without paying for the references every time.")
-
-    def go(self, conditioning, clip, prompt):
-        tokens = clip.tokenize(prompt)          # no minimax_ref_items: text only
-        out = clip.encode_from_tokens_scheduled(tokens)
-
-        # Carry every H3 payload key across. `minimax_refs` is the one that
-        # matters; keyframes and the noise-aug settings ride along so a swapped
-        # prompt behaves like the one it replaced in every other respect.
-        src = {}
-        for entry in conditioning or ():
-            if isinstance(entry, (list, tuple)) and len(entry) > 1 and \
-                    isinstance(entry[1], dict):
-                src = entry[1]
-                break
-        carry = {k: v for k, v in src.items() if k.startswith("minimax_")}
-        if carry:
-            out = node_helpers.conditioning_set_values(out, carry)
-
-        refs = carry.get("minimax_refs") or []
-        kinds = ", ".join(sorted({r.get("kind", "?") for r in refs})) or "none"
-        info = (f"H3 SWAP PROMPT: {len(refs)} reference block(s) carried "
-                f"({kinds})\n  the language model did NOT see them for this "
-                f"prompt — the DiT still does\n  keys carried: "
-                f"{', '.join(sorted(carry)) or 'none'}")
-        logging.info("H3SwapPrompt: carried %d reference block(s)", len(refs))
-        return {"ui": {"h3char": [info]}, "result": (out, info)}
-
-
 NODE_CLASS_MAPPINGS = {
     "H3KeyframeTimeline": H3KeyframeTimeline,
     "H3ReferenceToVideoLongForm": H3ReferenceToVideoLongForm,
-    "H3SwapPrompt": H3SwapPrompt,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3KeyframeTimeline": "H3 Keyframe Timeline",
     "H3ReferenceToVideoLongForm": "H3 Reference to Video (long-form)",
-    "H3SwapPrompt": "H3 Swap Prompt (keep references)",
 }

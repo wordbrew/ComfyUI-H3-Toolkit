@@ -150,6 +150,41 @@ clean speech out of the middle.
 talks. One latent, no pin overhead, no hard seams, and a prompt that changes as
 it goes. Worth testing there rather than on a dialogue clip.
 
+## Reference blocks are CONTENT until the language model binds them
+
+Measured 2026-08-29, and it settles a question worth having asked.
+
+References reach the model twice. `tokenize` builds
+`"<Picture 1>: <vision> <Picture 2>: <vision> ... <text>"`, so the LANGUAGE
+MODEL sees the resized pixels as a prefix of vision tokens. Separately the DiT
+receives the VAE latents, carried on the conditioning as `minimax_refs` and
+packed as `ref_img` rows in its own sequence.
+
+Per-window prompting needs one conditioning per prompt, and the expensive half
+is Qwen3VL 32B re-processing that vision prefix every time. So `H3SwapPrompt`
+encoded the new text ALONE and carried `minimax_refs` across — one full build
+plus N-1 text-only encodes. It was 7-9x cheaper per extra prompt: 4.03s for the
+full reference node against 0.60s and 0.44s for the swaps.
+
+**It does not work, and the failure says why.** The output followed the prompt
+briefly, then faded to reference image 1 and animated it, then to reference 2,
+then to reference 3, and cut. The model rendered the references as SHOTS.
+
+Three `ref_img` blocks sitting on the DiT's timeline with nothing in the text
+binding them to a subject are just content to produce. The `<Picture N>` prefix
+is what makes them identity, and `retention_analysis` naming `<Subject 1>` has
+nothing to attach to when the language model never saw a picture.
+
+It is the reference-video leak in its purest form: a reference the prompt does
+not bind gets RENDERED rather than referenced.
+
+**So every distinct prompt needs a full conditioning build.** At ~4s each on a
+seven-minute render that is not the cost worth optimising — the cost that
+mattered was `split_conds_to_windows` being off, which evaluated all three
+conditionings in every window and took the sampler from 9 s/it to 100.
+
+The node has been removed rather than left as a footgun.
+
 ## Related
 
 - `patches/h3-window-absolute-positions.patch` — the core patch, apply/revert
