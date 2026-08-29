@@ -11,6 +11,8 @@ where possible so they can be tested without ComfyUI.
 
 from .audio import (NODE_CLASS_MAPPINGS as _AUDIO_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _AUDIO_NAMES, PRESETS)
+from .analysis import (NODE_CLASS_MAPPINGS as _ANALYSIS_CLASSES,
+                       NODE_DISPLAY_NAME_MAPPINGS as _ANALYSIS_NAMES)
 from .budget import (NODE_CLASS_MAPPINGS as _BUDGET_CLASSES,
                      NODE_DISPLAY_NAME_MAPPINGS as _BUDGET_NAMES)
 from .character import (NODE_CLASS_MAPPINGS as _CHAR_CLASSES,
@@ -31,6 +33,8 @@ from .prompt_rewriter import (NODE_CLASS_MAPPINGS as _RW_CLASSES,
                               NODE_DISPLAY_NAME_MAPPINGS as _RW_NAMES)
 from .prompt_scene import (NODE_CLASS_MAPPINGS as _SCENE_CLASSES,
                            NODE_DISPLAY_NAME_MAPPINGS as _SCENE_NAMES)
+from .story import (NODE_CLASS_MAPPINGS as _STORY_CLASSES,
+                    NODE_DISPLAY_NAME_MAPPINGS as _STORY_NAMES)
 from .windowing import (NODE_CLASS_MAPPINGS as _WIN_CLASSES,
                         NODE_DISPLAY_NAME_MAPPINGS as _WIN_NAMES)
 from .video import (NODE_CLASS_MAPPINGS as _VID_CLASSES,
@@ -38,6 +42,7 @@ from .video import (NODE_CLASS_MAPPINGS as _VID_CLASSES,
 
 _PARTS = (
     (_AUDIO_CLASSES, _AUDIO_NAMES),
+    (_ANALYSIS_CLASSES, _ANALYSIS_NAMES),
     (_BUDGET_CLASSES, _BUDGET_NAMES),
     (_CHAR_CLASSES, _CHAR_NAMES),
     (_CROP_CLASSES, _CROP_NAMES),
@@ -48,6 +53,7 @@ _PARTS = (
     (_LINK_CLASSES, _LINK_NAMES),
     (_RW_CLASSES, _RW_NAMES),
     (_SCENE_CLASSES, _SCENE_NAMES),
+    (_STORY_CLASSES, _STORY_NAMES),
     (_VID_CLASSES, _VID_NAMES),
     (_WIN_CLASSES, _WIN_NAMES),
 )

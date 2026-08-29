@@ -15,6 +15,13 @@ WHY THIS EXISTS
 
     python3 normalize_workflows.py            # report only
     python3 normalize_workflows.py --write    # fix in place
+
+WIDGET order is NOT checked here. widgets_values carries no names, and whether a
+widget converted to an input keeps its slot varies between ComfyUI versions, so
+a positional check against saved files produces false alarms rather than
+findings -- tried on 2026-08-29, 29 "problems" of which none were real.
+test_slot_contract.py pins the declared order on the NODE side instead, which is
+where the mistake actually gets made.
 """
 
 import glob
