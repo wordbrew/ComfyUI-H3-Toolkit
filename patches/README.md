@@ -50,3 +50,58 @@ Revert with `git checkout -- nodes.py`.
 source's aspect and another clip can land back on the grid.
 
 **Not reported upstream yet.**
+
+---
+
+## h3-window-absolute-positions.patch
+
+**File:** `comfy/ldm/minimax/model.py` (ComfyUI core).
+**Symptom:** a context-windowed H3 render is clean through the first window and
+then flickers for the rest of the clip, the picture pulsing at the window period.
+
+**Cause.** `PackedLayout` positions the target video and audio at `cursor`,
+which is `text_len` plus the reference spans. That value does not depend on the
+context window, so EVERY window's target is placed at the clip origin. The model
+is told each window is the start of the shot, so it renders the start of the
+shot, and the overlaps then crossfade between two openings.
+
+It is the same fact motion context turns on: the rows are identical between a
+reference and a keyframe, and only the TIME COORDINATES say "separate clip"
+versus "this clip, earlier". Windowing said "separate clip" every time.
+
+**Fix.** `PackedLayout` takes a `window_start` in pixel frames and offsets the
+target grids by `FRAME_RESCALE * window_start` — the same unit and rate the
+keyframe anchors already use a few lines above it. `window_start` joins the
+layout signature, so two windows of the same SHAPE at different clip positions
+cannot share a cached layout. `window_start=0` reproduces the old behaviour
+exactly, which is what makes the toolkit-side toggle a real A/B.
+
+The toolkit supplies the value: `H3ContextWindows` has an
+`absolute_window_positions` widget, and the hook in `windowing.py` writes
+`window_start_frames` into the payload per window. With the toggle off nothing
+changes, so the patch is safe to leave applied.
+
+    cd "C:\SD\ComfyUI\Comfy-03-15-2026\ComfyUI"
+    git apply "<this repo>/patches/h3-window-absolute-positions.patch"
+
+Revert with `git checkout -- comfy/ldm/minimax/model.py`.
+
+**Measured 2026-08-28**, 192 frames, window 90 / overlap 39, three windows:
+before, clean through window 0 then flickering; after, no flicker and motion
+smooth throughout. Background content still shifts between windows — the overlap
+blend is the only thing carrying content across a seam, and that is a separate
+problem from where the window thinks it is.
+
+**Two settings that have to be right or the patch cannot be judged**, both found
+the hard way on the way to this:
+
+- `schedule` must be `standard_static`. A uniform schedule re-derives every
+  window position on every step (`pad = round(num_frames * ordered_halving(step))`),
+  so no frame is rendered by a window in a consistent place — and with absolute
+  positions on, each frame is told a different time on every step.
+- `causal_window_fix` must be OFF. Core prepends an anchor frame to every window
+  after the first, which makes them 28 latent frames where the first is 27. 28 is
+  not on H3's 5n+2 latent grid: 27 latent is exactly 90 pixel frames, 28 is 94,
+  which is not a legal run at all.
+
+**Not reported upstream yet.**

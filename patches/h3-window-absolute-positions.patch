@@ -1,0 +1,87 @@
+diff --git a/comfy/ldm/minimax/model.py b/comfy/ldm/minimax/model.py
+index 765f2198..1a02ead1 100644
+--- a/comfy/ldm/minimax/model.py
++++ b/comfy/ldm/minimax/model.py
+@@ -14,6 +14,7 @@ video schedule (ModelSamplingAV); forward() undoes that scale and converts the
+ velocity back, so _forward only ever sees the stream's own latent.
+ """
+ 
++import logging
+ import math
+ 
+ import torch
+@@ -318,7 +319,8 @@ class FinalLayer(nn.Module):
+ class PackedLayout:
+     """Static packed-sequence structure for one shape/conditioning signature."""
+ 
+-    def __init__(self, text_len, latent_t, latent_h, latent_w, audio_t, keyframes=None, refs=None):
++    def __init__(self, text_len, latent_t, latent_h, latent_w, audio_t, keyframes=None, refs=None,
++                 window_start=0):
+         frame, w_grid = _frame_grid(latent_h, latent_w)
+         frame_rows = frame.shape[0]
+ 
+@@ -405,16 +407,36 @@ class PackedLayout:
+                     row += n
+                     cursor += max(float(rt), sum(_video_t_spans(vt)))
+ 
+-        # target audio then target video, always the last two segments
++        # target audio then target video, always the last two segments.
++        #
++        # WINDOW OFFSET (H3 toolkit). `cursor` is text_len plus the reference
++        # spans and does not depend on the context window, so every window of a
++        # windowed run used to place its target at the clip origin -- and the
++        # model, told it is at the start, renders the start. Overlaps then
++        # crossfade between two openings, which is the flicker.
++        #
++        # Same unit and same rate the keyframe anchors use one screen up
++        # (cond_t = cursor + FRAME_RESCALE * pixel_index), so a window at clip
++        # frame N reads as "this clip, N frames in" rather than "another clip".
++        # window_start is in PIXEL frames; 0 reproduces the original behaviour
++        # exactly.
++        target_cursor = cursor + FRAME_RESCALE * float(window_start)
+         segments.append(("audio", audio_t * 2))
+-        pos.append(_audio_grid(cursor, audio_t, *target_audio_w))
++        pos.append(_audio_grid(target_cursor, audio_t, *target_audio_w))
+         audio_pos.append(torch.arange(row, row + audio_t * 2))
+         audio_update.append(torch.ones(audio_t * 2, dtype=torch.bool))
+         row += audio_t * 2
+ 
+         n_video = latent_t * frame_rows
+         segments.append(("video", n_video))
+-        pos.append(_video_grid(latent_t, frame, cursor))
++        # debug, not info: one line per window per step is 180 lines on a
++        # 9-window run. Kept because "which frame does this window think it is
++        # at" was the question that took a whole afternoon to answer.
++        logging.debug("H3 layout: target starts at cond_t %.1f | %d latent frames "
++                     "| text %d | %d ref block(s) | %d keyframe(s)",
++                     target_cursor, latent_t, text_len, len(refs or ()),
++                     len(keyframes or ()))
++        pos.append(_video_grid(latent_t, frame, target_cursor))
+         img_pos.append(torch.arange(row, row + n_video))
+         img_update.append(torch.ones(n_video, dtype=torch.bool))
+         row += n_video
+@@ -425,7 +447,10 @@ class PackedLayout:
+         self.img_update = torch.cat(img_update)
+         self.audio_pos = torch.cat(audio_pos)
+         self.audio_update = torch.cat(audio_update)
+-        self.signature = (text_len, latent_t, latent_h, latent_w, audio_t)
++        # window_start is part of the signature: two windows of the same SHAPE
++        # at different clip positions are different layouts, and reusing one for
++        # the other is exactly the bug above.
++        self.signature = (text_len, latent_t, latent_h, latent_w, audio_t, window_start)
+         # contiguous segment table (start, stop, kind)
+         # kinds: text / cond / cond_audio / ref_img / ref_audio / audio / video
+         # the packed sequence is uniform per segment in (modality tag, timestep class),
+@@ -565,8 +590,11 @@ class MiniMaxH3Model(nn.Module):
+         text_len = context.shape[1]
+         # extra_conds prebuilds the layout once per sampling run
+         layout = payload.get("layout")
+-        if layout is None or layout.signature != (text_len, latent_t, lat_h, lat_w, audio_t):
++        window_start = int(payload.get("window_start_frames", 0) or 0)
++        if layout is None or layout.signature != (text_len, latent_t, lat_h, lat_w, audio_t,
++                                                  window_start):
+             layout = PackedLayout(text_len, latent_t, lat_h, lat_w, audio_t,
++                                  window_start=window_start,
+                                   keyframes=payload.get("keyframes"),
+                                   refs=payload.get("refs"))
+ 
