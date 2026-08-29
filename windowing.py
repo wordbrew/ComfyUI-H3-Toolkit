@@ -101,10 +101,18 @@ def window_pixel_range(window):
     return start, end
 
 
-# Set by H3ContextWindows so the model-side hook knows which mode it is in.
-# Module-level because the hook is a bound method on the model class, installed
-# once, with no path for a per-run argument.
-ABSOLUTE_WINDOW_POSITIONS = [False]
+# The mode rides on the MODEL, not on a module global.
+#
+# It was a module global, set as a side effect of H3ContextWindows running --
+# and ComfyUI caches node outputs, so on any queue where nothing upstream
+# changed the node never ran, the flag stayed at its import default of False,
+# and absolute positioning turned itself off silently. First render after a
+# restart was right and every one after it was wrong. Measured 2026-08-28.
+#
+# An attribute on the BaseModel survives the cache because the cached
+# ModelPatcher wraps the same model object, and the hook is a bound method on
+# that model, so `self` is exactly where to read it.
+ABSOLUTE_FLAG = "_h3_absolute_window_positions"
 
 
 def core_takes_window_start():
@@ -258,7 +266,7 @@ def patch_h3_context_windows():
             if cond_key == "minimax_payload" and isinstance(cond, dict):
                 # keyframes carry ABSOLUTE clip positions; rebase them per window
                 fixed = rebase_keyframes(cond, window)
-                if ABSOLUTE_WINDOW_POSITIONS[0]:
+                if getattr(self, ABSOLUTE_FLAG, False):
                     # The target now sits at its real place on the clip's
                     # timeline, so keyframe indices are already in that frame of
                     # reference and rebasing them would move them twice. Keep
@@ -475,13 +483,13 @@ class H3ContextWindows:
                          f"place. Set schedule to standard_static unless you are "
                          f"deliberately testing this.")
 
-        ABSOLUTE_WINDOW_POSITIONS[0] = bool(absolute_window_positions)
-        if absolute_window_positions and not core_takes_window_start():
+        absolute = bool(absolute_window_positions)
+        if absolute and not core_takes_window_start():
             notes.append("absolute_window_positions asked for, but this "
                          "ComfyUI's PackedLayout does not accept window_start — "
                          "apply patches/h3-window-absolute-positions.patch. "
                          "Running with origin-positioned windows.")
-            ABSOLUTE_WINDOW_POSITIONS[0] = False
+            absolute = False
 
         # BOTH must be legal runs (17n+5), not merely multiples of 17.
         # A clip's latent length is always 5k+2, so the FINAL window begins at
@@ -544,6 +552,19 @@ class H3ContextWindows:
                           causal_window_fix=bool(causal_window_fix))
         patched = out.result[0] if hasattr(out, "result") else (
             out[0] if isinstance(out, (list, tuple)) else out)
+        base = getattr(patched, "model", None)
+        if base is not None:
+            setattr(base, ABSOLUTE_FLAG, absolute)
+
+        # One line per RUN saying what was actually installed. The afternoon this
+        # cost was spent on a widget that read standard_static while the handler
+        # ran uniform, and on a mode that turned itself off when the node was
+        # cached -- both invisible from the outside, both one line to catch.
+        logging.info("H3 context windows: %s frames (%s latent), overlap %s (%s), "
+                     "stride %s | schedule %s | fuse %s | causal_fix %s | "
+                     "absolute positions %s",
+                     wf, w_lat, of, o_lat, wf - of, schedule, fuse_method,
+                     causal_window_fix, absolute)
 
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
@@ -556,7 +577,7 @@ class H3ContextWindows:
             + ("" if schedule == "standard_static" else "   <-- NOT static"),
             (f"  absolute positions ON — each window is placed at its real "
              f"frame on the clip timeline"
-             if ABSOLUTE_WINDOW_POSITIONS[0] else
+             if absolute else
              f"  absolute positions off — every window is placed at the clip "
              f"origin, so each renders the opening of the shot"),
             (f"  causal_window_fix ON — every window after the first gets "
