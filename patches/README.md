@@ -49,6 +49,22 @@ Revert with `git checkout -- nodes.py`.
 0.60 gives 538x403 on this clip. It is luck rather than a fix; it depends on the
 source's aspect and another clip can land back on the grid.
 
+**THE PACK'S OWN LAYOUT PATCH HAS TO AGREE WITH THIS ONE.** `video.py`
+replaces `PackedLayout` with a `LongFormLayout` subclass so references and
+keyframes can share one packed sequence. When core started passing
+`window_start`, that subclass did not accept it and every windowed render
+through the long-form conditioning node died with
+
+    TypeError: LongFormLayout.__init__() got an unexpected keyword argument
+    'window_start'
+
+It forwards it now, but only when the running build's `PackedLayout` actually
+takes it — the same introspection it already uses for `frame_count`, which core
+dropped in 0.34.0 — so the pack runs against a patched and an unpatched core
+alike. Its keyframe path applies the offset to the target grids too, and its
+signature matches core's so the rebuild check behaves. Any future change to this
+patch has to be mirrored there.
+
 **Not reported upstream yet.**
 
 ---
