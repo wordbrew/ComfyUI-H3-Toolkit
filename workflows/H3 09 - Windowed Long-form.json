@@ -461,7 +461,8 @@
         "pyramid",
         false,
         false,
-        true
+        true,
+        false
       ],
       "title": "2. window it \u2014 85f / 17f overlap"
     },

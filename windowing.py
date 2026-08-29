@@ -467,6 +467,12 @@ class H3ContextWindows:
             # crossfaded between openings. Confirmed at runtime 2026-08-28 --
             # 167 layout builds, one cond_t. Needs the matching core patch
             # (patches/h3-window-absolute-positions.patch).
+            # APPENDED. The measurement this exists to settle: every window's
+            # target was placed at `cursor`, which does not depend on the window,
+            # so each one rendered the OPENING of the shot and the overlaps
+            # crossfaded between openings. Confirmed at runtime 2026-08-28 --
+            # 167 layout builds, one cond_t. Needs the matching core patch
+            # (patches/h3-window-absolute-positions.patch).
             "absolute_window_positions": ("BOOLEAN", {"default": False,
                                           "tooltip": "Give each window its real "
                                                      "position on the clip's "
@@ -477,6 +483,36 @@ class H3ContextWindows:
                                                      "'another clip'. Needs the "
                                                      "core patch; says so if it "
                                                      "is missing."}),
+            # APPENDED. Core can already hand each window a DIFFERENT
+            # conditioning, chosen by where the window's centre falls in the
+            # clip: region = int(center_ratio * len(conds)), with center_ratio =
+            # (first + last) / (2 * total). Combine N prompts with Conditioning
+            # (Combine) and windowing becomes long-form prompting -- the thing
+            # windowing otherwise cannot do.
+            #
+            # UNPROVEN ON H3, and two things are unknown. Each conditioning
+            # carries its OWN minimax_payload with its own PackedLayout built
+            # from its own text_len, and whether the split survives that is the
+            # same machinery the keyframe rebasing already patches. And the
+            # region map is arithmetic on window centres, not on where your
+            # clauses change: three prompts across nine windows put the
+            # boundaries wherever they land.
+            #
+            # What IS known: overlaps still BLEND. A prompt change is a crossfade
+            # the width of the overlap, not a cut. For a description that evolves
+            # that is a feature; for dialogue it is not, because two speech
+            # signals averaged in latent space do not give clean speech.
+            "split_conds_to_windows": ("BOOLEAN", {"default": False,
+                                       "tooltip": "Give each window its own "
+                                                  "conditioning, picked by where "
+                                                  "the window's CENTRE falls in "
+                                                  "the clip. Combine N prompts "
+                                                  "with Conditioning (Combine) "
+                                                  "first. Overlaps blend, so a "
+                                                  "prompt change is a crossfade "
+                                                  "the width of the overlap — "
+                                                  "good for an evolving shot, "
+                                                  "bad for dialogue."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")
@@ -489,7 +525,7 @@ class H3ContextWindows:
 
     def go(self, model, window_frames, overlap_frames, schedule="standard_static",
            fuse_method="pyramid", freenoise=False, causal_window_fix=True,
-           absolute_window_positions=False):
+           absolute_window_positions=False, split_conds_to_windows=False):
         from .timing import snap_run, video_latent_t
 
         notes = []
@@ -574,7 +610,8 @@ class H3ContextWindows:
                           context_schedule=schedule, context_stride=1,
                           closed_loop=False, fuse_method=fuse_method,
                           dim=VIDEO_TIME_DIM, freenoise=freenoise,
-                          cond_retain_index_list=[], split_conds_to_windows=False,
+                          cond_retain_index_list=[],
+                          split_conds_to_windows=bool(split_conds_to_windows),
                           latent_retain_index_list=[],
                           causal_window_fix=bool(causal_window_fix))
         patched = out.result[0] if hasattr(out, "result") else (
@@ -589,9 +626,9 @@ class H3ContextWindows:
         # cached -- both invisible from the outside, both one line to catch.
         logging.info("H3 context windows: %s frames (%s latent), overlap %s (%s), "
                      "stride %s | schedule %s | fuse %s | causal_fix %s | "
-                     "absolute positions %s",
+                     "absolute positions %s | split conds %s",
                      wf, w_lat, of, o_lat, wf - of, schedule, fuse_method,
-                     causal_window_fix, absolute)
+                     causal_window_fix, absolute, split_conds_to_windows)
 
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
