@@ -101,6 +101,32 @@ three audio decodes and the joins, against one of each.
 
 **Speed is not the reason to choose between them.**
 
+## Two null results, and what they rule out
+
+Measured 2026-08-29, 192 frames, window 90 / overlap 39, three windows, same
+seed and prompt, one variable at a time. Costs within noise of each other
+(25.9, 26.0, 25.2 s/it), so neither is expensive enough to matter either way.
+
+    pyramid        + freenoise      no visible difference
+    overlap-linear + no freenoise   no visible difference
+
+`freenoise` shuffles the noise so overlapping windows start from correlated
+rather than independent noise. `overlap-linear` holds the fuse weight flat
+across the window and ramps only inside the overlap, where `pyramid` shapes the
+whole window as a triangle. Both are aimed squarely at seam quality. Neither
+moved the background drift.
+
+**So the drift is not a blending artifact.** The seam machinery combines two
+windows faithfully; the windows GENERATED different backgrounds, and no
+weighting fixes disagreement about content. That rules out every remaining
+window setting — `closed_loop` is for looping and the audio fuse ramp is audio.
+
+What is left attacks generation rather than combination: a reference image OF
+THE SET (references are the mechanism that holds a thing steady, and in these
+tests all three were the character, which is exactly why she was stable and the
+room was not), and a room description with countable features so there is
+something a window can get wrong. Untested.
+
 ## What windowing still cannot do
 
 One conditioning for the whole clip. A sequence of prompts — four dialogue
