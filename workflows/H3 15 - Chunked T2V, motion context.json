@@ -1,8 +1,8 @@
 {
   "id": "eee6f613-f92d-41d2-8069-73fd6e38c287",
   "revision": 0,
-  "last_node_id": 43,
-  "last_link_id": 91,
+  "last_node_id": 48,
+  "last_link_id": 99,
   "nodes": [
     {
       "id": 17,
@@ -1895,7 +1895,7 @@
           "widget": {
             "name": "beats"
           },
-          "link": null
+          "link": 98
         },
         {
           "localized_name": "tail",
@@ -2008,7 +2008,7 @@
           "name": "chunk_plan",
           "shape": 7,
           "type": "H3_CHUNK_PLAN",
-          "link": null
+          "link": 99
         }
       ],
       "outputs": [
@@ -2173,7 +2173,7 @@
           "widget": {
             "name": "total_frames"
           },
-          "link": null
+          "link": 92
         },
         {
           "localized_name": "scene_threshold",
@@ -2234,6 +2234,11 @@
             "name": "context"
           },
           "link": null
+        },
+        {
+          "name": "cut_frames",
+          "type": "STRING",
+          "link": 93
         }
       ],
       "outputs": [
@@ -2243,7 +2248,9 @@
           "type": "H3_CHUNK_PLAN",
           "links": [
             57,
-            73
+            73,
+            95,
+            99
           ]
         },
         {
@@ -2631,6 +2638,234 @@
       },
       "widgets_values": [],
       "title": "MOTION CONTEXT \u2014 rows placed"
+    },
+    {
+      "id": 44,
+      "type": "H3Shotlist",
+      "pos": [
+        -1367.1260824721178,
+        -593.8946475967117
+      ],
+      "size": [
+        420,
+        320
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "total_frames",
+          "type": "INT",
+          "links": [
+            92
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "cut_frames",
+          "type": "STRING",
+          "links": [
+            93
+          ],
+          "slot_index": 1
+        },
+        {
+          "name": "beats",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 2
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            94
+          ],
+          "slot_index": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3Shotlist"
+      },
+      "widgets_values": [
+        "10.1 | static tripod, side of the desk, medium two-shot | steady talk\n10.1 | same framing | the pace quickens\n10.1 | same framing | she leans in\n10.1 | same framing | it holds, then slows",
+        243,
+        "0"
+      ],
+      "title": "0. SHOT LIST \u2014 durations in, frame counts out"
+    },
+    {
+      "id": 45,
+      "type": "PreviewAny",
+      "pos": [
+        -1367.1260824721178,
+        -243.8946475967117
+      ],
+      "size": [
+        420,
+        170
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 94
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [],
+      "title": "SHOT LIST \u2014 what each shot rounded to"
+    },
+    {
+      "id": 46,
+      "type": "H3Dialogue",
+      "pos": [
+        466.6552755950978,
+        1011.6850351234194
+      ],
+      "size": [
+        420,
+        420
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "chunk_plan",
+          "type": "H3_CHUNK_PLAN",
+          "link": 95
+        },
+        {
+          "name": "actions",
+          "type": "STRING",
+          "link": null
+        },
+        {
+          "name": "syllables_per_second",
+          "type": "FLOAT",
+          "link": null
+        },
+        {
+          "name": "gap",
+          "type": "FLOAT",
+          "link": null
+        },
+        {
+          "name": "tail_margin",
+          "type": "FLOAT",
+          "link": null
+        },
+        {
+          "name": "speaker_map",
+          "type": "STRING",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "beats",
+          "type": "STRING",
+          "links": [
+            98
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "timeline",
+          "type": "STRING",
+          "links": [
+            96
+          ],
+          "slot_index": 1
+        },
+        {
+          "name": "lint",
+          "type": "STRING",
+          "links": [
+            97
+          ],
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3Dialogue"
+      },
+      "widgets_values": [
+        "S1 | murmurs | Come in here.\nS1 | says | Just as I said.\n\nS1 | says | Keep going.\nS1 | murmurs | Again.\n\nS1 | murmurs | I'm nearly there.\nS1 | says | Please.\n\nS1 | says | It's time.",
+        "he sorts the papers at a steady pace and the lamp hums\nthe talk quickens and her hands grip the desk\nshe leans forward and the talk stays fast\nthe talk holds and then slows",
+        4.3,
+        0.4,
+        0.6,
+        "spread",
+        3.0,
+        ""
+      ],
+      "title": "3a. DIALOGUE \u2014 lines in, timed beats out"
+    },
+    {
+      "id": 47,
+      "type": "PreviewAny",
+      "pos": [
+        466.6552755950978,
+        1451.6850351234193
+      ],
+      "size": [
+        420,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 96
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [],
+      "title": "DIALOGUE \u2014 when each line is heard"
+    },
+    {
+      "id": 48,
+      "type": "PreviewAny",
+      "pos": [
+        466.6552755950978,
+        1671.6850351234193
+      ],
+      "size": [
+        420,
+        170
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 97
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": [],
+      "title": "DIALOGUE LINT \u2014 fits, gaps, empties"
     }
   ],
   "links": [
@@ -3025,6 +3260,70 @@
       12,
       1,
       "CONDITIONING"
+    ],
+    [
+      92,
+      44,
+      0,
+      31,
+      3,
+      "INT"
+    ],
+    [
+      93,
+      44,
+      1,
+      31,
+      10,
+      "STRING"
+    ],
+    [
+      94,
+      44,
+      3,
+      45,
+      0,
+      "STRING"
+    ],
+    [
+      95,
+      31,
+      0,
+      46,
+      0,
+      "H3_CHUNK_PLAN"
+    ],
+    [
+      96,
+      46,
+      1,
+      47,
+      0,
+      "STRING"
+    ],
+    [
+      97,
+      46,
+      2,
+      48,
+      0,
+      "STRING"
+    ],
+    [
+      98,
+      46,
+      0,
+      9,
+      1,
+      "STRING"
+    ],
+    [
+      99,
+      31,
+      0,
+      9,
+      13,
+      "H3_CHUNK_PLAN"
     ]
   ],
   "groups": [
