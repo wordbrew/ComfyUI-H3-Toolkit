@@ -143,20 +143,14 @@ def window_schedule(latent_len, w_lat, o_lat):
 
 
 def core_takes_window_start():
-    """True when this ComfyUI's PackedLayout accepts a window_start.
+    """Always True: this pack applies the offset, not core.
 
-    Read from the SOURCE rather than imported: importing comfy.ldm.minimax.model
-    initialises CUDA, which a node listing must not do.
+    It used to read core's source for a `window_start` parameter, from when the
+    fix lived in a patch file. video.py's PackedLayout subclass shifts the
+    finished position table itself now, so the capability travels with the pack
+    and a ComfyUI update cannot take it away.
     """
-    try:
-        from importlib.util import find_spec
-        spec = find_spec("comfy.ldm.minimax.model")
-        if not spec or not spec.origin:
-            return False
-        with open(spec.origin, encoding="utf-8") as fh:
-            return "window_start" in fh.read()
-    except Exception:
-        return False
+    return True
 
 
 def window_start_pixel(window):
@@ -261,7 +255,15 @@ def core_has_modality_dim_hook():
 
 
 def patch_h3_context_windows():
-    """Install H3's side of the modality-dim contract. -> (usable, message)."""
+    """Install H3's side of the modality-dim contract. -> (usable, message).
+
+    ALSO installs video.py's PackedLayout subclass, which is what applies the
+    per-window target offset. That patch used to be installed only by this
+    pack's own conditioning nodes -- so a graph built on CORE's
+    MiniMaxH3ReferenceToVideo never got it, every window stayed at the clip
+    origin, and the only symptom was the flicker the offset exists to remove.
+    Windowing depends on the subclass, so enabling windowing installs it.
+    """
     try:
         import torch
         import comfy.model_base as MB
@@ -271,6 +273,11 @@ def patch_h3_context_windows():
     H3 = getattr(MB, "MiniMaxH3", None)
     if H3 is None:
         return False, "MiniMaxH3 not found in comfy.model_base."
+
+    from .video import patch_packed_layout
+    if not patch_packed_layout():
+        return False, ("the H3 layout patch could not be installed, so the "
+                       "per-window target offset has nothing to apply it.")
 
     if not getattr(H3, "_h3_windowing_patched", False):
         def _modality_dim(self, modality_index, latent_shapes, dim):
@@ -309,6 +316,13 @@ def patch_h3_context_windows():
                                 int(k.get("resolved_frame_index", 0)) + start}
                             for k in kept]
                     start = window_start_pixel(window)
+                    # Hand off to the layout rather than to core: PackedLayout is
+                    # built inside extra_conds, which passes it no window
+                    # position, and patching that call site is exactly what a
+                    # ComfyUI update reverts. video.py takes this on the next
+                    # build and clears it.
+                    from .video import set_window_start
+                    set_window_start(start)
                     base["window_start_frames"] = start
                     return cond_value._copy_with(base)
                 if fixed is not None:
