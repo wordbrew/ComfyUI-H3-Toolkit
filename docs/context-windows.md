@@ -180,7 +180,33 @@ prompt applied to all of it. That is what sent this project to chunking.
 Overlaps BLEND. Whatever crosses a seam is a weighted average of two windows'
 output, not a cut.
 
-## The open question: per-window conditioning
+## Whether a seam SHOWS depends on whether the background moves
+
+Measured 2026-08-30, and it is the most useful thing to know before choosing
+windowing over chunking.
+
+A MOVING background hides its seams. A tracking camera or a scene passing means
+the picture differs frame to frame anyway, so a crossfade between two windows'
+versions reads as motion -- the eye has no stable reference to compare against.
+The walk-and-talk, a retreating Steadicam, blends its seams so well they are not
+findable.
+
+A STATIC background exposes them. A locked-off shot gives the eye a fixed
+reference, and any disagreement between two windows shows up immediately as a
+shift. The same code and settings on a static tripod shot split visibly at every
+seam.
+
+This inverts the intuition -- a still shot feels like the easy case and is the
+hard one -- and it explains renders that looked like intermittent bugs. Two
+clips, same settings, different results, because one moved and one did not.
+
+**The rule:** windowing for shots with camera or scene movement, chunking for
+locked-off shots where a set has to hold. Chunking's latent pin copies the
+previous chunk's actual frames across the join; windowing's overlap can only
+average two guesses, and averaging is invisible against motion and obvious
+against stillness.
+
+## Per-window conditioning: works
 
 Core already has the mechanism, in `IndexListContextHandler.get_resized_cond`:
 
@@ -200,18 +226,28 @@ region_idx   = int(center_ratio * num_regions)
 Three prompts across three windows gives centres at roughly 0.19 / 0.50 / 0.81
 → regions 0, 1, 2.
 
-`H3ContextWindows` currently passes `split_conds_to_windows=False` and does not
-expose it. UNTESTED on H3, and two things are unknown:
+`H3ContextWindows` exposes this as `split_conds_to_windows`, and it WORKS --
+measured 2026-08-30 with three `MiniMaxH3ReferenceToVideo` nodes differing only
+in their prompt, combined with Conditioning (Combine). H3's payload survives the
+split: each conditioning carries its own references and they reach the window
+that selects it. The backgrounds changed per window as the prompts described.
 
-- whether H3's payload survives the split. Each conditioning carries its own
-  `minimax_payload` with its own `PackedLayout` built from its own `text_len`,
-  and whether that gets rebuilt with the WINDOW's latent length rather than the
-  full clip's is the same machinery the keyframe rebasing patches.
-- how the region mapping behaves when windows outnumber prompts. Three prompts
-  across nine windows puts the boundaries wherever the arithmetic lands, not
-  where the clauses change.
+Two things to get right:
 
-And one thing that is known: the overlaps still blend, so a prompt change is a
+- IT MUST BE ON. With it off, every conditioning is evaluated in EVERY window --
+  three conds across three windows is nine model passes per step instead of
+  three. Measured: 9 s/it to 100 s/it, and meaningless output, since all three
+  prompts are applied everywhere and averaged.
+- USE A PROMPT COUNT THAT DIVIDES THE WINDOW COUNT. Region is
+  `int(center_ratio * n)`, so three prompts over nine windows gives clean thirds
+  while five gives an uneven split with one prompt covering a single window.
+
+Each prompt costs a full conditioning build, about 4s. That cannot be avoided:
+references reach the model TWICE, as pixels shown to the language model and as
+VAE latents given to the DiT, and only the first makes them identity. Reusing
+the latents alone was tried and the model rendered the references as SHOTS.
+
+And: the overlaps still blend, so a prompt change is a
 39-frame crossfade rather than a cut. For an evolving description that is a
 feature. For dialogue it is not — two prompts averaged across a seam do not give
 clean speech out of the middle.
