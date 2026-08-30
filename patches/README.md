@@ -15,32 +15,13 @@ It is idempotent -- an applied patch is reported and skipped, never applied
 twice -- and it reports CONFLICT when core has moved under a patch, which means
 the patch needs rebasing rather than forcing.
 
-An update reverts these silently. Nothing errors afterwards: H3 context windows
-simply go back to windowing the wrong axis and placing every window at the clip
-origin, which reads as a flicker rather than as a missing patch. That is the
-reason to run it every time rather than when something looks wrong.
+An update reverts these silently, and nothing errors afterwards -- the render
+just comes out wrong. **No ComfyUI CORE file is patched any more:** both core
+patches have been rewritten as subclasses that live in the pack, precisely
+because a silent revert cost more than the patches saved. What is left is one
+third-party pack.
 
 ---
-
-## h3-modality-dim-context-windows.patch
-
-**Files:** `comfy/context_windows.py`, `comfy/model_base.py` (ComfyUI core).
-**Symptom without it:** context windows on H3 window the wrong axis, and the
-audio modality is sliced on its stereo-pair dimension instead of time.
-
-Core's windowing assumes every modality's temporal axis sits at the primary's
-`dim`. H3's video latent is `[B, 24, T, H/16, W/16]` -- time at dim 2 -- but its
-audio latent is `[B, 32, 2, T]`, where dim 2 is the stereo pair and time is dim
-3. LTXAV has time at dim 2 for both, so the assumption held until H3.
-
-The patch adds a `context_modality_dim(modality_index, latent_shapes, dim)` hook
-that a model can override, and consults it wherever a modality is sliced or
-recombined -- including `combine_context_window_results`, which is called PER
-MODALITY, so the fix there is `self.dim` -> `window.dim` rather than a new
-parameter. `windowing.py` installs H3's implementations.
-
-Was never saved when it was written and was found missing on 2026-08-29, live
-in the install with no copy anywhere.
 
 ## depthanythingv2-contiguous.patch
 
@@ -97,6 +78,36 @@ patch has to be mirrored there.
 **Not reported upstream yet.**
 
 ---
+
+## h3-modality-dim-context-windows.patch — SUPERSEDED, not needed
+
+**Was:** `comfy/context_windows.py`, `comfy/model_base.py` (ComfyUI core).
+**Symptom without it:** context windows on H3 sliced the audio modality on its
+stereo-pair dimension instead of time, and the fuse died with
+`size of tensor a (2) must match the size of tensor b (93)`.
+
+Core's windowing assumes every modality's temporal axis sits at the primary's
+`dim`. H3's video latent is `[B, 24, T, H/16, W/16]` -- time at dim 2 -- but its
+audio latent is `[B, 32, 2, T]`, where dim 2 is the stereo pair and time is dim
+3. LTXAV has time at dim 2 for both, so the assumption held until H3.
+
+**Where it lives now:** `windowing.py`, as `H3WindowingState(WindowingState)`
+and `H3ContextHandler(IndexListContextHandler)`. `H3ContextWindows` installs the
+handler into `model.model_options["context_handler"]` directly instead of
+calling core's `Context Windows (Manual)` node. The handler is only an object in
+a dict, read back in `samplers.py`, so a subclass is the whole mechanism —
+MMH3Tools' `nodes_windows.py` solves the same problem the same way, and this
+follows its structure.
+
+The model-side half of the patch is not replicated at all: it only added a
+DEFAULT `context_modality_dim` to `BaseModel`, and `H3ContextHandler` reaches
+for the hook with `getattr` and falls back to its own `dim` when a model has
+none. `patch_h3_context_windows()` installs H3's implementation on the
+`MiniMaxH3` class as before.
+
+The patch file is kept for reference. Leaving it applied is harmless — the
+subclass overrides every method it touched — but nothing needs it, and a
+ComfyUI update reverting it now changes nothing.
 
 ## h3-window-absolute-positions.patch — SUPERSEDED, do not apply
 
