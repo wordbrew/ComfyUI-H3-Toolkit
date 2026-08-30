@@ -1,7 +1,7 @@
 {
   "id": "eee6f613-f92d-41d2-8069-73fd6e38c287",
   "revision": 0,
-  "last_node_id": 48,
+  "last_node_id": 51,
   "last_link_id": 99,
   "nodes": [
     {
@@ -2274,14 +2274,15 @@
       },
       "widgets_values": [
         243,
-        "fixed",
+        "scene",
         720,
         0.12,
         39,
         640,
         1120,
         0,
-        "22"
+        "22",
+        ""
       ],
       "widgets_values_named": {
         "chunk_frames": 243,
@@ -2690,7 +2691,7 @@
         "Node name for S&R": "H3Shotlist"
       },
       "widgets_values": [
-        "10.1 | static tripod, side of the bed, medium two-shot | steady rhythm\n10.1 | same framing | the pace quickens\n10.1 | same framing | she is close\n10.1 | same framing | it holds, then slows",
+        "10.1 | wide from the foot of the bed, both of them in frame | the rhythm is steady\n10.1 | medium from her left side at hip height | the pace quickens\n10.1 | close on her face and shoulders, headboard behind | she is close\n10.1 | wide again from the foot of the bed | it holds, then slows",
         243,
         "0"
       ],
@@ -2866,6 +2867,75 @@
       },
       "widgets_values": [],
       "title": "DIALOGUE LINT \u2014 fits, gaps, empties"
+    },
+    {
+      "id": 49,
+      "type": "Note",
+      "pos": [
+        -1367.1260824721178,
+        -933.8946475967117
+      ],
+      "size": [
+        430,
+        320
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#432",
+      "bgcolor": "#653",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "SEPARATE SHOTS \u2014 4 x 10s, cut between\n\nThe shot list drives total_frames and cut_frames. Each row is\nSECONDS | framing | action. Ten seconds becomes 243 frames because\n240 is not a legal run (17n+5), and it says so in its info.\n\nEVERY ROW MUST BE A DIFFERENT SETUP. A cut between two identical\nframings is a jump cut, not an edit, and that is the one thing\nthis node cannot check for you. The rows here change angle and\ndistance deliberately.\n\nA chunk that STARTS a shot carries pin 0 \u2014 no inherited prefix, no\nmotion context, a clean break. So the contrast carry measured at\n+12/+7/+5% per chunk resets at every cut and never accumulates.\n\nThat is the trade: cuts you have to actually mean, in exchange for\nno drift and no seam to hide."
+      ]
+    },
+    {
+      "id": 50,
+      "type": "Note",
+      "pos": [
+        -507.1260824721178,
+        -103.8946475967117
+      ],
+      "size": [
+        430,
+        200
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#432",
+      "bgcolor": "#653",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "chunk_mode IS `scene` HERE\n\n`scene` normally finds cuts by differencing a SOURCE clip, which\ngenerating from nothing cannot do. cut_frames is how a T2V take\ngets shot boundaries at all.\n\nFour shots of one chunk each means four clauses. A shot LONGER\nthan chunk_frames splits into several chunks and needs a clause\neach \u2014 the shot list's info output tells you how many."
+      ]
+    },
+    {
+      "id": 51,
+      "type": "Note",
+      "pos": [
+        466.6552755950978,
+        751.6850351234194
+      ],
+      "size": [
+        430,
+        240
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#354",
+      "bgcolor": "#335",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "DIALOGUE \u2014 lines in, timed beats out\n\nSPEAKER | verb | text, one per line. A BLANK LINE forces a break to\nthe next chunk; otherwise lines fill each chunk in order.\n\nIt will never place a line inside the pin. The first 22 frames of a\nchunk are reproduced from the previous one, so speech scheduled there\nis simply never said \u2014 a failure that stays invisible until a render\nfinishes.\n\n`pacing: spread` lays a chunk's lines across its whole window instead\nof crowding them into the first two seconds. Read the LINT: it reports\nsilence across a seam, which is a floor set by the pin and can only be\nplaced, never removed."
+      ]
     }
   ],
   "links": [

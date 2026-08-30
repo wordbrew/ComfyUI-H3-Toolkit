@@ -163,6 +163,34 @@ spread = d.go("S1 | says | He texted me at two in the morning.\n"
 ok("seam silence is measured", "gap " in spread[2])
 ok("and it names where", "between chunk 1 and chunk 2" in spread[2])
 
+# SPREAD vs FRONT. Two short lines in a ten-second window front-loaded to 0.6s
+# and 1.7s leave eight seconds of silence behind them; spreading puts the second
+# one where it can be heard as a beat rather than a stammer.
+import re as _re
+def _times(beats_text):
+    return [[int(a) * 60 + float(b)
+             for a, b in _re.findall(r"at (\d\d):(\d\d\.\d+)", line, _re.I)]
+            for line in beats_text.splitlines()]
+two = ("S1 | says | Oh god, yes.\nS1 | says | Just like that.\n\n"
+       "S1 | says | Do not stop.\nS1 | says | Harder.")
+pl = plan_of(720, 243)
+front = _times(d.go(two, pl, pacing="front")["result"][0])
+spread = _times(d.go(two, pl, pacing="spread")["result"][0])
+ok("front-loading puts the second line right behind the first",
+   front[0][1] - front[0][0] < 1.5)
+ok("spread pushes it out", spread[0][1] - spread[0][0] > front[0][1] - front[0][0])
+ok("but never past the chunk's window",
+   all(t <= chunk_windows(pl["chunks"])[i]["hi"] + 1e-6
+       for i, ts in enumerate(spread) for t in ts))
+ok("and never before the pin",
+   all(t >= chunk_windows(pl["chunks"])[i]["lo"] - 1e-6
+       for i, ts in enumerate(spread) for t in ts))
+# max_gap is what stops spread becoming the same fault mirrored
+wide = _times(d.go(two, pl, pacing="spread", max_gap=30.0)["result"][0])
+tight = _times(d.go(two, pl, pacing="spread", max_gap=1.0)["result"][0])
+ok("max_gap caps the silence spread inserts",
+   (tight[0][1] - tight[0][0]) < (wide[0][1] - wide[0][0]))
+
 # a line that cannot fit anywhere says so instead of being dropped
 res = d.go("S1 | says | " + ("word " * 400), plan_of(243, 243))["result"]
 ok("an overlong line is reported", "overflow" in res[2].lower())

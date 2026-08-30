@@ -1,7 +1,7 @@
 {
   "id": "eee6f613-f92d-41d2-8069-73fd6e38c287",
   "revision": 0,
-  "last_node_id": 48,
+  "last_node_id": 51,
   "last_link_id": 99,
   "nodes": [
     {
@@ -2173,7 +2173,7 @@
           "widget": {
             "name": "total_frames"
           },
-          "link": 92
+          "link": null
         },
         {
           "localized_name": "scene_threshold",
@@ -2238,7 +2238,7 @@
         {
           "name": "cut_frames",
           "type": "STRING",
-          "link": 93
+          "link": null
         }
       ],
       "outputs": [
@@ -2275,13 +2275,14 @@
       "widgets_values": [
         243,
         "fixed",
-        720,
+        972,
         0.12,
         39,
         640,
         1120,
         0,
-        "22"
+        "22",
+        ""
       ],
       "widgets_values_named": {
         "chunk_frames": 243,
@@ -2652,23 +2653,19 @@
       ],
       "flags": {},
       "order": 0,
-      "mode": 0,
+      "mode": 4,
       "inputs": [],
       "outputs": [
         {
           "name": "total_frames",
           "type": "INT",
-          "links": [
-            92
-          ],
+          "links": [],
           "slot_index": 0
         },
         {
           "name": "cut_frames",
           "type": "STRING",
-          "links": [
-            93
-          ],
+          "links": [],
           "slot_index": 1
         },
         {
@@ -2694,7 +2691,7 @@
         243,
         "0"
       ],
-      "title": "0. SHOT LIST \u2014 durations in, frame counts out"
+      "title": "NOT USED \u2014 a continuous take has no cuts"
     },
     {
       "id": 45,
@@ -2866,6 +2863,75 @@
       },
       "widgets_values": [],
       "title": "DIALOGUE LINT \u2014 fits, gaps, empties"
+    },
+    {
+      "id": 49,
+      "type": "Note",
+      "pos": [
+        -1367.1260824721178,
+        -913.8946475967117
+      ],
+      "size": [
+        430,
+        300
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#432",
+      "bgcolor": "#653",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "ONE CONTINUOUS TAKE \u2014 40s, no cuts\n\nThe shot list is MUTED. It exists to create cuts, and a take that\nnever cuts has nothing for it to do. total_frames is typed on the\nplan instead (972 = 40.5s) and cut_frames is left empty.\n\nchunk_mode is `fixed`: with no cuts there is nothing to cut on,\nand `scene` would fall back to fixed anyway.\n\nEvery chunk after the first carries 22 frames of the previous one\nas motion context, so the seams read as continuous rather than as\nedits.\n\nTHE COST, measured 2026-08-29: local contrast on skin climbs about\n+12%, +7%, +5% per chunk. Fewer and longer chunks reduce it. Cuts\nstop it outright, which is what the other workflow is for."
+      ]
+    },
+    {
+      "id": 50,
+      "type": "Note",
+      "pos": [
+        -507.1260824721178,
+        -103.8946475967117
+      ],
+      "size": [
+        430,
+        210
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#432",
+      "bgcolor": "#653",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "WHY total_frames IS TYPED HERE\n\n972 frames at 24fps is 40.5 seconds. The TOTAL does not have to be\na legal run \u2014 only the chunks do, and the planner handles that.\n\nchunk_frames 243 with context 22 gives a stride of 221, so 972\nframes comes out as 4 chunks and your beats need 4 clauses.\nChange either number and the lint on the links node tells you the\nnew count before you spend a render on it."
+      ]
+    },
+    {
+      "id": 51,
+      "type": "Note",
+      "pos": [
+        466.6552755950978,
+        751.6850351234194
+      ],
+      "size": [
+        430,
+        240
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "color": "#354",
+      "bgcolor": "#335",
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "DIALOGUE \u2014 lines in, timed beats out\n\nSPEAKER | verb | text, one per line. A BLANK LINE forces a break to\nthe next chunk; otherwise lines fill each chunk in order.\n\nIt will never place a line inside the pin. The first 22 frames of a\nchunk are reproduced from the previous one, so speech scheduled there\nis simply never said \u2014 a failure that stays invisible until a render\nfinishes.\n\n`pacing: spread` lays a chunk's lines across its whole window instead\nof crowding them into the first two seconds. Read the LINT: it reports\nsilence across a seam, which is a floor set by the pin and can only be\nplaced, never removed."
+      ]
     }
   ],
   "links": [
@@ -3260,22 +3326,6 @@
       12,
       1,
       "CONDITIONING"
-    ],
-    [
-      92,
-      44,
-      0,
-      31,
-      3,
-      "INT"
-    ],
-    [
-      93,
-      44,
-      1,
-      31,
-      10,
-      "STRING"
     ],
     [
       94,

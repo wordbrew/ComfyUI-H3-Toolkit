@@ -285,6 +285,20 @@ class H3Dialogue:
                             "step": 0.1,
                             "tooltip": "Room left at the end of a chunk for the "
                                        "last line to finish."}),
+            # APPENDED. widgets_values is positional.
+            "pacing": (["spread", "front"], {"default": "spread",
+                       "tooltip": "spread: lay the chunk's lines across its whole "
+                                  "speech window, so two short lines are not "
+                                  "crammed into the first two seconds with eight "
+                                  "seconds of silence after. front: place them as "
+                                  "early as they fit, which is what you want when "
+                                  "the chunk is nearly full of dialogue."}),
+            "max_gap": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 30.0,
+                        "step": 0.1,
+                        "tooltip": "Ceiling on the silence spread can insert. "
+                                   "Without it, two short lines in a ten-second "
+                                   "chunk get seven seconds between them, which "
+                                   "is the same fault as front-loading, mirrored."}),
             "speaker_map": ("STRING", {"multiline": False, "default": "",
                             "tooltip": "When a speaker is not the subject of the "
                                        "same number: S2=<Subject 3>, comma "
@@ -305,7 +319,8 @@ class H3Dialogue:
                    "actually be spoken, and report when they are heard.")
 
     def go(self, lines, chunk_plan, actions="", syllables_per_second=4.3,
-           gap=0.4, tail_margin=0.6, speaker_map=""):
+           gap=0.4, tail_margin=0.6, pacing="spread", max_gap=3.0,
+           speaker_map=""):
         chunks = (chunk_plan or {}).get("chunks") or []
         if not chunks:
             msg = "H3 DIALOGUE: no plan wired — nothing to lay lines out against."
@@ -369,6 +384,31 @@ class H3Dialogue:
                              f"in any remaining chunk. Add a chunk, shorten the "
                              f"line, or raise syllables_per_second.")
                 break
+
+        # Pack first to decide WHICH chunk each line belongs to, then re-space
+        # within the chunk. Placement and pacing are separate problems, and
+        # solving them in one greedy pass is what put two short lines at 0.6s
+        # and 1.7s of a ten-second window with eight seconds of silence behind
+        # them -- measured 2026-08-30, and the same complaint as the four-second
+        # hole that prompted this node.
+        if pacing == "spread":
+            for i, (w, items) in enumerate(zip(win, placed)):
+                if len(items) < 2:
+                    continue
+                span = w["hi"] - w["lo"]
+                spoken = sum(x["dur"] for x in items)
+                g = (span - spoken) / (len(items) - 1)
+                g = max(float(gap), min(float(max_gap), g))
+                at = w["lo"]
+                for x in items:
+                    x["at"] = at
+                    at += x["dur"] + g
+                # a max_gap ceiling can still push the last line past the end;
+                # pull the whole run back rather than clipping it
+                over = (items[-1]["at"] + items[-1]["dur"]) - w["hi"]
+                if over > 0:
+                    for x in items:
+                        x["at"] = max(w["lo"], x["at"] - over)
 
         beats, rows = [], []
         for i, (c, w, items) in enumerate(zip(chunks, win, placed)):
