@@ -1,12 +1,19 @@
 # Context windows for H3
 
-State as of 2026-08-28. What works, what it costs, and what it still cannot do.
+State as of 2026-08-28, except where dated later. What works, what it costs, and
+what it still cannot do.
+
+**No ComfyUI core file is patched any more.** Both fixes below were core patches
+when they were measured and are now subclasses inside the pack —
+`video.py`'s `PackedLayout` for the window offset (2026-08-30), and
+`windowing.py`'s `H3ContextHandler` for the per-modality temporal axis
+(2026-08-30). The measurements stand; only where the code lives changed.
 
 ## The short version
 
-Context windows work on H3 **only with the absolute-positions patch applied and
-two settings right**. Without the patch the picture flickers at the window
-period from the second window onward. With it, motion is smooth throughout.
+Context windows work on H3 **with absolute positions on and two settings
+right**. With them off the picture flickers at the window period from the second
+window onward. With them on, motion is smooth throughout.
 
     schedule              standard_static      (NOT uniform)
     causal_window_fix     off
@@ -41,11 +48,11 @@ start image at every seam, so the toolkit drops it from later windows.
 
 ## The fix
 
-`patches/h3-window-absolute-positions.patch` gives `PackedLayout` a
-`window_start` in pixel frames and offsets the target grids by
-`FRAME_RESCALE * window_start` — the same unit and rate the keyframe anchors
-already use. `window_start` joins the layout signature, so two windows of the
-same SHAPE at different clip positions cannot share a cached layout.
+`video.py`'s `PackedLayout` subclass takes a `window_start` in pixel frames and
+shifts the target grids by `FRAME_RESCALE * window_start` — the same unit and
+rate the keyframe anchors already use. Both grids are affine in the cursor, so
+adding a constant to the finished table is identical to starting from a later
+cursor, and it needs no core edit.
 
 `window_start=0` reproduces the old behaviour exactly, which is what makes the
 toolkit-side toggle a real A/B. `H3ContextWindows` has an
@@ -250,10 +257,10 @@ The node has been removed rather than left as a footgun.
 
 ## Related
 
-- `patches/h3-window-absolute-positions.patch` — the core patch, apply/revert
-  commands in `patches/README.md`
-- `patches/h3-layout-cursor-logging.patch` — logs each layout's start `cond_t`,
-  which is how the constant cursor was confirmed at runtime
-- `windowing.py` — `H3EnableContextWindows`, `H3ContextWindows`, and the
-  modality-dim hooks H3 needs because its audio latent puts time on dim 3
+- `patches/README.md` — both core patches, kept for reference and marked
+  superseded; neither is applied any more
+- `video.py` — the `PackedLayout` subclass that applies the per-window offset
+- `windowing.py` — `H3EnableContextWindows`, `H3ContextWindows`, and
+  `H3WindowingState` / `H3ContextHandler`, the subclasses H3 needs because its
+  audio latent puts time on dim 3
 - `workflows/H3 09 - Windowed Long-form.json`

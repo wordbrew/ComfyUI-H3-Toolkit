@@ -13,20 +13,23 @@ WHY H3 NEEDS ANYTHING AT ALL
   video latent is `[B, 24, T, H/16, W/16]` (time at dim 2) but its audio latent
   is `[B, 32, 2, T]`, where dim 2 is the STEREO PAIR and time is the last axis.
 
-  That assumption is baked into at least four sites, three of which this file
-  used to monkey-patch. The fourth is inside a large core method, and vendoring
-  it would break on every ComfyUI update -- two did in one evening on
-  0.33.2 -> 0.34.0. So the fix moved upstream instead:
+  That assumption is baked into six sites across two core classes. It was a core
+  PATCH until 2026-08-30 -- `patches/h3-modality-dim-context-windows.patch`,
+  which threaded a `modality_dims` list through both. A ComfyUI update reverts a
+  core patch silently and the symptom is a bad render rather than an error, so it
+  is a SUBCLASS now: `H3WindowingState` and `H3ContextHandler` below, installed
+  into `model.model_options["context_handler"]` by `H3ContextWindows`. Core needs
+  no edit at all.
 
-    An optional `context_modality_dim(modality_index, latent_shapes, dim)` hook
-    on the model, defaulting to the primary dim, consulted wherever a modality's
-    axis was previously assumed. Verified 2026-08-26 against master d8e7bbc:
-    9 new tests fail unpatched and pass patched, and 24 configurations
-    (3 schedules x 4 fuse methods x single/multi-modality) come out bit-identical
-    before and after.
+  The handler is only an object in a dict, read back in samplers.py, so a
+  subclass is all it takes. That route is MMH3Tools' -- `nodes_windows.py` in
+  ComfyUI-MMH3Tools solves the same problem the same way, and this follows its
+  structure.
 
-  This file now supplies only H3's SIDE of that contract. If core does not have
-  the hook, the node says so plainly instead of failing mid-render.
+  The cost is that four of the overrides are COPIES of core methods with the dim
+  changed, so they drift when core changes. Each says which core method it
+  mirrors and keeps the rest of the body line-for-line, so a future diff reads.
+  test_windowing.py checks every override against core's own source.
 
 WHAT WE KNOW THAT A GENERIC MAPPING CANNOT
   A proportional video->audio map assumes every latent frame covers the same
@@ -228,30 +231,412 @@ def rebase_keyframes(payload, window):
     return out
 
 
-def core_has_modality_dim_hook():
-    """True when this ComfyUI consults `context_modality_dim`.
+# Built on first use by _context_window_classes(), not at import.
+H3WindowingState = None
+H3ContextHandler = None
 
-    Reads the source FILE rather than importing the module. Two reasons: the
-    hook lives on the MODEL, so its presence there says nothing about whether
-    core calls it; and importing comfy.context_windows pulls in model_management
-    and initialises CUDA, which fails outright on a machine with no GPU and
-    would be caught as "no support" -- the wrong answer for the wrong reason.
-    `find_spec` locates the file without executing it.
+
+def _context_window_classes():
+    """H3's WindowingState and ContextHandler subclasses. -> (state, handler)
+
+    Built inside a function because `class X(WindowingState)` needs
+    comfy.context_windows AT IMPORT TIME, and importing that pulls in
+    model_management and initialises CUDA. This module also holds the pure
+    window arithmetic that test_windowing.py runs with no torch at all, and a
+    module-level comfy import would take that away. The classes are assigned to
+    the module globals on the first call, so `windowing.H3ContextHandler` is a
+    real name from then on.
     """
-    try:
-        import importlib.util
-        import sys
-        mod = sys.modules.get("comfy.context_windows")
-        path = getattr(mod, "__file__", None) if mod is not None else None
-        if not path:
-            spec = importlib.util.find_spec("comfy.context_windows")
-            path = getattr(spec, "origin", None) if spec else None
-        if not path:
-            return False
-        with open(path, encoding="utf-8") as fh:
-            return "context_modality_dim" in fh.read()
-    except Exception:
-        return False
+    global H3WindowingState, H3ContextHandler
+    if H3ContextHandler is not None:
+        return H3WindowingState, H3ContextHandler
+
+    import dataclasses
+
+    import torch
+
+    import comfy.patcher_extension
+    import comfy.utils
+    from comfy.context_windows import (ContextFuseMethods, IndexListCallbacks,
+                                       IndexListContextHandler,
+                                       IndexListContextWindow, WindowingState,
+                                       apply_freenoise, get_context_weights,
+                                       get_shape_for_dim, match_weights_to_dim)
+
+    @dataclasses.dataclass
+    class H3WindowingState(WindowingState):
+        """Core's WindowingState with a temporal dim PER MODALITY.
+
+        Core carries one `dim` and uses it for every modality. H3's audio puts
+        time on dim 3, so every place core writes `self.dim` against a
+        non-primary latent is a place it would take the stereo pair instead.
+        """
+
+        # per-modality temporal dim; defaults to `dim` for every modality.
+        # A BARE `list`, not a string annotation: dataclasses resolves a string
+        # one through sys.modules[cls.__module__] to look for ClassVar, which
+        # raises when this module is loaded outside the package.
+        modality_dims: list = None
+
+        def __post_init__(self):
+            if self.modality_dims is None:
+                self.modality_dims = [self.dim] * len(self.latents)
+
+        def prepare_window(self, window, model):
+            """MIRRORS comfy.context_windows.WindowingState.prepare_window.
+
+            A COPY of core's body, so it DRIFTS if core changes that method. The
+            only edits are inside the modality loop: the per-modality frame count
+            is read on that modality's own dim, and the window it builds is given
+            that dim rather than the primary's. Everything else is core's, line
+            for line, so a future diff against core stays readable.
+            """
+            if not self.is_multimodal:
+                return window
+
+            x = self.latents[0]
+            primary_total = self.latent_shapes[0][self.dim]
+            primary_overlap = window.context_overlap
+            map_shapes = self.latent_shapes
+            if x.size(self.dim) != primary_total:
+                map_shapes = list(self.latent_shapes)
+                video_shape = list(self.latent_shapes[0])
+                video_shape[self.dim] = x.size(self.dim)
+                map_shapes[0] = torch.Size(video_shape)
+            try:
+                per_modality_indices = model.map_context_window_to_modalities(
+                    window.index_list, map_shapes, self.dim)
+            except AttributeError:
+                raise NotImplementedError(
+                    f"{type(model).__name__} must implement "
+                    f"map_context_window_to_modalities for multimodal context "
+                    f"windows.")
+            modality_windows = {}
+            for mod_idx in range(1, len(self.latents)):
+                mod_dim = self.modality_dims[mod_idx]
+                modality_total_frames = self.latents[mod_idx].shape[mod_dim]
+                ratio = (modality_total_frames / primary_total
+                         if primary_total > 0 else 1)
+                modality_overlap = max(round(primary_overlap * ratio), 0)
+                modality_windows[mod_idx] = IndexListContextWindow(
+                    per_modality_indices[mod_idx], dim=mod_dim,
+                    total_frames=modality_total_frames,
+                    context_overlap=modality_overlap)
+            return IndexListContextWindow(
+                window.index_list, dim=self.dim, total_frames=x.shape[self.dim],
+                modality_windows=modality_windows,
+                context_overlap=primary_overlap)
+
+        def strip_guide_frames(self, out_per_modality, guide_frame_counts,
+                               window):
+            """MIRRORS comfy.context_windows.WindowingState.strip_guide_frames.
+
+            A COPY of core's body; it DRIFTS if core changes that method. One
+            edit: the narrow runs on the modality's own dim. H3 has no guide
+            frames today -- they come from LTXV's `guide_attention_entries` --
+            so this never fires here, but leaving core's version in place would
+            trim audio along its stereo pair the day it does.
+            """
+            for idx in range(len(self.latents)):
+                if guide_frame_counts[idx] > 0:
+                    window_len = len(window.get_window_for_modality(idx).index_list)
+                    for ci in range(len(out_per_modality)):
+                        out_per_modality[ci][idx] = out_per_modality[ci][idx].narrow(
+                            self.modality_dims[idx], 0, window_len)
+
+        def _inject_guide_frames(self, latent_slice, window, modality_idx=0):
+            """WRAPS comfy.context_windows.WindowingState._inject_guide_frames.
+
+            Core uses `self.dim` in that method for exactly one thing: the axis
+            the guide frames are concatenated onto, which has to be the
+            modality's own. Rather than copy 30 lines to change two, this swaps
+            `self.dim` for the duration of the call -- a no-op for the primary
+            modality, since its dim IS the handler's. Not a copy, so it does not
+            drift; if core ever uses `self.dim` in there to mean the PRIMARY
+            axis, this becomes wrong, and that is the one thing to check.
+            """
+            saved = self.dim
+            self.dim = self.modality_dims[modality_idx]
+            try:
+                return super()._inject_guide_frames(latent_slice, window,
+                                                    modality_idx)
+            finally:
+                self.dim = saved
+
+    class H3ContextHandler(IndexListContextHandler):
+        """Core's IndexListContextHandler, windowing each modality on its axis.
+
+        Everything not listed here is core's. What changes: the windowing state
+        it builds carries per-modality dims; the fuse accumulators are sized on
+        each modality's own axis; the fuse itself uses the WINDOW's dim, since
+        it is called once per modality with that modality's window; and
+        FreeNoise shuffles each modality on its own axis.
+        """
+
+        def _get_modality_dims(self, model, latent_shapes, count):
+            """Temporal dim of each modality's latent. NEW -- no core original.
+
+            The primary modality always uses the handler's configured dim; a
+            non-primary one may report a different one via the model. The hook
+            is optional: `patch_h3_context_windows()` installs H3's on the
+            MiniMaxH3 class, and any model without it keeps core's behaviour of
+            one dim for everything.
+            """
+            dims = [self.dim] * count
+            modality_dim = getattr(model, "context_modality_dim", None)
+            if modality_dim is not None:
+                for i in range(1, count):
+                    dims[i] = modality_dim(i, latent_shapes, self.dim)
+            return dims
+
+        def _apply_freenoise(self, noise, conds, seed, model=None):
+            """MIRRORS comfy.context_windows.IndexListContextHandler._apply_freenoise.
+
+            A COPY of core's body; it DRIFTS if core changes that method. The
+            edits are in the multimodal branch: each modality's total and its
+            shuffle both run on that modality's dim. On the stereo axis the
+            ratio comes out 2/T, which gives a context length of 1 and permutes
+            the left channel into the right.
+
+            `model` is appended rather than inserted: core's own sampler wrapper
+            calls this with three arguments, and it has to keep working if
+            anything but our wrapper reaches it. Without a model the dims fall
+            back to the handler's, which is core's behaviour.
+            """
+            guide_entries = self._get_guide_entries(conds)
+            guide_count = (sum(e["latent_shape"][0] for e in guide_entries)
+                           if guide_entries else 0)
+
+            latent_shapes = self._get_latent_shapes(conds)
+            if latent_shapes is not None and len(latent_shapes) > 1:
+                modalities = comfy.utils.unpack_latents(noise, latent_shapes)
+                modality_dims = self._get_modality_dims(model, latent_shapes,
+                                                        len(modalities))
+                primary_total = latent_shapes[0][self.dim]
+                primary_video_count = modalities[0].size(self.dim) - guide_count
+                apply_freenoise(modalities[0].narrow(self.dim, 0, primary_video_count),
+                                self.dim, self.context_length,
+                                self.context_overlap, seed)
+                for i in range(1, len(modalities)):
+                    mod_dim = modality_dims[i]
+                    mod_total = latent_shapes[i][mod_dim]
+                    ratio = mod_total / primary_total if primary_total > 0 else 1
+                    mod_ctx_len = max(round(self.context_length * ratio), 1)
+                    mod_ctx_overlap = max(round(self.context_overlap * ratio), 0)
+                    modalities[i] = apply_freenoise(modalities[i], mod_dim,
+                                                    mod_ctx_len, mod_ctx_overlap,
+                                                    seed)
+                noise, _ = comfy.utils.pack_latents(modalities)
+                return noise
+            video_count = noise.size(self.dim) - guide_count
+            apply_freenoise(noise.narrow(self.dim, 0, video_count), self.dim,
+                            self.context_length, self.context_overlap, seed)
+            return noise
+
+        def _build_window_state(self, x_in, conds, model):
+            """WRAPS comfy.context_windows.IndexListContextHandler._build_window_state.
+
+            Core's state, re-made as H3's with the per-modality dims attached.
+            Copies field by field off the dataclass rather than by name, so a
+            new field in core's WindowingState travels here without an edit.
+            """
+            st = super()._build_window_state(x_in, conds, model)
+            fields = {f.name: getattr(st, f.name)
+                      for f in dataclasses.fields(st)}
+            fields["modality_dims"] = self._get_modality_dims(
+                model, st.latent_shapes, len(st.latents))
+            return H3WindowingState(**fields)
+
+        def execute(self, calc_cond_batch, model, conds, x_in, timestep,
+                    model_options):
+            """MIRRORS comfy.context_windows.IndexListContextHandler.execute.
+
+            A COPY of core's body; it DRIFTS if core changes that method. Copied
+            rather than wrapped because the accumulator allocation is inline and
+            it is what has to change: core sizes `counts` and `biases` on
+            `self.dim`, which for H3's audio is the stereo pair -- extent 2
+            against T40 -- and dies in the fuse with "size of tensor a (2) must
+            match the size of tensor b (93)". The two edits are marked CHANGED;
+            everything else is core's, line for line.
+            """
+            self._model = model
+            self.set_step(timestep, model_options)
+
+            window_state = self._build_window_state(x_in, conds, model)
+            num_modalities = len(window_state.latents)
+
+            context_windows = self.get_context_windows(
+                model, window_state.latents[0], model_options)
+            enumerated_context_windows = list(enumerate(context_windows))
+            total_windows = len(enumerated_context_windows)
+
+            # Initialize per-modality accumulators (length 1 for single-modality)
+            # CHANGED: counts and biases are sized on each modality's own dim
+            modality_dims = window_state.modality_dims
+            accum = [[torch.zeros_like(m) for _ in conds]
+                     for m in window_state.latents]
+            if self.fuse_method.name == ContextFuseMethods.RELATIVE:
+                counts = [[torch.ones(get_shape_for_dim(m, modality_dims[mi]),
+                                      device=m.device) for _ in conds]
+                          for mi, m in enumerate(window_state.latents)]
+            else:
+                counts = [[torch.zeros(get_shape_for_dim(m, modality_dims[mi]),
+                                       device=m.device) for _ in conds]
+                          for mi, m in enumerate(window_state.latents)]
+            biases = [[([0.0] * m.shape[modality_dims[mi]]) for _ in conds]
+                      for mi, m in enumerate(window_state.latents)]
+
+            for callback in comfy.patcher_extension.get_all_callbacks(
+                    IndexListCallbacks.EXECUTE_START, self.callbacks):
+                callback(self, model, x_in, conds, timestep, model_options)
+
+            # accumulate results from each context window
+            for enum_window in enumerated_context_windows:
+                results = self.evaluate_context_windows(
+                    calc_cond_batch, model, x_in, conds, timestep, [enum_window],
+                    model_options, window_state=window_state,
+                    total_windows=total_windows)
+                for result in results:
+                    # result.sub_conds_out is per-cond, per-modality
+                    for mod_idx in range(num_modalities):
+                        mod_out = [result.sub_conds_out[ci][mod_idx]
+                                   for ci in range(len(conds))]
+                        modality_window = result.window.get_window_for_modality(mod_idx)
+                        self.combine_context_window_results(
+                            window_state.latents[mod_idx], mod_out,
+                            result.sub_conds, modality_window,
+                            result.window_idx, total_windows, timestep,
+                            accum[mod_idx], counts[mod_idx], biases[mod_idx])
+
+            # fuse accumulated results into final conds
+            try:
+                result_out = []
+                for ci in range(len(conds)):
+                    finalized = []
+                    for mod_idx in range(num_modalities):
+                        if self.fuse_method.name != ContextFuseMethods.RELATIVE:
+                            accum[mod_idx][ci] /= counts[mod_idx][ci]
+                        f = accum[mod_idx][ci]
+
+                        # if guide frames were injected, append them to the end
+                        # of the fused latents for the next step
+                        if window_state.guide_latents[mod_idx] is not None:
+                            # CHANGED: concat on the modality's own dim
+                            f = torch.cat([f, window_state.guide_latents[mod_idx]],
+                                          dim=modality_dims[mod_idx])
+                        finalized.append(f)
+
+                    # pack modalities together if needed
+                    if window_state.is_multimodal and len(finalized) > 1:
+                        packed, _ = comfy.utils.pack_latents(finalized)
+                    else:
+                        packed = finalized[0]
+
+                    result_out.append(packed)
+                return result_out
+            finally:
+                for callback in comfy.patcher_extension.get_all_callbacks(
+                        IndexListCallbacks.EXECUTE_CLEANUP, self.callbacks):
+                    callback(self, model, x_in, conds, timestep, model_options)
+
+        def combine_context_window_results(self, x_in, sub_conds_out, sub_conds,
+                                           window, window_idx, total_windows,
+                                           timestep, conds_final, counts_final,
+                                           biases_final):
+            """MIRRORS IndexListContextHandler.combine_context_window_results.
+
+            A COPY of core's body; it DRIFTS if core changes that method. One
+            edit, at the top: this is called once PER MODALITY with that
+            modality's own window and latent, so the axis to work on is the
+            window's dim, not the handler's. Core builds the fuse weights on
+            `self.dim`, which sizes a 93-long weight vector onto the audio
+            latent's stereo axis and raises "size of tensor a (2) must match the
+            size of tensor b (93)". No new parameter is needed -- the window
+            already knows.
+            """
+            dim = window.dim
+            if self.fuse_method.name == ContextFuseMethods.RELATIVE:
+                for pos, idx in enumerate(window.index_list):
+                    # bias is the influence of a specific index in relation to
+                    # the whole context window
+                    bias = 1 - abs(idx - (window.index_list[0] + window.index_list[-1]) / 2) / ((window.index_list[-1] - window.index_list[0] + 1e-2) / 2)
+                    bias = max(1e-2, bias)
+                    # take weighted average relative to total bias of current idx
+                    for i in range(len(sub_conds_out)):
+                        bias_total = biases_final[i][idx]
+                        prev_weight = (bias_total / (bias_total + bias))
+                        new_weight = (bias / (bias_total + bias))
+                        # account for dims of tensors
+                        idx_window = tuple([slice(None)] * dim + [idx])
+                        pos_window = tuple([slice(None)] * dim + [pos])
+                        # apply new values
+                        conds_final[i][idx_window] = conds_final[i][idx_window] * prev_weight + sub_conds_out[i][pos_window] * new_weight
+                        biases_final[i][idx] = bias_total + bias
+            else:
+                # add conds and counts based on weights of fuse method
+                weights = get_context_weights(window.context_length,
+                                              x_in.shape[dim],
+                                              window.index_list, self,
+                                              sigma=timestep,
+                                              context_overlap=window.context_overlap)
+                weights_tensor = match_weights_to_dim(weights, x_in, dim,
+                                                      device=x_in.device)
+                for i in range(len(sub_conds_out)):
+                    window.add_window(conds_final[i],
+                                      sub_conds_out[i] * weights_tensor)
+                    window.add_window(counts_final[i], weights_tensor)
+
+            for callback in comfy.patcher_extension.get_all_callbacks(
+                    IndexListCallbacks.COMBINE_CONTEXT_WINDOW_RESULTS,
+                    self.callbacks):
+                callback(self, x_in, sub_conds_out, sub_conds, window,
+                         window_idx, total_windows, timestep, conds_final,
+                         counts_final, biases_final)
+
+    return H3WindowingState, H3ContextHandler
+
+
+def _h3_sampler_sample_wrapper(executor, guider, sigmas, extra_args, callback,
+                               noise, *args, **kwargs):
+    """MIRRORS comfy.context_windows._sampler_sample_wrapper.
+
+    A COPY of core's, with the model handed to `_apply_freenoise`. Core's
+    wrapper calls it with three arguments, and the model is what says which
+    axis each modality's time is on -- without it FreeNoise would shuffle H3's
+    audio along the stereo pair. The wrapper is the only place a model is in
+    scope this early: FreeNoise runs on the noise before sampling starts, so the
+    handler has not been handed one yet.
+    """
+    model_options = extra_args.get("model_options", None)
+    if model_options is None:
+        raise Exception("model_options not found in sampler_sample_wrapper; "
+                        "this should never happen, something went wrong.")
+    handler = model_options.get("context_handler", None)
+    if handler is None:
+        raise Exception("context_handler not found in sampler_sample_wrapper; "
+                        "this should never happen, something went wrong.")
+    if not handler.freenoise:
+        return executor(guider, sigmas, extra_args, callback, noise, *args,
+                        **kwargs)
+
+    conds = [guider.conds.get('positive', guider.conds.get('negative', []))]
+    noise = handler._apply_freenoise(noise, conds, extra_args["seed"],
+                                     guider.model_patcher.model)
+
+    return executor(guider, sigmas, extra_args, callback, noise, *args, **kwargs)
+
+
+def create_h3_sampler_sample_wrapper(model):
+    """Install `_h3_sampler_sample_wrapper` in place of core's.
+
+    Its own key, so it cannot collide with core's if both ever end up on one
+    ModelPatcher.
+    """
+    import comfy.patcher_extension
+    model.add_wrapper_with_key(
+        comfy.patcher_extension.WrappersMP.SAMPLER_SAMPLE,
+        "H3ContextWindows_sampler_sample",
+        _h3_sampler_sample_wrapper)
 
 
 def patch_h3_context_windows():
@@ -342,46 +727,38 @@ def patch_h3_context_windows():
         H3.resize_cond_for_context_window = _resize
         H3._h3_windowing_patched = True
 
-    if core_has_modality_dim_hook():
-        return True, (
-            "H3 context windowing ENABLED.\n"
-            "  core supports context_modality_dim; H3 hooks installed:\n"
-            "    audio time resolved to dim 3, not the stereo pair at dim 2\n"
-            "    video->audio mapped on the real (1,4,4,4,4) frame grid, not\n"
-            "    proportionally — proportional is off by up to 3 pixel frames,\n"
-            "    worst at the clip start\n"
-            "  Now wire Context Windows (Manual) into the sampler, with dim = 2.\n"
-            "\n"
-            "  Bounds ATTENTION cost, not memory — the whole latent stays\n"
-            "  resident.\n"
-            "  REFERENCE blocks survive being windowed: proven 2026-08-29, they\n"
-            "  travel with each per-window conditioning and hold identity.\n"
-            "  KEYFRAMES are handled — dropped outside the window, and with\n"
-            "  absolute positions their indices are kept rather than rebased —\n"
-            "  but have never been run in a windowed render. Check the seams.")
-
-    return False, (
-        "H3 hooks installed, but THIS ComfyUI CANNOT USE THEM.\n"
-        "  comfy/context_windows.py has no context_modality_dim support, so it\n"
-        "  still assumes every modality's time axis sits at the primary's dim.\n"
-        "  H3's audio is [B, 32, 2, T] — dim 2 is the stereo pair. Windowing will\n"
-        "  fail, most likely as\n"
-        "    'size of tensor a (2) must match the size of tensor b (N) at dim 2'\n"
+    return True, (
+        "H3 context windowing ENABLED.\n"
+        "  H3 hooks installed on the model:\n"
+        "    audio time resolved to dim 3, not the stereo pair at dim 2\n"
+        "    video->audio mapped on the real (1,4,4,4,4) frame grid, not\n"
+        "    proportionally — proportional is off by up to 3 pixel frames,\n"
+        "    worst at the clip start\n"
+        "  Now wire H3 Context Windows into the sampler.\n"
+        "  NOT core's Context Windows (Manual): the per-modality axis lives in\n"
+        "  this pack's handler subclass, and core's own handler would slice H3's\n"
+        "  audio on its stereo pair. No ComfyUI version check applies — nothing\n"
+        "  in core has to change.\n"
         "\n"
-        "  The fix is a small upstream ComfyUI patch, verified 2026-08-26. Until\n"
-        "  it lands, use H3 Chunk Plan with H3 Chunk Open/Close — separate passes\n"
-        "  need no per-modality windowing at all.")
+        "  Bounds ATTENTION cost, not memory — the whole latent stays\n"
+        "  resident.\n"
+        "  REFERENCE blocks survive being windowed: proven 2026-08-29, they\n"
+        "  travel with each per-window conditioning and hold identity.\n"
+        "  KEYFRAMES are handled — dropped outside the window, and with\n"
+        "  absolute positions their indices are kept rather than rebased —\n"
+        "  but have never been run in a windowed render. Check the seams.")
 
 
 class H3EnableContextWindows:
     """Make ComfyUI's context windows work on MiniMax-H3.
 
-    Pass the model through once before the sampler, then use core's
-    `Context Windows (Manual)` with `dim = 2`. The MODEL passes through
-    unchanged; this only installs H3's side of the modality-dim contract.
+    Pass the model through once before the sampler, then use `H3 Context
+    Windows`. The MODEL passes through unchanged; this only installs H3's side
+    of the modality-dim contract on the MiniMaxH3 class.
 
-    Read `info`: it says whether this ComfyUI supports the contract, and if not,
-    what to use instead — rather than letting a render find out.
+    `H3 Context Windows` calls this itself, so wiring it is belt and braces --
+    what it buys is the `info` text, which says what got installed rather than
+    letting a render find out.
     """
 
     @classmethod
@@ -393,8 +770,8 @@ class H3EnableContextWindows:
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/long-form"
     EXPERIMENTAL = True
-    DESCRIPTION = ("Install MiniMax-H3's context-window hooks so core can window "
-                   "it. Reports whether this ComfyUI supports them.")
+    DESCRIPTION = ("Install MiniMax-H3's context-window hooks. Reports what went "
+                   "in; H3 Context Windows installs them too.")
 
     def go(self, model):
         usable, text = patch_h3_context_windows()
@@ -405,8 +782,12 @@ class H3EnableContextWindows:
 class H3ContextWindows:
     """Context windows for H3, in FRAMES, phase-aligned, on the right axis.
 
-    Core's `Context Windows (Manual)` is usable for H3 but has three ways to get
-    it silently wrong, and this node closes all three:
+    Core's `Context Windows (Manual)` has four ways to get H3 silently wrong,
+    and this node closes all four:
+
+      ITS HANDLER WINDOWS EVERY MODALITY ON ONE DIM. H3's audio latent is
+      [B, 32, 2, T] -- dim 2 is the stereo pair. This node installs
+      H3ContextHandler instead, which gives each modality its own axis.
 
       `dim` DEFAULTS TO 0, the batch axis. H3's video temporal axis is 2. Wrong
       dim does not error, it windows the wrong thing.
@@ -433,8 +814,9 @@ class H3ContextWindows:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "model": ("MODEL", {"tooltip": "Run it through H3 Enable Context "
-                                           "Windows first."}),
+            "model": ("MODEL", {"tooltip": "H3's model hooks go on here "
+                                           "automatically. H3 Enable Context "
+                                           "Windows reports what went in."}),
             # min 39 with step 17 IS the legal-run grid (17n+5) from the
             # smallest useful run up. It used to be min 17 step 17, which walks
             # the MULTIPLES of 17 -- 17, 34, 51, 68, 85 -- and not one of those
@@ -482,14 +864,8 @@ class H3ContextWindows:
             # target was placed at `cursor`, which does not depend on the window,
             # so each one rendered the OPENING of the shot and the overlaps
             # crossfaded between openings. Confirmed at runtime 2026-08-28 --
-            # 167 layout builds, one cond_t. Needs the matching core patch
-            # (patches/h3-window-absolute-positions.patch).
-            # APPENDED. The measurement this exists to settle: every window's
-            # target was placed at `cursor`, which does not depend on the window,
-            # so each one rendered the OPENING of the shot and the overlaps
-            # crossfaded between openings. Confirmed at runtime 2026-08-28 --
-            # 167 layout builds, one cond_t. Needs the matching core patch
-            # (patches/h3-window-absolute-positions.patch).
+            # 167 layout builds, one cond_t. The offset is applied by video.py's
+            # PackedLayout subclass, so it needs no core patch.
             "absolute_window_positions": ("BOOLEAN", {"default": False,
                                           "tooltip": "Give each window its real "
                                                      "position on the clip's "
@@ -497,9 +873,7 @@ class H3ContextWindows:
                                                      "clip origin, so a later "
                                                      "window reads as 'this clip, "
                                                      "N frames in' rather than "
-                                                     "'another clip'. Needs the "
-                                                     "core patch; says so if it "
-                                                     "is missing."}),
+                                                     "'another clip'."}),
             # APPENDED. Core can already hand each window a DIFFERENT
             # conditioning, chosen by where the window's centre falls in the
             # clip: region = int(center_ratio * len(conds)), with center_ratio =
@@ -565,10 +939,10 @@ class H3ContextWindows:
 
         absolute = bool(absolute_window_positions)
         if absolute and not core_takes_window_start():
-            notes.append("absolute_window_positions asked for, but this "
-                         "ComfyUI's PackedLayout does not accept window_start — "
-                         "apply patches/h3-window-absolute-positions.patch. "
-                         "Running with origin-positioned windows.")
+            notes.append("absolute_window_positions asked for, but the "
+                         "per-window offset is not available — video.py's "
+                         "PackedLayout subclass did not install. Running with "
+                         "origin-positioned windows.")
             absolute = False
 
         # BOTH must be legal runs (17n+5), not merely multiples of 17.
@@ -598,41 +972,58 @@ class H3ContextWindows:
             notes.append(f"stride {stride} latent is not a multiple of 5 - "
                          f"intermediate windows will be off-phase")
 
-        # Look the node up by its NODE ID, not by a Python class name. The class
-        # is `ContextWindowsManualNode` while the id is `ContextWindowsManual`,
-        # and importing the guessed name failed outright. The id is the stable
-        # contract -- it is what saved workflows store -- so resolve through the
-        # registry and fall back to the module only if that misses.
-        CWM = None
+        # The MODEL hooks -- the per-modality dim, the frame-grid mapping, the
+        # payload rebasing -- live on the MiniMaxH3 class, and the handler is
+        # useless without them: with no `context_modality_dim` it falls back to
+        # one dim for every modality, which is core's behaviour and H3's bug.
+        # Installing them here as well as in H3EnableContextWindows costs an
+        # idempotent call and removes a graph where the enable node is simply
+        # missing and the render is silently wrong.
+        hooks_ok, hooks_msg = patch_h3_context_windows()
+        if not hooks_ok:
+            notes.append(hooks_msg)
+
+        # Install OUR handler, not core's `Context Windows (Manual)`.
+        #
+        # This used to resolve that node and call it, which built core's
+        # IndexListContextHandler -- correct only while a core PATCH was applied
+        # to teach it H3's per-modality axes. A ComfyUI update reverted that
+        # patch silently and the symptom was a bad render, not an error.
+        # H3ContextHandler carries the same behaviour as a subclass, so nothing
+        # in core has to change. Everything else here is what that node did:
+        # clone, set model_options["context_handler"], add the sampling wrapper.
         try:
-            import nodes as comfy_nodes
-            CWM = getattr(comfy_nodes, "NODE_CLASS_MAPPINGS", {}).get(
-                "ContextWindowsManual")
-        except Exception:
-            pass
-        if CWM is None:
-            try:
-                import comfy_extras.nodes_context_windows as M
-                CWM = (getattr(M, "ContextWindowsManualNode", None)
-                       or getattr(M, "ContextWindowsManual", None))
-            except Exception as exc:
-                CWM = None
-                notes.append(f"import failed: {type(exc).__name__}: {exc}")
-        if CWM is None:
-            msg = ("Context Windows node not found. This ComfyUI has no\n"
-                   "  ContextWindowsManual — windowing is unavailable here.")
+            from comfy.context_windows import (create_prepare_sampling_wrapper,
+                                               get_matching_context_schedule,
+                                               get_matching_fuse_method)
+            _, handler_cls = _context_window_classes()
+        except Exception as exc:
+            msg = (f"comfy.context_windows is not importable "
+                   f"({type(exc).__name__}: {exc}) — windowing is unavailable "
+                   f"here.")
             return {"ui": {"h3char": [msg]}, "result": (model, msg)}
 
-        out = CWM.execute(model=model, context_length=w_lat, context_overlap=o_lat,
-                          context_schedule=schedule, context_stride=1,
-                          closed_loop=False, fuse_method=fuse_method,
-                          dim=VIDEO_TIME_DIM, freenoise=freenoise,
-                          cond_retain_index_list=[],
-                          split_conds_to_windows=bool(split_conds_to_windows),
-                          latent_retain_index_list=[],
-                          causal_window_fix=bool(causal_window_fix))
-        patched = out.result[0] if hasattr(out, "result") else (
-            out[0] if isinstance(out, (list, tuple)) else out)
+        patched = model.clone()
+        patched.model_options["context_handler"] = handler_cls(
+            context_schedule=get_matching_context_schedule(schedule),
+            fuse_method=get_matching_fuse_method(fuse_method),
+            context_length=w_lat,
+            context_overlap=o_lat,
+            context_stride=1,
+            closed_loop=False,
+            dim=VIDEO_TIME_DIM,
+            freenoise=freenoise,
+            cond_retain_index_list=[],
+            split_conds_to_windows=bool(split_conds_to_windows),
+            latent_retain_index_list=[],
+            causal_window_fix=bool(causal_window_fix))
+        # makes the VRAM estimate budget one window rather than the whole clip
+        create_prepare_sampling_wrapper(patched)
+        if freenoise:
+            # ours rather than core's: it hands _apply_freenoise the model, which
+            # is what says audio's time is on dim 3
+            create_h3_sampler_sample_wrapper(patched)
+
         base = getattr(patched, "model", None)
         if base is not None:
             setattr(base, ABSOLUTE_FLAG, absolute)

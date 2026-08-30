@@ -2,10 +2,10 @@
 """Check, apply or revert this pack's ComfyUI core patches.
 
 WHY IT EXISTS
-  Three core files are patched, and a ComfyUI update reverts all of them
-  silently. Nothing errors afterwards -- H3 context windows simply go back to
-  windowing the wrong axis and placing every window at the clip origin, which
-  looks like a flicker rather than a missing patch.
+  A ComfyUI or Manager update reverts a patch silently, and nothing errors
+  afterwards -- the render just comes out wrong. Both of this pack's CORE
+  patches have since been rewritten as subclasses inside the pack for exactly
+  that reason, so what is left here is third-party.
 
     python3 patches/apply.py            # what is applied, what is not
     python3 patches/apply.py --apply    # apply whatever is missing
@@ -25,7 +25,9 @@ DEFAULT_COMFY = pathlib.Path("/mnt/c/SD/ComfyUI/Comfy-03-15-2026/ComfyUI")
 
 # patch file -> the repo it applies inside, relative to the ComfyUI root
 PATCHES = {
-    "h3-modality-dim-context-windows.patch": ".",
+    # h3-modality-dim-context-windows.patch is SUPERSEDED -- windowing.py's
+    # H3ContextHandler subclass carries it now. Harmless if still applied, but
+    # nothing needs it.
     # h3-window-absolute-positions.patch is SUPERSEDED -- the offset lives in
     # video.py now. Applying it would double the offset.
     "depthanythingv2-contiguous.patch": "custom_nodes/ComfyUI-DepthAnythingV2",
