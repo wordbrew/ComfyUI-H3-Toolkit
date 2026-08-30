@@ -2,7 +2,7 @@
   "id": "eee6f613-f92d-41d2-8069-73fd6e38c287",
   "revision": 0,
   "last_node_id": 43,
-  "last_link_id": 89,
+  "last_link_id": 91,
   "nodes": [
     {
       "id": 17,
@@ -81,8 +81,7 @@
           "type": "VAE",
           "links": [
             25,
-            38,
-            85
+            38
           ]
         }
       ],
@@ -543,7 +542,7 @@
           "localized_name": "conditioning",
           "name": "conditioning",
           "type": "CONDITIONING",
-          "link": 88
+          "link": 91
         }
       ],
       "outputs": [
@@ -672,7 +671,7 @@
       ],
       "flags": {},
       "order": 22,
-      "mode": 0,
+      "mode": 4,
       "inputs": [
         {
           "localized_name": "latent",
@@ -735,7 +734,7 @@
           ]
         }
       ],
-      "title": "3b. LATENT PIN \u2014 inert at context 0",
+      "title": "3b. LATENT PIN \u2014 BYPASSED (motion context carries instead)",
       "properties": {
         "Node name for S&R": "H3ChunkLatentContext"
       },
@@ -1418,6 +1417,16 @@
             "name": "present_keyframe"
           },
           "link": null
+        },
+        {
+          "name": "context_images",
+          "type": "IMAGE",
+          "link": 90
+        },
+        {
+          "name": "context_frames",
+          "type": "COMBO",
+          "link": null
         }
       ],
       "outputs": [
@@ -1426,7 +1435,7 @@
           "name": "conditioning",
           "type": "CONDITIONING",
           "links": [
-            84
+            91
           ]
         },
         {
@@ -1448,7 +1457,8 @@
         345,
         "match",
         0,
-        true
+        true,
+        "22"
       ],
       "widgets_values_named": {
         "prompt": "",
@@ -2264,7 +2274,7 @@
         640,
         1120,
         0,
-        "0"
+        "22"
       ],
       "widgets_values_named": {
         "chunk_frames": 243,
@@ -2363,8 +2373,7 @@
           "type": "INT",
           "links": [
             62,
-            83,
-            86
+            83
           ]
         },
         {
@@ -2408,7 +2417,7 @@
           "name": "context",
           "type": "IMAGE",
           "links": [
-            87
+            90
           ]
         },
         {
@@ -2537,27 +2546,27 @@
       ],
       "flags": {},
       "order": 0,
-      "mode": 0,
+      "mode": 4,
       "inputs": [
         {
           "name": "conditioning",
           "type": "CONDITIONING",
-          "link": 84
+          "link": null
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 85
+          "link": null
         },
         {
           "name": "length",
           "type": "INT",
-          "link": 86
+          "link": null
         },
         {
           "name": "context_images",
           "type": "IMAGE",
-          "link": 87
+          "link": null
         },
         {
           "name": "context_frames",
@@ -2569,9 +2578,7 @@
         {
           "name": "conditioning",
           "type": "CONDITIONING",
-          "links": [
-            88
-          ],
+          "links": [],
           "slot_index": 0
         },
         {
@@ -2595,7 +2602,7 @@
       "widgets_values": [
         "22"
       ],
-      "title": "3c. MOTION CONTEXT \u2014 the tail as 'this clip, earlier'"
+      "title": "SUPERSEDED \u2014 motion context moved into the reference node"
     },
     {
       "id": 43,
@@ -2996,52 +3003,28 @@
       "INT"
     ],
     [
-      84,
-      26,
-      0,
-      42,
-      0,
-      "CONDITIONING"
-    ],
-    [
-      85,
-      2,
-      0,
-      42,
-      1,
-      "VAE"
-    ],
-    [
-      86,
-      32,
-      3,
-      42,
-      2,
-      "INT"
-    ],
-    [
-      87,
-      32,
-      9,
-      42,
-      3,
-      "IMAGE"
-    ],
-    [
-      88,
-      42,
-      0,
-      12,
-      1,
-      "CONDITIONING"
-    ],
-    [
       89,
       42,
       2,
       43,
       0,
       "STRING"
+    ],
+    [
+      90,
+      32,
+      9,
+      26,
+      15,
+      "IMAGE"
+    ],
+    [
+      91,
+      26,
+      0,
+      12,
+      1,
+      "CONDITIONING"
     ]
   ],
   "groups": [

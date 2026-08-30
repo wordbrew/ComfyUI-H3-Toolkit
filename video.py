@@ -35,7 +35,8 @@ import node_helpers
 from comfy_api.latest import io
 
 from .avlatent import av
-from .timing import snap_run, video_latent_t
+from .chunkplan import snap_context
+from .timing import FRAME_PER_TOKEN, snap_run, video_latent_t
 
 CATEGORY = "MiniMax H3/video"
 
@@ -398,6 +399,12 @@ class H3MotionContext:
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
+    # SUPERSEDED 2026-08-30. Downstream of the reference node it cannot present
+    # the tail to the language model, and without that every chunk after the
+    # first rendered a reference image instead of the shot. Use
+    # H3ReferenceToVideoLongForm's own `context_images` / `context_frames`. Kept
+    # registered so saved graphs still load; DEPRECATED hides it from the menu.
+    DEPRECATED = True
     DESCRIPTION = ("Place the previous chunk's tail as cond rows on this chunk's "
                    "own timeline, so the model reads it as this clip earlier "
                    "rather than as another clip.")
@@ -564,6 +571,28 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
                                  tooltip="Show the keyframe to the language model as "
                                          "the next <Picture n>. Leave ON — this is "
                                          "what stops motion hesitating at joins."),
+                io.Image.Input("context_images", optional=True,
+                               tooltip="MOTION CONTEXT: the previous chunk's tail, "
+                                       "in pixels. H3 Chunk Open's `context`. Its "
+                                       "last N frames are placed as cond rows on "
+                                       "THIS clip's own timeline, so the model "
+                                       "reads them as this clip earlier rather "
+                                       "than as another clip. It has to happen "
+                                       "HERE and not downstream: the last frame is "
+                                       "also presented to the language model, and "
+                                       "presentation is fixed once this node has "
+                                       "tokenized."),
+                io.Combo.Input("context_frames", options=["0", "1", "5", "22", "39"],
+                               default="0", optional=True,
+                               tooltip="Frames of tail to place. 0 is off and is "
+                                       "the default, so nothing changes unless you "
+                                       "ask for it. Only 1/5/22/39 encode to "
+                                       "distinct VAE runs — an off-grid count "
+                                       "snaps DOWN and then covers the FIRST "
+                                       "frames of what it was given, so the pinned "
+                                       "run ends early and the join jumps. 39 is "
+                                       "the smallest run on both the video and "
+                                       "audio clocks."),
             ],
             outputs=[
                 io.Conditioning.Output(display_name="conditioning"),
@@ -574,7 +603,8 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
     @classmethod
     def execute(cls, clip, vae, audio_vae, prompt, width, height, length,
                 ref_image_size="max", ref_images=None, keyframe=None,
-                keyframe_time=0.0, present_keyframe=True, **kwargs):
+                keyframe_time=0.0, present_keyframe=True, context_images=None,
+                context_frames="0", **kwargs):
         # An Autogrow input is DOCUMENTED to arrive as {name: value}, and stock
         # MiniMaxH3ReferenceToVideo receives it that way. Registered through
         # NODE_CLASS_MAPPINGS rather than comfy_entrypoint it can instead arrive
@@ -627,7 +657,61 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
                                "latent_w": tw // 16, "latent": vae.encode(r)})
 
         keyframes = []
-        if keyframe is not None:
+        n_ctx = 0
+        if context_images is not None and int(context_frames) > 0:
+            # MOTION CONTEXT. The rows the model sees are identical between a
+            # reference and a keyframe; only their TIME COORDINATES differ, and
+            # the coordinates are what say "separate clip" versus "this clip,
+            # earlier". Reference rows sit in their own cursor region and read as
+            # another clip -- the ping-pong nine waves chased. The same rows on
+            # the target's own timeline read as its past.
+            #
+            # IT HAS TO HAPPEN HERE. Built as a node downstream of this one it
+            # cannot present the tail to the language model, because `tokenize`
+            # below has already fixed the presentation. Tried on 2026-08-30: the
+            # DiT got seven context rows, Qwen saw only the references, and every
+            # chunk after the first rendered a reference image instead of the
+            # shot.
+            avail = int(context_images.shape[0])
+            n_ctx = snap_context(min(int(context_frames), avail))
+            if n_ctx >= frame_count:
+                raise ValueError(
+                    f"H3 Reference to Video: {n_ctx} context frames do not fit "
+                    f"inside a {frame_count}-frame clip. The pinned run has to be "
+                    f"a small fraction of the timeline.")
+            if n_ctx >= 1:
+                tail = resize(context_images[avail - n_ctx:], width, height,
+                              "disabled")
+                # ONE call, batch axis as time. Per-frame calls give stills with
+                # no temporal structure, and slicing a PREVIOUS RUN's latent is
+                # worse again -- FRAME_PER_TOKEN is (1,4,4,4,4) so coverage is
+                # positional, and steps from the end of a 52-step latent carry
+                # the structure of positions 45..51 while landing at 0..K-1.
+                # Measured in 087: HEAD 12.5 against 3.8, joins 7-21 against 3-5.
+                enc = vae.encode(tail)
+                n_steps = int(enc.shape[2]) if enc.dim() == 5 else 1
+                off, acc = [], 0
+                for k in range(n_steps):
+                    off.append(acc)
+                    acc += FRAME_PER_TOKEN[k % 5]
+                if acc != n_ctx:
+                    raise RuntimeError(
+                        f"H3 Reference to Video: {n_ctx} frames encoded to "
+                        f"{n_steps} step(s) covering {acc}. The VAE grid is not "
+                        f"what this assumes; refusing to place rows that would "
+                        f"land at the wrong times.")
+                for k in range(n_steps):
+                    keyframes.append({"resolved_frame_index": off[k],
+                                      "latent": enc[:, :, k:k + 1],
+                                      "latent_t": 1})
+                if present_keyframe:
+                    ref_items.append({"type": "image", "data": tail[-1:]})
+
+        if keyframe is not None and not keyframes:
+            # Skipped when context is present: a context block already anchors
+            # frame 0 onward, so a keyframe there would double-pin it. Engine's
+            # rule, and the reason context and keyframe are alternatives rather
+            # than additions.
             kimg = resize(keyframe[:1], width, height, "disabled")
             idx = int(round(float(keyframe_time) * 24.0))
             idx = 0 if idx <= 0 else min(idx, frame_count - 1)
