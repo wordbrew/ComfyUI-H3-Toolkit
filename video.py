@@ -46,11 +46,50 @@ CATEGORY = "MiniMax H3/video"
 # 39-frame one gets from three. See H3RefBudget.
 MAX_REF_IMAGES = 9
 
-# Core's own constant, imported so a change upstream follows rather than drifting.
+# Stock's ceilings for the other three kinds. A reference VIDEO costs a whole
+# clip's worth of tokens per block, which is why it caps far lower than images.
+MAX_REF_VIDEOS = 3
+MAX_REF_AUDIOS = 3
+
+# Core's own constants and canvas maths, imported so a change upstream follows
+# rather than drifting. A reference video is sized on the SAME canvas rule the
+# render uses, not on the render's own width/height, because its aspect is its
+# own; getting that wrong puts the reference on a stretched grid and the model
+# reads the distortion as part of the look.
 try:
-    from comfy_extras.nodes_minimax_h3 import REF_IMAGE_SHORT_EDGE
+    from comfy_extras.nodes_minimax_h3 import (CANVAS_MULTIPLE,
+                                               REF_IMAGE_SHORT_EDGE,
+                                               adapt_canvas)
 except Exception:  # pragma: no cover - core moved or renamed
-    REF_IMAGE_SHORT_EDGE = 2048
+    CANVAS_MULTIPLE, REF_IMAGE_SHORT_EDGE, adapt_canvas = 32, 2048, None
+
+# 24 fps video, 40 Hz audio latent, and Qwen is shown a reference video at 2 fps.
+FPS = 24
+QWEN_REF_FPS = 2
+
+
+def encode_ref_audio(audio_vae, audio):
+    """Waveform -> ([1, 32, 2, T], T). Resamples to the audio VAE's own rate.
+
+    Core has this as a private helper. Prefer core's if it is there, so a change
+    upstream follows; the local copy is the same six lines and keeps the pack
+    working against a build that renames it.
+    """
+    fn = None
+    try:
+        from comfy_extras.nodes_minimax_h3 import _encode_ref_audio as fn
+    except Exception:  # pragma: no cover - core moved or renamed
+        fn = None
+    if fn is not None:
+        return fn(audio_vae, audio)
+    waveform = audio["waveform"]                    # [B, C, L]
+    sr = int(audio["sample_rate"])
+    vae_sr = int(getattr(audio_vae, "audio_sample_rate", 32000))
+    if sr != vae_sr:
+        import torchaudio
+        waveform = torchaudio.functional.resample(waveform, sr, vae_sr)
+    z = audio_vae.encode(waveform[:1].movedim(1, -1))
+    return z, z.shape[-1]
 
 
 #  layout patch: let keyframes and references coexist
@@ -83,6 +122,19 @@ def patch_packed_layout():
     _audio_grid = M._audio_grid
     _video_t_spans = M._video_t_spans
     FRAME_RESCALE = M.FRAME_RESCALE
+
+    def _ref_t_span(blk):
+        kind = blk["kind"]
+        if kind == "image":
+            return 1.0
+        if kind == "audio":
+            return float(blk["ref_audio_t"])
+        if kind in ("video", "video_audio"):
+            return max(float(blk["ref_audio_t"]),
+                       sum(_video_t_spans(blk["latent_t"])))
+        return 0.0
+
+    _ref_t_span = getattr(M, "_ref_t_span", _ref_t_span)
 
     class LongFormLayout(Base):
         _h3_longform_patched = True
@@ -125,41 +177,103 @@ def patch_packed_layout():
             pos = [g]
             img_pos, img_update = [], []
             audio_pos, audio_update = [], []
-            cursor = float(text_len)
             row = text_len
             target_audio_w = (float(w_grid[0]), float(w_grid[-1]))
 
-            # references FIRST, so the cursor lands where the target video starts
+            # The target timeline starts after the reference SPANS, but the
+            # reference ROWS are emitted after the keyframe rows. Those are two
+            # different orders and conflating them is a silent corruption:
+            # `_cond_video_rows` concatenates the cond latents flat and the model
+            # scatters them with `all_video_rows[~img_update] = cond_video_rows`,
+            # so row order has to match the order core BUILDS that list in --
+            # keyframes first, then refs (model_base.py:2201,2206). This class
+            # emitted refs first until 2026-08-30, which fed every ref latent into
+            # a keyframe's row slot whenever a graph used both. Stock PackedLayout
+            # has always done it this way; the divergence was ours.
+            cursor = float(text_len)
+            for blk in (refs or []):
+                cursor += _ref_t_span(blk)
+
+            # keyframes against the post-ref cursor = the target's own timeline
+            spans = _video_t_spans(latent_t)
+            for kf in keyframes:
+                idx = kf["resolved_frame_index"]
+                if idx == 0:
+                    cond_t = cursor
+                elif frame_count is not None and idx == frame_count - 1:
+                    cond_t = cursor + sum(spans) - FRAME_RESCALE
+                else:
+                    # General position: each video token spans
+                    # FRAME_RESCALE * FRAME_PER_TOKEN[k%5] and covers
+                    # FRAME_PER_TOKEN[k%5] pixel frames, so cumulative time at
+                    # pixel frame p is exactly FRAME_RESCALE * p. Substituting
+                    # p = frame_count-1 reproduces the stock last-frame expression,
+                    # which is the proof it is right.
+                    #   text_len + FRAME_RESCALE*(fc-1) == text_len + sum(spans) - FRAME_RESCALE
+                    # An earlier version here walked the spans cumulatively to the
+                    # containing LATENT frame, which is a different (wrong) quantity.
+                    cond_t = cursor + FRAME_RESCALE * float(idx)
+                kf_t = int(kf.get("latent_t", 1))
+                if kf.get("latent") is not None:
+                    if kf_t > 1:
+                        n = kf_t * frame_rows
+                        segments.append(("cond", n))
+                        pos.append(_video_grid(kf_t, frame, cond_t))
+                    else:
+                        n = frame_rows
+                        g = torch.empty(frame_rows, 3, dtype=torch.float64)
+                        g[:, 0] = cond_t
+                        g[:, 1:] = frame
+                        segments.append(("cond", frame_rows))
+                        pos.append(g)
+                    img_pos.append(torch.arange(row, row + n))
+                    img_update.append(torch.zeros(n, dtype=torch.bool))
+                    row += n
+                # a keyframe may carry audio too; stock emits those rows and core
+                # puts their latents in cond_audio_latents, so the same rule holds
+                kf_audio = kf.get("audio_latent")
+                if kf_audio is not None:
+                    rt = kf_audio.shape[-1]
+                    segments.append(("cond_audio", rt * 2))
+                    pos.append(_audio_grid(cond_t, rt, *target_audio_w))
+                    audio_pos.append(torch.arange(row, row + rt * 2))
+                    audio_update.append(torch.zeros(rt * 2, dtype=torch.bool))
+                    row += rt * 2
+
+            # then the reference rows, walking their own cursor from the text
+            rcursor = float(text_len)
             for blk in (refs or []):
                 kind = blk["kind"]
                 if kind == "image":
                     r_frame, _ = _frame_grid(blk["latent_h"], blk["latent_w"])
                     n = r_frame.shape[0]
                     g = torch.empty(n, 3, dtype=torch.float64)
-                    g[:, 0] = cursor
+                    g[:, 0] = rcursor
                     g[:, 1:] = r_frame
                     segments.append(("ref_img", n))
                     pos.append(g)
                     img_pos.append(torch.arange(row, row + n))
                     img_update.append(torch.zeros(n, dtype=torch.bool))
                     row += n
-                    cursor += 1.0
+                    rcursor += 1.0
                 elif kind == "audio":
                     rt = blk["ref_audio_t"]
                     if rt > 0:
                         segments.append(("ref_audio", rt * 2))
-                        pos.append(_audio_grid(cursor, rt, *target_audio_w))
+                        pos.append(_audio_grid(rcursor, rt, *target_audio_w))
                         audio_pos.append(torch.arange(row, row + rt * 2))
                         audio_update.append(torch.zeros(rt * 2, dtype=torch.bool))
                         row += rt * 2
-                    cursor += float(rt)
+                    rcursor += float(rt)
                 elif kind in ("video", "video_audio"):
+                    # the block's audio rows pack immediately before its video
+                    # rows, both sharing the cursor origin
                     rt = blk["ref_audio_t"]
                     vt = blk["latent_t"]
                     r_frame, r_w_grid = _frame_grid(blk["latent_h"], blk["latent_w"])
                     if rt > 0:
                         segments.append(("ref_audio", rt * 2))
-                        pos.append(_audio_grid(cursor, rt, float(r_w_grid[0]),
+                        pos.append(_audio_grid(rcursor, rt, float(r_w_grid[0]),
                                                float(r_w_grid[-1])))
                         audio_pos.append(torch.arange(row, row + rt * 2))
                         audio_update.append(torch.zeros(rt * 2, dtype=torch.bool))
@@ -171,43 +285,6 @@ def patch_packed_layout():
                     img_update.append(torch.zeros(n, dtype=torch.bool))
                     row += n
                     cursor += max(float(rt), sum(_video_t_spans(vt)))
-
-            # keyframes against the post-ref cursor = the target's own timeline
-            spans = _video_t_spans(latent_t)
-            for kf in keyframes:
-                idx = kf["resolved_frame_index"]
-                if idx == 0:
-                    cond_t = cursor
-                elif frame_count is not None and idx == frame_count - 1:
-                    cond_t = cursor + sum(spans) - FRAME_RESCALE
-                else:
-                    # General position, per NikoDemon80/ComfyUI-H3-Motion-Context:
-                    # each video token spans FRAME_RESCALE * FRAME_PER_TOKEN[k%5] and
-                    # covers FRAME_PER_TOKEN[k%5] pixel frames, so cumulative time at
-                    # pixel frame p is exactly FRAME_RESCALE * p. Substituting
-                    # p = frame_count-1 reproduces the stock last-frame expression,
-                    # which is the proof it is right.
-                    #   text_len + FRAME_RESCALE*(fc-1) == text_len + sum(spans) - FRAME_RESCALE
-                    # An earlier version here walked the spans cumulatively to the
-                    # containing LATENT frame, which is a different (wrong) quantity.
-                    cond_t = cursor + FRAME_RESCALE * float(idx)
-                kf_t = int(kf.get("latent_t", 1))
-                if kf_t > 1:
-                    n = kf_t * frame_rows
-                    segments.append(("cond", n))
-                    pos.append(_video_grid(kf_t, frame, cond_t))
-                    img_pos.append(torch.arange(row, row + n))
-                    img_update.append(torch.zeros(n, dtype=torch.bool))
-                    row += n
-                    continue
-                g = torch.empty(frame_rows, 3, dtype=torch.float64)
-                g[:, 0] = cond_t
-                g[:, 1:] = frame
-                segments.append(("cond", frame_rows))
-                pos.append(g)
-                img_pos.append(torch.arange(row, row + frame_rows))
-                img_update.append(torch.zeros(frame_rows, dtype=torch.bool))
-                row += frame_rows
 
             # the target sits at its real place on the clip when windowed; the
             # REFERENCE and KEYFRAME cursors above are untouched, because they
@@ -258,10 +335,13 @@ class H3KeyframeTimeline:
     Upstream gives you first and last only. This adds an arbitrary position, so you
     can direct "be in THIS pose at 8 seconds" rather than only "start here".
 
-    `cond_video_latents` must be ordered to match the packed sequence — references
-    first, then keyframes — because the model concatenates them flat and drops them
-    into the non-target image rows in sequence order. This node appends, so run it
-    AFTER the reference node.
+    `cond_video_latents` must be ordered to match the packed sequence — KEYFRAMES
+    first, then references — because the model concatenates them flat and drops
+    them into the non-target image rows in sequence order. That is core's order
+    (model_base.py:2201,2206) and core rebuilds the list itself, so the copy this
+    node writes is belt-and-braces; what actually decides anything is the ROW
+    order in the patched layout. This node appends to whatever the reference node
+    already set, so run it AFTER that node.
 
     A time of -1 disables that slot. Time is in SECONDS and is snapped to the frame
     grid; 0 means the first frame, and anything at or past the clip's end becomes
@@ -324,7 +404,7 @@ class H3KeyframeTimeline:
             ref_lats = [r["latent"] for r in refs if "latent" in r]
             meta["minimax_keyframes"] = keyframes
             meta["frame_count"] = frame_count
-            meta["cond_video_latents"] = ref_lats + [k["latent"] for k in keyframes]
+            meta["cond_video_latents"] = [k["latent"] for k in keyframes] + ref_lats
             out.append([cond, meta])
         return (out,)
 
@@ -463,7 +543,7 @@ class H3MotionContext:
             kfs.extend(rows)                      # coexist, never replace
             meta["minimax_keyframes"] = kfs
             meta["frame_count"] = frame_count
-            meta["cond_video_latents"] = ref_lats + [k["latent"] for k in kfs]
+            meta["cond_video_latents"] = [k["latent"] for k in kfs] + ref_lats
             out.append([cond, meta])
 
         info = (f"H3 MOTION CONTEXT: {n} frame(s) placed as {steps} cond row(s) "
@@ -506,11 +586,17 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
       the two levers that move it, which is why this node autogrows to nine rather
       than capping at the five it used to offer.
 
-    ORDERING MATTERS. `cond_video_latents` is consumed as a flat concatenation
-    dropped into the non-target image rows in sequence order, so references come
-    first and keyframes second — matching the patched PackedLayout above. The
-    autogrow dict preserves insertion order, and the executor fills it in schema
-    order, so iterating `.values()` is the same order stock uses.
+    ORDERING MATTERS. The cond latents are consumed as a flat concatenation
+    dropped into the non-target image rows in sequence order, and core builds that
+    list keyframes first, references second — which is the order the patched
+    PackedLayout above emits rows in. Within the references, the autogrow dict
+    preserves insertion order and the executor fills it in schema order, so
+    iterating `.values()` is the same order stock uses.
+
+    REFERENCE KINDS. All four of stock's are here: images, videos, a video's own
+    soundtrack, and standalone audio. The audio one is not an afterthought — it
+    is the only thing that pins VOICE, and without it a chained dialogue take
+    invents the timbre afresh in every chunk.
 
     V3 SCHEMA, ON PURPOSE. Autogrow is a `DynamicInput` and has no equivalent in
     the V1 `INPUT_TYPES` dict, so this one node is defined with `io.Schema` while
@@ -593,6 +679,39 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
                                        "run ends early and the join jumps. 39 is "
                                        "the smallest run on both the video and "
                                        "audio clocks."),
+                io.Autogrow.Input(
+                    "ref_videos", optional=True,
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.Image.Input(
+                            "ref_video",
+                            tooltip="Reference video at 24 fps, 2-15 s. Shown to "
+                                    "the language model at 2 fps with timestamps, "
+                                    "and to the DiT as its own clip. A whole clip "
+                                    "of tokens, so it is expensive — use it for "
+                                    "an action or a look you cannot describe."),
+                        prefix="ref_video_", min=0, max=MAX_REF_VIDEOS)),
+                io.Autogrow.Input(
+                    "ref_video_audios", optional=True,
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.Audio.Input(
+                            "ref_video_audio",
+                            tooltip="Soundtrack of the SAME-NUMBERED reference "
+                                    "video. ref_video_audio_2 belongs to "
+                                    "ref_video_2; the pairing is by number, not "
+                                    "by position."),
+                        prefix="ref_video_audio_", min=0, max=MAX_REF_VIDEOS)),
+                io.Autogrow.Input(
+                    "ref_audios", optional=True,
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.Audio.Input(
+                            "ref_audio",
+                            tooltip="VOICE REFERENCE. A few seconds of clean "
+                                    "speech pins the timbre, which is otherwise "
+                                    "invented afresh in every chunk of a chained "
+                                    "take. It is presented as the next <Audio n>, "
+                                    "so name it in the prompt to bind it to a "
+                                    "speaker."),
+                        prefix="ref_audio_", min=0, max=MAX_REF_AUDIOS)),
             ],
             outputs=[
                 io.Conditioning.Output(display_name="conditioning"),
@@ -604,7 +723,8 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
     def execute(cls, clip, vae, audio_vae, prompt, width, height, length,
                 ref_image_size="max", ref_images=None, keyframe=None,
                 keyframe_time=0.0, present_keyframe=True, context_images=None,
-                context_frames="0", **kwargs):
+                context_frames="0", ref_videos=None, ref_video_audios=None,
+                ref_audios=None, **kwargs):
         # An Autogrow input is DOCUMENTED to arrive as {name: value}, and stock
         # MiniMaxH3ReferenceToVideo receives it that way. Registered through
         # NODE_CLASS_MAPPINGS rather than comfy_entrypoint it can instead arrive
@@ -612,15 +732,24 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
         #   TypeError: execute() got an unexpected keyword argument 'ref_image_1'
         # on ComfyUI 0.34.0. Accept both rather than betting on one: the numeric
         # suffix decides order, so <Picture n> numbering stays stable either way.
-        if not ref_images:
+        def _order(item):
+            tail = item[0].rsplit("_", 1)[-1]
+            return int(tail) if tail.isdigit() else 1 << 30
+
+        def _collect(given, prefix):
+            if given:
+                return given
+            # `ref_video_` also prefixes `ref_video_audio_`, so match the SUFFIX
+            # shape too: a bare number after the prefix, nothing else.
             loose = [(k, v) for k, v in kwargs.items()
-                     if k.startswith("ref_image_") and v is not None]
+                     if k.startswith(prefix) and v is not None
+                     and k[len(prefix):].isdigit()]
+            return {k: v for k, v in sorted(loose, key=_order)}
 
-            def _order(item):
-                tail = item[0].rsplit("_", 1)[-1]
-                return int(tail) if tail.isdigit() else 1 << 30
-
-            ref_images = {k: v for k, v in sorted(loose, key=_order)}
+        ref_images = _collect(ref_images, "ref_image_")
+        ref_videos = _collect(ref_videos, "ref_video_")
+        ref_video_audios = _collect(ref_video_audios, "ref_video_audio_")
+        ref_audios = _collect(ref_audios, "ref_audio_")
         import math
         import comfy.nested_tensor
         import comfy.model_management
@@ -655,6 +784,67 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
             ref_items.append({"type": "image", "data": r})
             ref_blocks.append({"kind": "image", "latent_h": th // 16,
                                "latent_w": tw // 16, "latent": vae.encode(r)})
+
+        # REFERENCE VIDEOS. Sized on the canvas rule rather than the render's
+        # own width and height — the reference has its own aspect, and forcing
+        # it onto the target's would teach the model the distortion. Matches
+        # stock MiniMaxH3ReferenceToVideo block for block.
+        for name, video_frames in (ref_videos or {}).items():
+            if video_frames is None:
+                continue
+            # index-paired soundtrack: ref_video_audio_N belongs to ref_video_N
+            soundtrack = ref_video_audios.get(
+                "ref_video_audio_" + name.rsplit("_", 1)[-1])
+            vh, vw = video_frames.shape[1], video_frames.shape[2]
+            if adapt_canvas is None:  # pragma: no cover - core moved or renamed
+                cw, ch = width, height
+            else:
+                cw, ch = adapt_canvas(vw, vh)
+                if vw * vh < cw * ch:
+                    # never upscale a small reference into a big canvas
+                    cw = max(CANVAS_MULTIPLE,
+                             round(vw / CANVAS_MULTIPLE) * CANVAS_MULTIPLE)
+                    ch = max(CANVAS_MULTIPLE,
+                             round(vh / CANVAS_MULTIPLE) * CANVAS_MULTIPLE)
+            frames = resize(video_frames, cw, ch, "disabled")
+            if frames.shape[0] > frame_count:
+                frames = frames[:frame_count]
+            n = int(frames.shape[0])
+            if n < 5:
+                raise ValueError(
+                    f"H3 Reference to Video: {name} has {n} frame(s). A "
+                    f"reference video needs at least 5 (~0.2 s at 24 fps).")
+            while n % 17 != 5:                      # a legal run, trimmed DOWN
+                n -= 1
+            frames = frames[:n]
+            z = vae.encode(frames)
+            audio_latent, ref_audio_t = None, 0
+            if soundtrack is not None:
+                audio_latent, ref_audio_t = encode_ref_audio(audio_vae, soundtrack)
+                # the soundtrack gets its own <Audio j>, emitted before <Video k>
+                ref_items.append({"type": "audio"})
+            # Qwen sees the video at 2 fps with timestamps, not every frame
+            sample_idx = list(range(0, n, FPS // QWEN_REF_FPS))
+            ref_items.append({
+                "type": "video", "data": frames[sample_idx],
+                "timestamps": [i / float(QWEN_REF_FPS)
+                               for i in range(len(sample_idx))]})
+            ref_blocks.append({
+                "kind": "video_audio" if ref_audio_t else "video",
+                "latent_t": z.shape[2], "latent_h": ch // 16,
+                "latent_w": cw // 16, "ref_audio_t": ref_audio_t,
+                "latent": z, "audio_latent": audio_latent})
+
+        # STANDALONE REFERENCE AUDIO — the voice pin. No video rows, so it is
+        # cheap next to a reference video, and it is the only thing that stops a
+        # chained dialogue take reinventing the timbre at every chunk.
+        for audio in (ref_audios or {}).values():
+            if audio is None:
+                continue
+            audio_latent, ref_audio_t = encode_ref_audio(audio_vae, audio)
+            ref_items.append({"type": "audio"})
+            ref_blocks.append({"kind": "audio", "ref_audio_t": ref_audio_t,
+                               "audio_latent": audio_latent})
 
         keyframes = []
         n_ctx = 0
@@ -732,8 +922,18 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
             values["minimax_keyframes"] = keyframes
             values["frame_count"] = frame_count
         if ref_blocks or keyframes:
-            values["cond_video_latents"] = ([r["latent"] for r in ref_blocks]
-                                            + [k["latent"] for k in keyframes])
+            # Core's order — keyframes, then references — and a kind "audio"
+            # block carries no video latent at all, so both lists are built by
+            # what is present rather than by position.
+            values["cond_video_latents"] = (
+                [k["latent"] for k in keyframes if k.get("latent") is not None]
+                + [r["latent"] for r in ref_blocks if r.get("latent") is not None])
+            aud = ([k["audio_latent"] for k in keyframes
+                    if k.get("audio_latent") is not None]
+                   + [r["audio_latent"] for r in ref_blocks
+                      if r.get("audio_latent") is not None])
+            if aud:
+                values["cond_audio_latents"] = aud
             cond = node_helpers.conditioning_set_values(cond, values)
         return io.NodeOutput(cond, latent)
 

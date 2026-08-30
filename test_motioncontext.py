@@ -120,8 +120,13 @@ print("coexistence — anchors and motion context are not exclusive")
 check("the existing keyframe survives",
       sum(1 for r in rows if r["latent"] == "K0"), 1)
 lat = out[0][1]["cond_video_latents"]
-check("references come first", lat[:2], ["R1", "R2"])
-check("then every keyframe row", len(lat), 2 + 1 + 7)
+# Core's order, and therefore the packed layout's ROW order: keyframes first,
+# references second (model_base.py:2201,2206). The pack had it inverted until
+# 2026-08-30, which fed each reference latent into a keyframe's row slot on any
+# graph that used both.
+check("the keyframe comes first", lat[0], "K0")
+check("then the context rows, then the references", lat[-2:], ["R1", "R2"])
+check("every row has a latent", len(lat), 1 + 7 + 2)
 check("the input conditioning was not mutated",
       len(COND[0][1]["minimax_keyframes"]), 1)
 
@@ -139,8 +144,18 @@ ref = vid.H3ReferenceToVideoLongForm
 sch = ref.define_schema()
 names = [getattr(i, "id", getattr(i, "name", None)) for i in sch.inputs]
 check("context inputs exist", "context_images" in names and "context_frames" in names, True)
-check("and are APPENDED, so no saved slot moves",
-      names[-2:], ["context_images", "context_frames"])
+# The slot contract: every later addition goes on the END, so a saved graph's
+# links still land where they did. The three reference kinds added 2026-08-30
+# went after the context pair, which is why the pair is no longer last.
+check("nothing was inserted ahead of the context pair",
+      names[:12],
+      ["clip", "vae", "audio_vae", "prompt", "width", "height", "length",
+       "ref_image_size", "ref_images", "keyframe", "keyframe_time",
+       "present_keyframe"])
+check("the context pair kept its place",
+      names[12:14], ["context_images", "context_frames"])
+check("and the reference kinds were APPENDED",
+      names[-3:], ["ref_videos", "ref_video_audios", "ref_audios"])
 check("H3MotionContext is hidden from the menu",
       getattr(vid.H3MotionContext, "DEPRECATED", False), True)
 check("but still registered, so saved graphs load",
