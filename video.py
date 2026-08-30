@@ -328,6 +328,147 @@ class H3KeyframeTimeline:
         return (out,)
 
 
+class H3MotionContext:
+    """Put the previous chunk's tail on THIS chunk's timeline, as conditioning.
+
+    THE MECHANISM, AND WHY IT IS NOT THE PIN
+      The rows the model sees are identical between a reference and a keyframe;
+      only their TIME COORDINATES differ, and the coordinates are what say
+      "separate clip" versus "this clip, earlier". A reference sits in its own
+      cursor region and reads as another clip. The same rows placed on the
+      target's own timeline read as this clip's past.
+
+      So this is NOT H3 Latent Pin and does not replace it. The pin writes the
+      previous tail INTO the target and masks it to 0 -- those frames become part
+      of the target, are reproduced rather than generated, and whatever the model
+      adds to the rest is inherited by the next chunk. This adds cond ROWS. The
+      target still generates all of its own frames; the tail is guidance.
+
+      Measured engine-side (085, three arms, three links):
+
+          A  keyframe only        background drift by link 3   -0.0183
+          B  + motion context 22                               +0.0007
+
+      Context frames HOLD brightness where a keyframe alone drifts.
+
+    ENCODE MODE, WHICH IS THE PART THAT WAS WRONG FOR NINE WAVES
+      The tail is encoded in ONE VAE call with the batch axis as time, and each
+      resulting latent STEP is placed at its own pixel offset. Encoding frame by
+      frame gives stills with no temporal structure, and slicing a previous run's
+      latent is worse still: FRAME_PER_TOKEN is (1,4,4,4,4), so coverage is
+      POSITIONAL, and steps taken from the end of a 52-step latent carry the
+      structure of positions 45..51 while landing at 0..K-1. Measured in 087 as
+      HEAD 12.5 against 3.8 and joins 7-21 against 3-5.
+
+    ONLY 39, 22, 5 AND 1 ARE DISTINCT
+      VIDEO_RUN_GRID. Every context test before 2026-08-09 used 12, which snaps
+      DOWN to 5 and then covers the FIRST five of the twelve, so the pinned run
+      ended seven frames early. That systematic offset was in 085 and 087 and
+      explains their widened joins better than anything claimed at the time.
+
+    RUN IT AFTER THE REFERENCE NODE. Anchors and motion context coexist -- an
+    earlier claim that they did not was wrong -- but `cond_video_latents` has to
+    stay in packed-sequence order, so this appends rather than replaces.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "conditioning": ("CONDITIONING", {"tooltip": "From the H3 reference "
+                             "node. Run this AFTER it."}),
+            "vae": ("VAE", {"tooltip": "The video VAE."}),
+            "length": ("INT", {"default": 141, "min": 5, "max": 3600, "step": 17,
+                       "tooltip": "This chunk's run. Wire H3 Chunk Open's "
+                                  "`length`."}),
+        }, "optional": {
+            "context_images": ("IMAGE", {"tooltip": "The PREVIOUS chunk's tail, "
+                               "in pixels — H3 Chunk Open's `context`. Unwired, "
+                               "or on the first chunk, this passes the "
+                               "conditioning through untouched."}),
+            "context_frames": (["22", "39", "5", "1", "0"], {"default": "22",
+                               "tooltip": "Frames of tail to place. Only these "
+                                          "encode to distinct VAE runs. 22 is "
+                                          "what the validated long-form recipe "
+                                          "used; 39 is the smallest run on both "
+                                          "the video and audio clocks."}),
+        }}
+
+    RETURN_TYPES = ("CONDITIONING", "INT", "STRING")
+    RETURN_NAMES = ("conditioning", "context_frames", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    EXPERIMENTAL = True
+    DESCRIPTION = ("Place the previous chunk's tail as cond rows on this chunk's "
+                   "own timeline, so the model reads it as this clip earlier "
+                   "rather than as another clip.")
+
+    def go(self, conditioning, vae, length, context_images=None,
+           context_frames="22"):
+        from .chunkplan import snap_context
+        from .timing import FRAME_PER_TOKEN, snap_run, video_latent_t
+
+        n = snap_context(int(context_frames))
+        if context_images is None or n <= 0:
+            why = ("no context wired — first chunk, or nothing to carry"
+                   if context_images is None else "context_frames 0")
+            return (conditioning, 0, f"H3 MOTION CONTEXT: passthrough ({why})")
+
+        patch_packed_layout()
+        frame_count = snap_run(length)
+        have = int(context_images.shape[0])
+        if have < n:
+            n = snap_context(have)
+            if n <= 0:
+                return (conditioning, 0,
+                        f"H3 MOTION CONTEXT: only {have} frame(s) available, "
+                        f"fewer than the smallest distinct run")
+        if n >= frame_count:
+            raise ValueError(
+                f"H3 Motion Context: {n} context frames do not fit inside a "
+                f"{frame_count}-frame chunk. Shorten the context or lengthen "
+                f"the chunk.")
+
+        # ONE call, batch axis as time. The tail arrives at the render's own size
+        # because it is the previous chunk's decode, so there is nothing to
+        # resize -- and resizing here would be a second resample of content that
+        # has already been through the VAE once.
+        tail = context_images[-n:]
+        z = vae.encode(tail)
+        steps = int(z.shape[2]) if z.dim() == 5 else 1
+
+        # step k covers FRAME_PER_TOKEN[k % 5] pixel frames, so its own offset is
+        # the sum of everything before it -- 0, 1, 5, 9, 13, 17, 18, ...
+        offsets, at = [], 0
+        for k in range(steps):
+            offsets.append(at)
+            at += FRAME_PER_TOKEN[k % 5]
+
+        rows = [{"resolved_frame_index": min(o, frame_count - 1),
+                 "latent": z[:, :, k:k + 1], "latent_t": 1}
+                for k, o in enumerate(offsets)]
+
+        out = []
+        for cond, meta in conditioning:
+            meta = meta.copy()
+            refs = meta.get("minimax_refs") or []
+            ref_lats = [r["latent"] for r in refs if "latent" in r]
+            kfs = list(meta.get("minimax_keyframes") or [])
+            kfs.extend(rows)                      # coexist, never replace
+            meta["minimax_keyframes"] = kfs
+            meta["frame_count"] = frame_count
+            meta["cond_video_latents"] = ref_lats + [k["latent"] for k in kfs]
+            out.append([cond, meta])
+
+        info = (f"H3 MOTION CONTEXT: {n} frame(s) placed as {steps} cond row(s) "
+                f"at pixel offsets {offsets[:6]}{'...' if steps > 6 else ''}\n"
+                f"  on THIS chunk's timeline, so they read as its past rather "
+                f"than as another clip\n"
+                f"  {len(rows)} row(s) added to {len(kfs) - len(rows)} existing "
+                f"keyframe(s), alongside {len(ref_lats)} reference(s)")
+        logging.info("H3MotionContext: %d frames -> %d rows", n, steps)
+        return {"ui": {"h3char": [info]}, "result": (out, n, info)}
+
+
 class H3ReferenceToVideoLongForm(io.ComfyNode):
     """ref2va conditioning with a keyframe that is ALSO SHOWN to the language model.
 
@@ -516,9 +657,11 @@ class H3ReferenceToVideoLongForm(io.ComfyNode):
 
 NODE_CLASS_MAPPINGS = {
     "H3KeyframeTimeline": H3KeyframeTimeline,
+    "H3MotionContext": H3MotionContext,
     "H3ReferenceToVideoLongForm": H3ReferenceToVideoLongForm,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3KeyframeTimeline": "H3 Keyframe Timeline",
+    "H3MotionContext": "H3 Motion Context (this clip, earlier)",
     "H3ReferenceToVideoLongForm": "H3 Reference to Video (long-form)",
 }
