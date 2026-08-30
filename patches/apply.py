@@ -26,7 +26,8 @@ DEFAULT_COMFY = pathlib.Path("/mnt/c/SD/ComfyUI/Comfy-03-15-2026/ComfyUI")
 # patch file -> the repo it applies inside, relative to the ComfyUI root
 PATCHES = {
     "h3-modality-dim-context-windows.patch": ".",
-    "h3-window-absolute-positions.patch": ".",
+    # h3-window-absolute-positions.patch is SUPERSEDED -- the offset lives in
+    # video.py now. Applying it would double the offset.
     "depthanythingv2-contiguous.patch": "custom_nodes/ComfyUI-DepthAnythingV2",
 }
 

@@ -97,6 +97,36 @@ def encode_ref_audio(audio_vae, audio):
 
 _PATCHED = False
 
+# WINDOW POSITION HAND-OFF
+#
+# `PackedLayout` is built inside `extra_conds`, which receives the payload but
+# passes no window position to the constructor. Rather than patch that call site
+# in core -- which a ComfyUI update silently reverts -- `windowing.py` leaves the
+# value here and the next layout build takes it.
+#
+# CONSUME-ONCE. The hook sets this per window immediately before the model call;
+# __init__ reads it and resets to 0, so a build nobody set it for behaves as an
+# unwindowed render and a stale value cannot survive into a later one.
+#
+# THE THING THAT MUST NOT CHANGE: the signature stays a 5-tuple. `_forward`
+# reuses the prebuilt layout only when the signature matches what IT computes,
+# and appending window_start to it makes every offset window miss, rebuild
+# without the offset (already consumed), and silently revert to origin
+# positioning -- correct on window 0, wrong on all the rest. Two windows cannot
+# share a layout anyway: each carries its own payload copy.
+_WINDOW_START = [0]
+
+
+def set_window_start(frames):
+    """Position of the window about to be built, in PIXEL frames."""
+    _WINDOW_START[0] = int(frames or 0)
+
+
+def take_window_start():
+    v = _WINDOW_START[0]
+    _WINDOW_START[0] = 0
+    return v
+
 
 def patch_packed_layout():
     """Replace PackedLayout so refs + keyframes can share one packed sequence.
@@ -139,6 +169,31 @@ def patch_packed_layout():
     class LongFormLayout(Base):
         _h3_longform_patched = True
 
+        def _offset_target(self, window_start):
+            """Move the TARGET rows to where this window sits on the clip.
+
+            `cursor` is text_len plus the reference spans and does not depend on
+            the window, so every window is otherwise told it begins at the clip
+            origin and renders the opening of the shot; the overlaps then
+            crossfade between two openings, which is the flicker. Measured
+            2026-08-28: 167 layout builds, one cursor.
+
+            Shifting column 0 of the finished position table is exactly what a
+            later cursor produces -- `_video_grid` writes the time coordinate
+            there and nothing else reads it -- and needs no change to core,
+            which is the point.
+
+            References and keyframes are deliberately NOT moved: they sit
+            relative to the clip origin either way. Only the target belongs at
+            the window's own place on the timeline.
+            """
+            if not window_start:
+                return
+            off = FRAME_RESCALE * float(window_start)
+            for a, b, kind in self.segments:
+                if kind in ("audio", "video"):
+                    self.position_ids[a:b, 0] += off
+
         def __init__(self, text_len, latent_t, latent_h, latent_w, audio_t,
                      keyframes=None, refs=None, frame_count=None,
                      window_start=0):
@@ -151,12 +206,17 @@ def patch_packed_layout():
             base_kw = {k: v for k, v in base_kw.items() if k in _BASE_PARAMS}
             if "frame_count" in _BASE_PARAMS:
                 base_kw["frame_count"] = frame_count
-            # `window_start` arrives when the context-window patch is applied
-            # (patches/h3-window-absolute-positions.patch). Same rule as
-            # frame_count: forward it only if this build takes it, so the pack
-            # runs against a patched and an unpatched core alike.
-            if "window_start" in _BASE_PARAMS:
-                base_kw["window_start"] = window_start
+            # NOT forwarded to the base: the offset is applied to the finished
+            # position table instead (see _offset_target), which is what lets
+            # this work on stock ComfyUI with no core edit at all.
+            if window_start == 0:
+                window_start = take_window_start()
+            # debug, not info: one per layout build is ~120 lines on a 3-window
+            # run. Kept because "did the window position reach the build that is
+            # actually used" is the question this whole conversion turns on.
+            logging.debug("H3 layout build: latent_t %s | window_start %s | "
+                          "keyframes %s | refs %s", latent_t, window_start,
+                          len(keyframes or ()), len(refs or ()))
 
             # Core no longer passes frame_count either, so a keyframe pinned to
             # the LAST frame would silently never resolve. Derive it: a legal run
@@ -167,6 +227,7 @@ def patch_packed_layout():
             if not keyframes:
                 super().__init__(text_len, latent_t, latent_h, latent_w, audio_t,
                                  **base_kw)
+                self._offset_target(window_start)
                 return
 
             frame, w_grid = _frame_grid(latent_h, latent_w)
@@ -286,19 +347,15 @@ def patch_packed_layout():
                     row += n
                     cursor += max(float(rt), sum(_video_t_spans(vt)))
 
-            # the target sits at its real place on the clip when windowed; the
-            # REFERENCE and KEYFRAME cursors above are untouched, because they
-            # are positioned relative to the clip origin either way
-            target_cursor = cursor + FRAME_RESCALE * float(window_start)
             segments.append(("audio", audio_t * 2))
-            pos.append(_audio_grid(target_cursor, audio_t, *target_audio_w))
+            pos.append(_audio_grid(cursor, audio_t, *target_audio_w))
             audio_pos.append(torch.arange(row, row + audio_t * 2))
             audio_update.append(torch.ones(audio_t * 2, dtype=torch.bool))
             row += audio_t * 2
 
             n_video = latent_t * frame_rows
             segments.append(("video", n_video))
-            pos.append(_video_grid(latent_t, frame, target_cursor))
+            pos.append(_video_grid(latent_t, frame, cursor))
             img_pos.append(torch.arange(row, row + n_video))
             img_update.append(torch.ones(n_video, dtype=torch.bool))
             row += n_video
@@ -309,19 +366,16 @@ def patch_packed_layout():
             self.img_update = torch.cat(img_update)
             self.audio_pos = torch.cat(audio_pos)
             self.audio_update = torch.cat(audio_update)
-            # window_start joins the signature when the core patch supplies it,
-            # so the rebuild check in _forward matches what core compares
-            # against. Two windows of the same SHAPE at different clip positions
-            # are different layouts, and sharing one is the bug the patch fixes.
-            self.signature = ((text_len, latent_t, latent_h, latent_w, audio_t,
-                               window_start) if "window_start" in _BASE_PARAMS
-                              else (text_len, latent_t, latent_h, latent_w,
-                                    audio_t))
+            self.signature = (text_len, latent_t, latent_h, latent_w, audio_t)
             seg, off = [], 0
             for kind, n in segments:
                 seg.append((off, off + n, kind))
                 off += n
             self.segments = seg
+            # LAST: it walks self.segments, so it cannot run before the segment
+            # table exists. It did once, on this branch only, and every windowed
+            # render with a keyframe raised AttributeError.
+            self._offset_target(window_start)
 
     M.PackedLayout = LongFormLayout
     _PATCHED = True

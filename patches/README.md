@@ -98,7 +98,35 @@ patch has to be mirrored there.
 
 ---
 
-## h3-window-absolute-positions.patch
+## h3-window-absolute-positions.patch — SUPERSEDED, do not apply
+
+The offset lives in the PACK now, in `video.py`'s `PackedLayout` subclass, which
+shifts column 0 of the finished position table. Both position grids are affine in
+the cursor --
+
+    _video_t_grid(n, origin) = origin + cumsum(spans)
+    _audio_grid(cursor, t)   = cursor + arange(t)
+
+-- so adding a constant afterwards is arithmetically identical to starting from a
+later cursor, and it needs no core edit at all. Verified 2026-08-30 on a stock
+`comfy/ldm/minimax/model.py`: three windows, 40 layout builds each, every one
+carrying its own offset.
+
+Two things that had to be right, both of which bit first:
+
+  THE SIGNATURE STAYS A 5-TUPLE. `_forward` reuses the prebuilt layout only when
+  the signature matches what it computes. Appending window_start makes every
+  offset window miss, rebuild without the offset, and revert to origin
+  positioning -- right on window 0, wrong on all the rest.
+
+  `H3EnableContextWindows` INSTALLS THE LAYOUT PATCH. It used to be installed
+  only by this pack's own conditioning nodes, so a graph built on core's
+  MiniMaxH3ReferenceToVideo never got it and every window stayed at the origin.
+
+The patch file is kept only for reference. Applying it now would double the
+offset.
+
+## the old patch, for reference
 
 **File:** `comfy/ldm/minimax/model.py` (ComfyUI core).
 **Symptom:** a context-windowed H3 render is clean through the first window and

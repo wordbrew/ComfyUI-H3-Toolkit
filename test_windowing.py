@@ -9,6 +9,7 @@ stride, and the frame grid.
     python3 test_windowing.py
 """
 
+import pathlib
 import sys
 import types
 
@@ -85,6 +86,25 @@ ok("102 divides by 3, so 141/39 is on both clocks",
 for wf, of in ((90, 39), (90, 22), (141, 39), (192, 39)):
     d = video_latent_t(wf) - video_latent_t(of)
     ok(f"{wf}/{of} latent stride is a multiple of 5", d % 5 == 0)
+
+# --- LongFormLayout's build order, and its signature ----------------------- #
+# Two bugs, both invisible offline because video.py imports comfy.
+#
+# `_offset_target` walks self.segments, so it cannot run before the segment
+# table is assigned. It did, on the keyframe branch only, and every windowed
+# render with a keyframe raised AttributeError.
+#
+# And the signature must stay a 5-TUPLE. `_forward` reuses the prebuilt layout
+# only when the signature matches what it computes; appending window_start makes
+# every offset window miss, rebuild without the offset (already consumed), and
+# silently revert to origin positioning -- right on window 0, wrong on the rest.
+src = (pathlib.Path(__file__).resolve().parent / "video.py").read_text(encoding="utf-8")
+ok("_offset_target runs after self.segments on the keyframe branch",
+   src.rindex("self._offset_target(") > src.index("self.segments = seg"))
+ok("both branches offset the target", src.count("self._offset_target(") >= 2)
+ok("the layout signature stays a 5-tuple",
+   "self.signature = (text_len, latent_t, latent_h, latent_w, audio_t)" in src
+   and "+ (int(window_start),)" not in src)
 
 if fails:
     print("FAIL")
