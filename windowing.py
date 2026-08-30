@@ -339,9 +339,12 @@ def patch_h3_context_windows():
             "  Now wire Context Windows (Manual) into the sampler, with dim = 2.\n"
             "\n"
             "  Bounds ATTENTION cost, not memory — the whole latent stays\n"
-            "  resident. UNPROVEN: whether keyframes and reference blocks, which\n"
-            "  carry absolute timeline positions, survive being windowed. Expect\n"
-            "  wrong output before a crash; check the seams.")
+            "  resident.\n"
+            "  REFERENCE blocks survive being windowed: proven 2026-08-29, they\n"
+            "  travel with each per-window conditioning and hold identity.\n"
+            "  KEYFRAMES are handled — dropped outside the window, and with\n"
+            "  absolute positions their indices are kept rather than rebased —\n"
+            "  but have never been run in a windowed render. Check the seams.")
 
     return False, (
         "H3 hooks installed, but THIS ComfyUI CANNOT USE THEM.\n"
@@ -625,10 +628,11 @@ class H3ContextWindows:
         # ran uniform, and on a mode that turned itself off when the node was
         # cached -- both invisible from the outside, both one line to catch.
         logging.info("H3 context windows: %s frames (%s latent), overlap %s (%s), "
-                     "stride %s | schedule %s | fuse %s | causal_fix %s | "
-                     "absolute positions %s | split conds %s",
+                     "stride %s | schedule %s | fuse %s | freenoise %s | "
+                     "causal_fix %s | absolute positions %s | split conds %s",
                      wf, w_lat, of, o_lat, wf - of, schedule, fuse_method,
-                     causal_window_fix, absolute, split_conds_to_windows)
+                     freenoise, causal_window_fix, absolute,
+                     split_conds_to_windows)
 
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
