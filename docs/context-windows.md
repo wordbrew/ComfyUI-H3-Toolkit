@@ -122,10 +122,47 @@ weighting fixes disagreement about content. That rules out every remaining
 window setting — `closed_loop` is for looping and the audio fuse ramp is audio.
 
 What is left attacks generation rather than combination: a reference image OF
-THE SET (references are the mechanism that holds a thing steady, and in these
-tests all three were the character, which is exactly why she was stable and the
-room was not), and a room description with countable features so there is
-something a window can get wrong. Untested.
+THE SET, and a room description with countable features so there is something a
+window can get wrong. BOTH TRIED, 2026-08-29, and the seams still shift.
+
+So the honest conclusion is that windowing cannot hold a background across a
+seam. The character holds because a reference is a strong, repeated anchor; a
+room described in words is not, however specifically it is described. For a shot
+where the set must not move, chunking's latent pin is the mechanism -- it copies
+the previous chunk's actual tail rather than averaging two guesses at it.
+
+## Two levers that turned out not to exist
+
+Checked 2026-08-29 before building either.
+
+**A separate fuse ramp for audio was already there and already correct.**
+`prepare_window` scales the overlap per modality:
+
+```python
+ratio = modality_total_frames / primary_total
+modality_overlap = max(round(primary_overlap * ratio), 0)
+```
+
+On a 192-frame run that is video 12-of-27 and audio 67-of-152 -- 0.44 in both.
+Audio is not inheriting the video's raw numbers, it gets a proportionally
+identical crossfade on its own clock. Asserting audio WANTS a different shape
+would be a knob built on a hunch, and the two fuse nulls above argue against
+ramp shape being the lever at all.
+
+**`closed_loop` only works with a schedule H3 cannot use.** One use in core:
+
+```python
+num_frames + pad + (0 if handler.closed_loop else -handler.context_overlap),
+```
+
+That is inside `create_windows_uniform_looped`, and every uniform schedule
+recomputes window positions from `ordered_halving(step)` -- the behaviour that
+makes windows move every step, which is unusable here. Exposing the widget would
+give a control that only functions in a mode that does not work.
+
+**Every window setting is now either exposed and tested, or established as wrong
+for this model.** Looping is still worth wanting, but not down this road: H3's
+own long-form path (in-place slices of one latent) is a different mechanism.
 
 ## What windowing still cannot do
 
