@@ -1,4 +1,12 @@
-"""H3MotionContext — the step offsets, the grid snap, and coexistence.
+"""Motion context — the step offsets, the grid snap, and where it has to live.
+
+The node it started as, H3MotionContext, is DEPRECATED: downstream of the
+reference node it cannot present the tail to the language model, and without
+that every chunk after the first rendered a reference image instead of the shot
+(2026-08-30). The working home is H3ReferenceToVideoLongForm's own
+`context_images` / `context_frames`, which run BEFORE clip.tokenize.
+
+What is still checked here is the arithmetic, which was correct and is shared:
 
 The three things that were wrong for nine waves engine-side, per the wave log:
 an off-grid context length that snapped DOWN and covered the wrong frames; a
@@ -49,10 +57,18 @@ class _IO:
         def __init__(self, **kw): self.__dict__.update(kw)
     class _In:
         def __init__(self, *a, **k): pass
+    class _Autogrow(_In):
+        @staticmethod
+        def Input(name, **k): return type("I", (), {"id": name})()
+        class TemplatePrefix:
+            def __init__(self, **k): pass
     Image = Audio = Latent = Conditioning = Model = Clip = Vae = _In
-    Int = Float = String = Boolean = Combo = AutogrowDynamic = _In
-    for _n in ("Input", "Output"):
-        setattr(_In, _n, staticmethod(lambda *a, **k: None))
+    Int = Float = String = Boolean = Combo = _In
+    Autogrow = _Autogrow
+    # the schema check needs the input's NAME back, not a placeholder
+    setattr(_In, "Input", staticmethod(
+        lambda name=None, **k: type("I", (), {"id": name})()))
+    setattr(_In, "Output", staticmethod(lambda *a, **k: None))
     NodeOutput = staticmethod(lambda *a, **k: a)
 _api = _mod("comfy_api"); _lat = _mod("comfy_api.latest", io=_IO()); _api.latest = _lat
 root = pathlib.Path("/home/cgree/projects/ComfyUI-H3-Toolkit")
@@ -117,6 +133,18 @@ try:
     check("context filling the chunk raises", "no error", "ValueError")
 except ValueError as e:
     check("context filling the chunk names the cause", "do not fit" in str(e), True)
+
+print("the working home — H3ReferenceToVideoLongForm, before tokenize")
+ref = vid.H3ReferenceToVideoLongForm
+sch = ref.define_schema()
+names = [getattr(i, "id", getattr(i, "name", None)) for i in sch.inputs]
+check("context inputs exist", "context_images" in names and "context_frames" in names, True)
+check("and are APPENDED, so no saved slot moves",
+      names[-2:], ["context_images", "context_frames"])
+check("H3MotionContext is hidden from the menu",
+      getattr(vid.H3MotionContext, "DEPRECATED", False), True)
+check("but still registered, so saved graphs load",
+      "H3MotionContext" in vid.NODE_CLASS_MAPPINGS, True)
 
 print()
 print("FAIL" if fails else "motion context: all checks pass")
