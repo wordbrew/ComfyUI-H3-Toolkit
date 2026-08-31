@@ -320,6 +320,14 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                 # shot -- there is nothing behind it, and across a cut there is
                 # nothing worth carrying.
                 "pin": pin_here,
+                # Does this chunk START a new shot? NOT the same question as
+                # `pin == 0`: a continuous take planned with context 0 also pins
+                # nothing, and there the previous tail is still worth handing on
+                # as motion context. Only across a CUT is carrying it actively
+                # wrong, and the runner used to do it regardless -- so a new shot
+                # opened on the frame it was meant to be cutting away from
+                # (measured 2026-08-31, workflow 17).
+                "cut": p == 0 and bool(chunks),
                 "shot": si if mode == "scene" else None,
                 "part": (p + 1, n_parts) if n_parts > 1 else None,
                 "both_clocks": on_both_clocks(run),

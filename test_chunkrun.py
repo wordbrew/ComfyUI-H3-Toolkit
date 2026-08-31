@@ -321,6 +321,35 @@ def test_pin_lines_up_with_the_source():
     check("no pin falls back to the plain tail", ctx.tag, "c0[51:90]")
 
 
+def test_a_cut_carries_nothing():
+    print("across a CUT the runner hands out no keyframe and no motion context")
+    # Four shots of one chunk each -- the shape workflow 17 renders.
+    p = {"chunks": chunkplan.plan(972, 243, "scene", cuts=[243, 486, 729],
+                                  context=39, grow_tail=True,
+                                  generated_audio=True)[0]}
+    c = p["chunks"]
+    check("every chunk after the first starts a shot",
+          [x["cut"] for x in c], [False, True, True, True])
+    check("and so pins nothing", [x["pin"] for x in c], [0, 0, 0, 0])
+
+    prev = Fake(243, "shot1")
+    out = chunkrun.slice_chunk(p, 1, None, prev_images=prev)
+    check("no keyframe across the cut", out[8], None)
+    check("no motion context either", out[9], None)
+    check("and the log says so", "CUT" in out[6], True)
+
+    # THE DISTINCTION THAT MATTERS. A continuous take planned with context 0
+    # also has pin 0 everywhere, and there the previous tail is the only carry
+    # there is -- gating on `pin == 0` would have silenced it too.
+    q = make_plan(400, chunk_frames=90, context=0)
+    check("a context-0 continuous take is not a cut",
+          [x["cut"] for x in q["chunks"][:3]], [False, False, False])
+    out = chunkrun.slice_chunk(q, 1, None, prev_images=Fake(90, "c0"),
+                               context_frames=39)
+    check("so it still carries its tail", out[9].tag, "c0[51:90]")
+    check("and its keyframe", out[8].tag, "c0[89:90]")
+
+
 def test_context_node():
     print("H3 Chunk Context overwrites the head and blanks the mask there")
 
@@ -544,7 +573,8 @@ def main():
     for fn in (test_v2v_slices, test_extra_optional, test_fresh_generation,
                test_context_clamped, test_body_capture, test_links_remapped,
                test_overlap_trimmed_at_the_join, test_context_overlap_plan,
-               test_pin_lines_up_with_the_source, test_context_node,
+               test_pin_lines_up_with_the_source, test_a_cut_carries_nothing,
+               test_context_node,
                test_lazy_images, test_latent_chaining,
                test_latent_context_node, test_audio_join,
                test_refuses_bad_wiring):
