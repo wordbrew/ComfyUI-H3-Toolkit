@@ -124,7 +124,24 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
 
     chunks = (plan or {}).get("chunks") or []
     kf = ctx = None
-    if prev_images is not None and int(prev_images.shape[0]) > 0:
+    i_cut = max(0, min(int(index), len(chunks) - 1)) if chunks else 0
+    cut_here = bool(chunks) and bool(chunks[i_cut].get("cut", False))
+
+    if prev_images is not None and int(prev_images.shape[0]) > 0 and not cut_here:
+        # A CUT CARRIES NOTHING. The latent pin already honoured it -- its
+        # `context_length` is wired from `pin`, which is 0 at a cut -- but the
+        # keyframe and motion-context outputs did not, and handed the previous
+        # shot's tail out anyway. The reference node then placed the OLD shot's
+        # tail as cond rows at offsets 0..38 of the NEW shot's timeline and
+        # presented its last frame to the language model as the next
+        # <Picture n>, so every chunk after the first was told to open on the
+        # shot it was supposed to be cutting away from -- with nothing holding
+        # it there, because pin was 0. Measured 2026-08-31 on workflow 17:
+        # flicker through the shots, and the cuts only resolving late.
+        #
+        # Gate on the plan's `cut`, never on `pin == 0`. A continuous take
+        # planned with context 0 pins nothing either, and there the tail is the
+        # only carry there is.
         kf = prev_images[-1:]
         k = max(1, min(int(context_frames), int(prev_images.shape[0])))
         ctx = prev_images[-k:]
@@ -158,9 +175,10 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
         i = max(0, min(int(index), max(0, len(chunks) - 1)))
         c = chunks[i] if chunks else {"start": 0, "end": 0, "run": 0,
                                       "both_clocks": True, "seed_mask": False}
+        carry = ("  <- keyframe + context carried" if kf is not None
+                 else ("  CUT — nothing carried" if c.get("cut") else ""))
         text = (f"chunk {i + 1} of {len(chunks) or 1}: generating {c['run']} frames"
-                f"{'' if c['both_clocks'] else '  OFF audio grid'}"
-                f"{'' if kf is None else '  <- keyframe + context carried'}")
+                f"{'' if c['both_clocks'] else '  OFF audio grid'}{carry}")
         return (None, None, source_audio, c["run"], i,
                 {"plan": plan, "index": i}, text, len(chunks) or 1, kf, ctx, None,
                 int(c.get("pin", 0)))
