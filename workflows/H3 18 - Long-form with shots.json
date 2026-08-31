@@ -1421,7 +1421,7 @@
         {
           "name": "context_images",
           "type": "IMAGE",
-          "link": 90
+          "link": null
         },
         {
           "name": "context_frames",
@@ -1458,7 +1458,7 @@
         "match",
         0,
         true,
-        "39"
+        "0"
       ],
       "widgets_values_named": {
         "prompt": "",
@@ -1816,7 +1816,7 @@
       "widgets_values": {
         "frame_rate": 24,
         "loop_count": 0,
-        "filename_prefix": "H3/chunked_longform",
+        "filename_prefix": "H3/shots_longform",
         "format": "video/h264-mp4",
         "pix_fmt": "yuv420p",
         "crf": 19,
@@ -2068,7 +2068,7 @@
       "widgets_values": [
         "[Shot 1] A scene in <Subject 2>: <Subject 1> on her back on the bed with <Subject 3> over her, lit by one low warm lamp. The camera setup for this part of the scene is named in the beat below.",
         "At 00:00.600 <Subject 1> (S1) says lightly, <d>[English] He texted me at two in the morning.</d> at 00:03.200 <Subject 3> (S2) asks, <d>[English] And you answered?</d> at 00:05.000 <Subject 1> (S1) replies, <d>[English] I let him wait until noon.</d> and at 00:08.400 <Subject 3> (S2) says, <d>[English] That is mean.</d> while the sea glitters past them on the left.\nAt 00:01.700 <Subject 1> (S1) says, <d>[English] It is called having a life.</d> at 00:04.000 <Subject 3> (S2) answers, <d>[English] You have checked your phone four times since the car.</d> and at 00:08.600 <Subject 1> (S1) says, <d>[English] Three.</d> as a gull crosses low behind them.\nAt 00:01.700 <Subject 3> (S2) asks, <d>[English] So what does he actually look like?</d> at 00:04.000 <Subject 1> (S1) says, <d>[English] Tall. Terrible at texting. Very good at everything else.</d> and at 00:08.300 <Subject 3> (S2) says, <d>[English] And there it is.</d> as they both laugh.\nAt 00:01.700 <Subject 1> (S1) says, <d>[English] Do not say one word when he calls.</d> and she keeps walking, still smiling, her pace unchanged.",
-        "Each setup is a deliberate, locked camera position, the lamp and the direction of the light stay the same throughout, and the sound carries continuously across the scene.",
+        "Each setup is a deliberate, locked camera position, the lamp and the direction of the light stay the same across the whole scene, and the sound carries continuously from one setup to the next.",
         0,
         6.4,
         2691,
@@ -2117,7 +2117,7 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
+        "LONG-FORM WITH SHOTS — 14's carry, plus cuts\n\n56 seconds, 3 shots, 6 chunks. This is workflow 14's configuration — the\nonly one that has ever produced a good take here — with a shot list on\ntop of it.\n\nWHAT CARRIES CONTINUITY: the LATENT PIN, and nothing else.\n\n  H3 Chunk Latent Context writes the previous chunk's tail into this\n  chunk's latent and sets those positions to denoise mask 0, re-applied\n  at every sampling step. Those frames come out IDENTICAL to the ones\n  before them. It is a hard anchor, and it is why 14 holds.\n\n  Its `context_length` is wired from Chunk Open's `pin`, which the\n  planner sets to 0 at a shot boundary. So the pin carries within a shot\n  and carries nothing across a cut, on its own, with no second setting.\n\nWHAT IS DELIBERATELY OFF: motion context and the keyframe.\n\n  The reference node's `context_images` is UNWIRED and `context_frames`\n  is 0. Motion context places the previous tail as CONDITIONING rows at\n  pixel offsets 0..N-1 — the same span the pin already fixes exactly —\n  so in a pinned chain it guides nothing the pin is not already holding.\n  It also presents the previous chunk's last frame to the language model\n  as another <Picture n>, which feeds generated output back into the\n  identity channel once per chunk. It has never improved a take here.\n\n  Turn it on only to test it, and only as the single change from this\n  file, or the result will not mean anything.\n\nKNOWN OPEN PROBLEM: contrast build. Skin gets darker and more contrasted\nas the take runs, one step per seam. The pin is the carrier — measured\n+12/+7/+5% per chunk with it and +5/-1% without. A CUT sets pin to 0 and\nbreaks the chain, which is the thing this workflow exists to test: does\nthe ramp reset at 447 and 894, or carry straight through them?"
       ],
       "widgets_values_named": {
         "text": "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
@@ -2424,9 +2424,7 @@
           "localized_name": "context",
           "name": "context",
           "type": "IMAGE",
-          "links": [
-            90
-          ]
+          "links": []
         },
         {
           "localized_name": "extra",
@@ -2542,105 +2540,6 @@
       "widgets_values_named": {}
     },
     {
-      "id": 42,
-      "type": "H3MotionContext",
-      "pos": [
-        1137.5954589852677,
-        -257.71473298945637
-      ],
-      "size": [
-        360,
-        190
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 4,
-      "inputs": [
-        {
-          "name": "conditioning",
-          "type": "CONDITIONING",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "type": "VAE",
-          "link": null
-        },
-        {
-          "name": "length",
-          "type": "INT",
-          "link": null
-        },
-        {
-          "name": "context_images",
-          "type": "IMAGE",
-          "link": null
-        },
-        {
-          "name": "context_frames",
-          "type": "COMBO",
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "name": "conditioning",
-          "type": "CONDITIONING",
-          "links": [],
-          "slot_index": 0
-        },
-        {
-          "name": "context_frames",
-          "type": "INT",
-          "links": [],
-          "slot_index": 1
-        },
-        {
-          "name": "info",
-          "type": "STRING",
-          "links": [
-            89
-          ],
-          "slot_index": 2
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "H3MotionContext"
-      },
-      "widgets_values": [
-        "22"
-      ],
-      "title": "SUPERSEDED — motion context moved into the reference node"
-    },
-    {
-      "id": 43,
-      "type": "PreviewAny",
-      "pos": [
-        1517.5954589852677,
-        -257.71473298945637
-      ],
-      "size": [
-        360,
-        170
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "source",
-          "type": "*",
-          "link": 89
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "Node name for S&R": "PreviewAny"
-      },
-      "widgets_values": [],
-      "title": "MOTION CONTEXT — rows placed"
-    },
-    {
       "id": 44,
       "type": "H3Shotlist",
       "pos": [
@@ -2691,7 +2590,7 @@
         "Node name for S&R": "H3Shotlist"
       },
       "widgets_values": [
-        "10.1 | wide from the foot of the bed, both of them in frame | the rhythm is steady\n10.1 | medium from her left side at hip height | the pace quickens\n10.1 | close on her face and shoulders, headboard behind | she is close\n10.1 | wide again from the foot of the bed | it holds, then slows",
+        "18.625 | wide from the foot of the bed, the whole bed in frame | steady rhythm\n18.625 | close on her face and shoulders, headboard behind her | she is close\n18.625 | low side angle from her left at mattress height | it holds, then slows",
         243,
         "39"
       ],
@@ -2801,8 +2700,8 @@
         "Node name for S&R": "H3Dialogue"
       },
       "widgets_values": [
-        "S1 | moans | Oh god, yes.\nS1 | says | Just like that.\n\nS1 | says | Don't stop.\nS1 | moans | Harder.\n\nS1 | moans | I'm close.\nS1 | says | Please.\n\nS1 | says | Cum in me.",
-        "a wide from the foot of the bed with both of them in frame, his hips working in a steady rhythm and the bed moving under them\na medium from her left side at hip height, the pace quickening and her hands gripping the sheets\na close on her face and shoulders with the headboard behind her, her back arching and her head tipping back\na low wide from the corner of the room with the whole bed in frame, the pace holding and then slowing",
+        "S1 | moans | Oh god, yes.\nS1 | says | Just like that.\n\nS1 | says | Don't stop.\nS1 | moans | Harder.\n\nS1 | moans | Right there.\nS1 | says | Please.\n\nS1 | moans | Fuck.\nS1 | says | Don't you dare stop.\n\nS1 | moans | I'm close.\nS1 | says | Please, please.\n\nS1 | says | Cum in me.",
+        "the camera holds a wide from the foot of the bed with the whole bed in frame, his hips working in a steady rhythm and the bed moving under them\nthe camera stays on the same wide from the foot of the bed, the pace quickening and her hands gripping the sheets\nthe camera holds a close on her face and shoulders with the headboard behind her, her eyes closing and her mouth opening\nthe camera stays on the same close on her face, her head tipping back and her breathing breaking up\nthe camera holds a low side angle from her left at mattress height, her back arching and her knees drawing up\nthe camera stays on the same low side angle from her left, the pace holding and then slowing as they stay pressed together",
         4.3,
         0.4,
         0.6,
@@ -2888,53 +2787,7 @@
         "text": ""
       },
       "widgets_values": [
-        "SEPARATE SHOTS — 4 x 10s, cut between\n\nThe shot list drives total_frames and cut_frames. Each row is\nSECONDS | framing | action. Ten seconds becomes 243 frames because\n240 is not a legal run (17n+5), and it says so in its info.\n\nEVERY ROW MUST BE A DIFFERENT SETUP. A cut between two identical\nframings is a jump cut, not an edit, and that is the one thing\nthis node cannot check for you. The rows here change angle and\ndistance deliberately.\n\nA chunk that STARTS a shot carries pin 0 — no inherited prefix, no\nmotion context, a clean break. So the contrast carry measured at\n+12/+7/+5% per chunk resets at every cut and never accumulates.\n\nThat is the trade: cuts you have to actually mean, in exchange for\nno drift and no seam to hide."
-      ]
-    },
-    {
-      "id": 50,
-      "type": "Note",
-      "pos": [
-        -507.1260824721178,
-        -103.8946475967117
-      ],
-      "size": [
-        430,
-        200
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "color": "#432",
-      "bgcolor": "#653",
-      "properties": {
-        "text": ""
-      },
-      "widgets_values": [
-        "chunk_mode IS `scene` HERE\n\n`scene` normally finds cuts by differencing a SOURCE clip, which\ngenerating from nothing cannot do. cut_frames is how a T2V take\ngets shot boundaries at all.\n\nFour shots of one chunk each means four clauses. A shot LONGER\nthan chunk_frames splits into several chunks and needs a clause\neach — the shot list's info output tells you how many."
-      ]
-    },
-    {
-      "id": 51,
-      "type": "Note",
-      "pos": [
-        466.6552755950978,
-        751.6850351234194
-      ],
-      "size": [
-        430,
-        240
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "color": "#354",
-      "bgcolor": "#335",
-      "properties": {
-        "text": ""
-      },
-      "widgets_values": [
-        "DIALOGUE — lines in, timed beats out\n\nSPEAKER | verb | text, one per line. A BLANK LINE forces a break to\nthe next chunk; otherwise lines fill each chunk in order.\n\nIt will never place a line inside the pin. The first 22 frames of a\nchunk are reproduced from the previous one, so speech scheduled there\nis simply never said — a failure that stays invisible until a render\nfinishes.\n\n`pacing: spread` lays a chunk's lines across its whole window instead\nof crowding them into the first two seconds. Read the LINT: it reports\nsilence across a seam, which is a floor set by the pin and can only be\nplaced, never removed."
+        "THE SHOT LIST DRIVES THE PLAN\n\nEach row is SECONDS | framing | action. The node emits total_frames and\ncut_frames, both wired into H3 Chunk Plan, whose chunk_mode is `scene`.\n\n18.625s = 447 frames, chosen rather than rounded to:\n  - 447 is a legal video run (17*26+5)\n  - 447 divides by 3, so it lands on the 40Hz audio clock too\n  - at chunk_frames 243 and context 39 it splits into exactly two full\n    243-frame chunks, so no chunk is a short tail\n\nThat gives 6 chunks: two per shot. Chunks 1, 3 and 5 START a shot and\ncarry nothing; 2, 4 and 6 continue one and carry a 39-frame pin. Both\npaths are exercised in one render, which four shots of one chunk each\nwould not do — there, every chunk is a cut and nothing ever carries.\n\nEVERY ROW MUST BE A DIFFERENT SETUP. A cut between two similar framings\nreads as a jump cut, not an edit, and the node cannot check that for you.\n\nThe per-chunk clause comes from H3 Dialogue's `actions`, one line per\nchunk, each naming its own framing. The shot list's own `beats` output\ncannot be used for that — it emits two lines per chunk (a # comment and\nthe action) and `actions` takes one."
       ]
     }
   ],
@@ -3306,22 +3159,6 @@
       9,
       10,
       "INT"
-    ],
-    [
-      89,
-      42,
-      2,
-      43,
-      0,
-      "STRING"
-    ],
-    [
-      90,
-      32,
-      9,
-      26,
-      15,
-      "IMAGE"
     ],
     [
       91,

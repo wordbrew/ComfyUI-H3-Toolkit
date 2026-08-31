@@ -42,7 +42,7 @@
           ]
         }
       ],
-      "title": "decoded frames \u2014 the NEXT chunk's keyframe",
+      "title": "decoded frames — the NEXT chunk's keyframe",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -465,7 +465,7 @@
           ]
         }
       ],
-      "title": "SEAM CHECK \u2014 look here first",
+      "title": "SEAM CHECK — look here first",
       "properties": {
         "Node name for S&R": "H3SeamCheck"
       },
@@ -508,7 +508,7 @@
           "links": null
         }
       ],
-      "title": "CLOSE \u2014 what gets cloned",
+      "title": "CLOSE — what gets cloned",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -671,7 +671,7 @@
       ],
       "flags": {},
       "order": 22,
-      "mode": 4,
+      "mode": 0,
       "inputs": [
         {
           "localized_name": "latent",
@@ -734,7 +734,7 @@
           ]
         }
       ],
-      "title": "3b. LATENT PIN \u2014 BYPASSED (motion context carries instead)",
+      "title": "3b. LATENT PIN — BYPASSED (motion context carries instead)",
       "properties": {
         "Node name for S&R": "H3ChunkLatentContext"
       },
@@ -842,7 +842,7 @@
           "links": null
         }
       ],
-      "title": "SEAM STRIPS \u2014 the red line is the cut",
+      "title": "SEAM STRIPS — the red line is the cut",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -1458,7 +1458,7 @@
         "match",
         0,
         true,
-        "22"
+        "39"
       ],
       "widgets_values_named": {
         "prompt": "",
@@ -2066,19 +2066,19 @@
         "Node name for S&R": "H3LongFormLinks"
       },
       "widgets_values": [
-        "[Shot 1] A continuous Steadicam take from ahead of <Subject 1> and <Subject 3> at chest height, the camera retreating along <Subject 2> at exactly their walking pace so they stay in a medium two-shot, the weathered boards running away beneath them and the sea opening out on the left. They walk unhurried in bright late-afternoon sun, <Subject 1> gesturing loosely with one hand as she talks, both of them glancing at each other and back down the boardwalk.",
+        "[Shot 1] A single unbroken handheld take in <Subject 2>, from the foot of the bed a little above mattress height, holding <Subject 1> and <Subject 3> together in a medium two-shot as she lies on her back with him over her. The camera breathes with them and closes distance slowly across the take.",
         "At 00:00.600 <Subject 1> (S1) says lightly, <d>[English] He texted me at two in the morning.</d> at 00:03.200 <Subject 3> (S2) asks, <d>[English] And you answered?</d> at 00:05.000 <Subject 1> (S1) replies, <d>[English] I let him wait until noon.</d> and at 00:08.400 <Subject 3> (S2) says, <d>[English] That is mean.</d> while the sea glitters past them on the left.\nAt 00:01.700 <Subject 1> (S1) says, <d>[English] It is called having a life.</d> at 00:04.000 <Subject 3> (S2) answers, <d>[English] You have checked your phone four times since the car.</d> and at 00:08.600 <Subject 1> (S1) says, <d>[English] Three.</d> as a gull crosses low behind them.\nAt 00:01.700 <Subject 3> (S2) asks, <d>[English] So what does he actually look like?</d> at 00:04.000 <Subject 1> (S1) says, <d>[English] Tall. Terrible at texting. Very good at everything else.</d> and at 00:08.300 <Subject 3> (S2) says, <d>[English] And there it is.</d> as they both laugh.\nAt 00:01.700 <Subject 1> (S1) says, <d>[English] Do not say one word when he calls.</d> and she keeps walking, still smiling, her pace unchanged.",
-        "The camera holds the same framing and retreats at their pace, and the take runs unbroken from the first frame to the last.",
+        "The camera stays handheld at the foot of the bed and closes distance gradually while holding both of them in frame, the lamp stays where it is, and the take runs unbroken from the first frame to the last.",
         0,
         6.4,
         2691,
         "fixed",
-        "<Subject 1> is the woman in <Picture 1>, <Picture 2> and <Picture 3>. She is wearing a bikini, sunglasses pushed up into her hair, and a thin gold chain.\n<Subject 2> is the setting: a weathered timber boardwalk above an open beach, low dune grass and a railing along the left, the sea beyond it, bright late-afternoon sun and a clear sky.\n<Subject 3> is her friend, a woman of a similar age with sun-bleached hair tied back, in a bikini top and an open linen shirt, walking at <Subject 1>'s right shoulder and held in frame beside her.",
-        "<Subject 1> (appears in [Shot 1]): fully_preserved - preserve her facial identity, hair, eye colour, build and swimwear as shown in <Picture 1>, <Picture 2> and <Picture 3>, while allowing a natural walking gait, gesture and changing expression.\n<Subject 2> (appears in [Shot 1]): partially_preserved - keep the boards, the railing, the dune grass, the sea and the light direction consistent while the boardwalk passes the camera.\n<Subject 3> (appears in [Shot 1]): partially_preserved - keep her hair, build, swimwear and position at <Subject 1>'s right shoulder consistent; she stays beside her in frame.",
+        "<Subject 1> is the woman in <Picture 1>, <Picture 2> and <Picture 3>. She has an alt, punk look — dark hair, pale skin, tattoos and piercings — and she is nude.\n<Subject 2> is the setting: a dim bedroom at night, an unmade bed with rumpled pale sheets, one low warm lamp to the side and the rest of the room in shadow.\n<Subject 3> is her partner, a man of a similar age with dark hair and a lean build, nude, over her on the bed.",
+        "<Subject 1> (appears in [Shot 1]): fully_preserved - preserve her facial identity, hair, tattoos, piercings and build exactly as shown in <Picture 1>, <Picture 2> and <Picture 3>, while her expression, breathing and the movement of her body change freely.\n<Subject 2> (appears in [Shot 1]): partially_preserved - keep the bed, the sheets, the lamp and the direction of the light consistent.\n<Subject 3> (appears in [Shot 1]): partially_preserved - keep his hair, build and position over her consistent.",
         0,
         "reference generation",
         192,
-        "An open beach boardwalk: surf breaking steadily some way off, two sets of bare feet on warm timber boards, gulls, a light wind across the microphone, and faint voices further down the boardwalk.",
+        "A quiet bedroom at night: the bed frame and the mattress moving under them, sheets shifting, breathing close to the microphone, and no other sound in the room.",
         ""
       ],
       "widgets_values_named": {
@@ -2117,10 +2117,10 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe."
+        "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
       ],
       "widgets_values_named": {
-        "text": "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe."
+        "text": "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
       },
       "color": "#432",
       "bgcolor": "#653"
@@ -2268,7 +2268,7 @@
           ]
         }
       ],
-      "title": "1. schedule \u2014 no source wired, so chunks are just lengths",
+      "title": "1. schedule — no source wired, so chunks are just lengths",
       "properties": {
         "Node name for S&R": "H3ChunkPlan"
       },
@@ -2281,7 +2281,7 @@
         640,
         1120,
         0,
-        "22",
+        "39",
         ""
       ],
       "widgets_values_named": {
@@ -2452,12 +2452,12 @@
           ]
         }
       ],
-      "title": "2. one chunk \u2014 no source wired",
+      "title": "2. one chunk — no source wired",
       "properties": {
         "Node name for S&R": "H3ChunkOpen"
       },
       "widgets_values": [
-        22
+        39
       ],
       "widgets_values_named": {
         "context_frames": 39
@@ -2493,7 +2493,7 @@
           "links": null
         }
       ],
-      "title": "PROMPT LINT \u2014 clause count checked here",
+      "title": "PROMPT LINT — clause count checked here",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -2532,7 +2532,7 @@
           "links": null
         }
       ],
-      "title": "CARRY \u2014 frames copied per chunk",
+      "title": "CARRY — frames copied per chunk",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -2610,7 +2610,7 @@
       "widgets_values": [
         "22"
       ],
-      "title": "SUPERSEDED \u2014 motion context moved into the reference node"
+      "title": "SUPERSEDED — motion context moved into the reference node"
     },
     {
       "id": 43,
@@ -2638,7 +2638,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "MOTION CONTEXT \u2014 rows placed"
+      "title": "MOTION CONTEXT — rows placed"
     },
     {
       "id": 44,
@@ -2691,7 +2691,7 @@
         243,
         "0"
       ],
-      "title": "NOT USED \u2014 a continuous take has no cuts"
+      "title": "NOT USED — a continuous take has no cuts"
     },
     {
       "id": 45,
@@ -2719,7 +2719,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "SHOT LIST \u2014 what each shot rounded to"
+      "title": "SHOT LIST — what each shot rounded to"
     },
     {
       "id": 46,
@@ -2797,8 +2797,8 @@
         "Node name for S&R": "H3Dialogue"
       },
       "widgets_values": [
-        "S1 | moans | Oh god, yes.\nS1 | says | Just like that.\n\nS1 | says | Don't stop.\nS1 | moans | Harder.\n\nS1 | moans | I'm close.\nS1 | says | Please.\n\nS1 | says | Cum in me.",
-        "his hips work in a steady rhythm and the bed moves under them\nthe pace quickens and her hands grip the sheets\nher back arches and the rhythm stays fast\nthe pace holds and then slows",
+        "S1 | moans | Oh god, yes.\nS1 | says | Just like that.\n\nS1 | says | Don't stop.\nS1 | moans | Harder.\n\nS1 | moans | Right there.\nS1 | says | Please.\n\nS1 | moans | I'm close.\nS1 | says | Don't you dare stop.\n\nS1 | says | Cum in me.",
+        "his hips work in a steady rhythm and the bed moves under them\nthe pace quickens and her hands grip the sheets\nher back arches and her knees draw up\nthe rhythm stays fast and her head tips back\nthe pace holds, then slows, and they stay pressed together",
         4.3,
         0.4,
         0.6,
@@ -2806,7 +2806,7 @@
         3.0,
         ""
       ],
-      "title": "3a. DIALOGUE \u2014 lines in, timed beats out"
+      "title": "3a. DIALOGUE — lines in, timed beats out"
     },
     {
       "id": 47,
@@ -2834,7 +2834,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "DIALOGUE \u2014 when each line is heard"
+      "title": "DIALOGUE — when each line is heard"
     },
     {
       "id": 48,
@@ -2862,7 +2862,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "DIALOGUE LINT \u2014 fits, gaps, empties"
+      "title": "DIALOGUE LINT — fits, gaps, empties"
     },
     {
       "id": 49,
@@ -2884,7 +2884,7 @@
         "text": ""
       },
       "widgets_values": [
-        "ONE CONTINUOUS TAKE \u2014 40s, no cuts\n\nThe shot list is MUTED. It exists to create cuts, and a take that\nnever cuts has nothing for it to do. total_frames is typed on the\nplan instead (972 = 40.5s) and cut_frames is left empty.\n\nchunk_mode is `fixed`: with no cuts there is nothing to cut on,\nand `scene` would fall back to fixed anyway.\n\nEvery chunk after the first carries 22 frames of the previous one\nas motion context, so the seams read as continuous rather than as\nedits.\n\nTHE COST, measured 2026-08-29: local contrast on skin climbs about\n+12%, +7%, +5% per chunk. Fewer and longer chunks reduce it. Cuts\nstop it outright, which is what the other workflow is for."
+        "ONE CONTINUOUS TAKE — 40s, no cuts\n\nThe shot list is MUTED. It exists to create cuts, and a take that\nnever cuts has nothing for it to do. total_frames is typed on the\nplan instead (972 = 40.5s) and cut_frames is left empty.\n\nchunk_mode is `fixed`: with no cuts there is nothing to cut on,\nand `scene` would fall back to fixed anyway.\n\nEvery chunk after the first carries 22 frames of the previous one\nas motion context, so the seams read as continuous rather than as\nedits.\n\nTHE COST, measured 2026-08-29: local contrast on skin climbs about\n+12%, +7%, +5% per chunk. Fewer and longer chunks reduce it. Cuts\nstop it outright, which is what the other workflow is for."
       ]
     },
     {
@@ -2907,7 +2907,7 @@
         "text": ""
       },
       "widgets_values": [
-        "WHY total_frames IS TYPED HERE\n\n972 frames at 24fps is 40.5 seconds. The TOTAL does not have to be\na legal run \u2014 only the chunks do, and the planner handles that.\n\nchunk_frames 243 with context 22 gives a stride of 221, so 972\nframes comes out as 4 chunks and your beats need 4 clauses.\nChange either number and the lint on the links node tells you the\nnew count before you spend a render on it."
+        "WHY total_frames IS TYPED HERE\n\n972 frames at 24fps is 40.5 seconds. The TOTAL does not have to be\na legal run — only the chunks do, and the planner handles that.\n\nchunk_frames 243 with context 22 gives a stride of 221, so 972\nframes comes out as 4 chunks and your beats need 4 clauses.\nChange either number and the lint on the links node tells you the\nnew count before you spend a render on it."
       ]
     },
     {
@@ -2930,7 +2930,7 @@
         "text": ""
       },
       "widgets_values": [
-        "DIALOGUE \u2014 lines in, timed beats out\n\nSPEAKER | verb | text, one per line. A BLANK LINE forces a break to\nthe next chunk; otherwise lines fill each chunk in order.\n\nIt will never place a line inside the pin. The first 22 frames of a\nchunk are reproduced from the previous one, so speech scheduled there\nis simply never said \u2014 a failure that stays invisible until a render\nfinishes.\n\n`pacing: spread` lays a chunk's lines across its whole window instead\nof crowding them into the first two seconds. Read the LINT: it reports\nsilence across a seam, which is a floor set by the pin and can only be\nplaced, never removed."
+        "DIALOGUE — lines in, timed beats out\n\nSPEAKER | verb | text, one per line. A BLANK LINE forces a break to\nthe next chunk; otherwise lines fill each chunk in order.\n\nIt will never place a line inside the pin. The first 22 frames of a\nchunk are reproduced from the previous one, so speech scheduled there\nis simply never said — a failure that stays invisible until a render\nfinishes.\n\n`pacing: spread` lays a chunk's lines across its whole window instead\nof crowding them into the first two seconds. Read the LINT: it reports\nsilence across a seam, which is a floor set by the pin and can only be\nplaced, never removed."
       ]
     }
   ],
@@ -3391,7 +3391,7 @@
     },
     {
       "id": 2,
-      "title": "THE BODY \u2014 cloned once per chunk",
+      "title": "THE BODY — cloned once per chunk",
       "bounding": [
         880,
         -40,
