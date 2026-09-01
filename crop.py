@@ -23,16 +23,35 @@ from .cropplan import plan
 CATEGORY = "MiniMax H3/mask"
 
 # H3's own canvas ceiling: adapt_canvas() scales everything down to
-# MAX_PIXELS = 768*1344, so ~1.03 MP is the largest area the model works at.
-# `upscale_megapixels` used to allow 4.0 -- nearly 4x past that, at roughly 225x
-# the attention cost of a 0.26 MP crop, reachable by dragging a slider with no
-# warning at all. Imported from core so a change upstream follows; the literal
-# is the v0.33.2 value.
+# MAX_PIXELS = 768*1344, so ~1.03 MP is the largest area the model GENERATES at.
+# Imported from core so a change upstream follows; the literal is the v0.33.2
+# value. Still reported in the node's info line, because knowing you are above
+# it is worth something even when going above it is the point.
 try:
     from comfy_extras.nodes_minimax_h3 import MAX_PIXELS as _H3_MAX_PIXELS
 except Exception:  # pragma: no cover - core moved or renamed
     _H3_MAX_PIXELS = 768 * 1344
 H3_CANVAS_MP = round(_H3_MAX_PIXELS / 1e6, 2)
+
+# THE SLIDER CEILING IS NOT THE CANVAS, on purpose (raised back to 4.0 on
+# 2026-08-31 at CJ's call).
+#
+# This was clamped to H3_CANVAS_MP because a crop scaled past the canvas is
+# asking the model to COMPOSE structure at a token count it never trained on,
+# which is where diffusion models grow a second mouth -- and 4.0 MP is roughly
+# 225x the attention cost of a 0.26 MP crop, reachable by dragging a slider.
+#
+# That reasoning holds for generation and NOT for a refine. Below denoise ~0.5
+# the structure is already in the latent and the model only does local work, so
+# what degrades above the canvas is RoPE positions extrapolating rather than
+# composition failing -- and that degrades softly instead of duplicating. Every
+# hires-fix and tiled upscaler in the field runs on exactly this. So the ceiling
+# is a real cost to be aware of, not a correctness boundary, and clamping it
+# stopped the one experiment that could find where the real limit sits.
+#
+# It is still 225x at the top end. That has not changed and is why the info line
+# says so.
+MAX_UPSCALE_MP = 4.0
 
 
 def _bboxes(mask, threshold=0.5):
@@ -111,7 +130,7 @@ class H3SubjectCrop:
             "divisible_by": ("INT", {"default": 32, "min": 8, "max": 128, "step": 8,
                              "tooltip": "H3 needs 32. Leave it."}),
             "upscale_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0,
-                                   "max": H3_CANVAS_MP,
+                                   "max": MAX_UPSCALE_MP,
                                    "step": 0.05,
                                    "tooltip": "0 = off, and the crop stays pixel-exact. "
                                               "Above 0, the cut region is scaled UP to "
@@ -249,9 +268,12 @@ class H3SubjectCrop:
         text += (f"\n  render {w}x{h} = {_mp:.2f} MP, {_cells:,} tokens per latent "
                  f"frame")
         if _mp > H3_CANVAS_MP:
-            text += (f"\n  WARNING: past H3's own canvas cap of {H3_CANVAS_MP:.2f} MP "
-                     f"(MAX_PIXELS 768x1344) — out of the trained range, and the cost "
-                     f"is quadratic")
+            text += (f"\n  ABOVE H3's canvas of {H3_CANVAS_MP:.2f} MP (MAX_PIXELS "
+                     f"768x1344) by {_mp / H3_CANVAS_MP:.2f}x — outside the trained "
+                     f"range, and attention cost is quadratic. Fine for a REFINE at "
+                     f"low denoise, where the structure is already in the latent and "
+                     f"only RoPE positions extrapolate. Generating from noise up here "
+                     f"is what duplicates features.")
 
         crop_data = {"boxes": boxes, "image_width": iw, "image_height": ih,
                      "frames": n, "render_width": int(w), "render_height": int(h)}

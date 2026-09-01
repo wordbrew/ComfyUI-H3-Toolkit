@@ -21,6 +21,8 @@ from .chunkrun import (NODE_CLASS_MAPPINGS as _RUN_CLASSES,
                       NODE_DISPLAY_NAME_MAPPINGS as _RUN_NAMES)
 from .crop import (NODE_CLASS_MAPPINGS as _CROP_CLASSES,
                    NODE_DISPLAY_NAME_MAPPINGS as _CROP_NAMES)
+from .encode import (NODE_CLASS_MAPPINGS as _ENC_CLASSES,
+                     NODE_DISPLAY_NAME_MAPPINGS as _ENC_NAMES)
 from .longform import (NODE_CLASS_MAPPINGS as _LF_CLASSES,
                        NODE_DISPLAY_NAME_MAPPINGS as _LF_NAMES)
 from .mask import (NODE_CLASS_MAPPINGS as _MASK_CLASSES,
@@ -46,6 +48,7 @@ _PARTS = (
     (_BUDGET_CLASSES, _BUDGET_NAMES),
     (_CHAR_CLASSES, _CHAR_NAMES),
     (_CROP_CLASSES, _CROP_NAMES),
+    (_ENC_CLASSES, _ENC_NAMES),
     (_RUN_CLASSES, _RUN_NAMES),
     (_LF_CLASSES, _LF_NAMES),
     (_MASK_CLASSES, _MASK_NAMES),
