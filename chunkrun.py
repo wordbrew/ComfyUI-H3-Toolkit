@@ -255,10 +255,11 @@ class H3ChunkOpen:
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT",
+                    "MASK")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
                     "flow", "info", "chunk_count", "keyframe", "context",
-                    "extra", "pin", "prev_latent")
+                    "extra", "pin", "prev_latent", "prev_mask")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
@@ -273,9 +274,10 @@ class H3ChunkOpen:
         n = len(((plan or {}).get("chunks")) or [])
         note = (f"\n  wire your chain from here into H3 Chunk Close; it repeats "
                 f"this for all {n} chunks.") if n > 1 else ""
-        # prev_latent is None on Open by definition: it stands in for chunk 0,
-        # and chunk 0 has nothing before it. Close fills it in for the clones.
-        return out[:6] + (out[6] + note,) + out[7:] + (None,)
+        # prev_latent and prev_mask are None on Open by definition: it stands in
+        # for chunk 0, and chunk 0 has nothing before it. Close fills them in
+        # for the clones.
+        return out[:6] + (out[6] + note,) + out[7:] + (None, None)
 
 
 class H3ChunkClose:
@@ -312,6 +314,17 @@ class H3ChunkClose:
                                       "LATENT space — each chunk's latent reaches "
                                       "the next one's `prev_latent` with no "
                                       "decode/re-encode round trip."}),
+                # APPENDED. Also link-only.
+                "mask": ("MASK", {"lazy": True,
+                         "tooltip": "Optional, and only for its LINK: this "
+                                    "chunk's finished mask. Wire it when the "
+                                    "SUBJECT IS TRACKED INSIDE THE LOOP, so the "
+                                    "mask reaches the next chunk's `prev_mask` "
+                                    "and can seed the tracker. Re-detecting "
+                                    "independently per chunk moves the mask "
+                                    "boundary at every seam, which frees "
+                                    "appearance and shifts the character's "
+                                    "features."}),
             },
             "hidden": {"dynprompt": "DYNPROMPT", "unique_id": "UNIQUE_ID"},
         }
@@ -326,7 +339,7 @@ class H3ChunkClose:
                    "chunk in the plan, then join the results.")
 
     def check_lazy_status(self, flow, images=None, audio=None, latent=None,
-                          dynprompt=None, unique_id=None):
+                          mask=None, dynprompt=None, unique_id=None):
         """Which inputs actually have to be computed.
 
         Returning [] on the expansion path is the whole point: the body is about
@@ -387,6 +400,7 @@ class H3ChunkClose:
         # the sampler, if the graph wants to chain in latent space
         audio_link = close_inputs.get("audio")
         latent_link = close_inputs.get("latent")
+        mask_link = close_inputs.get("mask")
         if is_link(latent_link) and latent_link[0] not in \
                 {n for n in (upstream_of(dynprompt, unique_id, OPEN_CLASS)[0])}:
             latent_link = None
@@ -398,7 +412,7 @@ class H3ChunkClose:
                          f"your chain into `images`.")
 
         graph = GraphBuilder()
-        outs, lat_outs, aud_outs = [], [], []
+        outs, lat_outs, aud_outs, mask_outs = [], [], [], []
         for ci, c in enumerate(chunks):
             # feed the slicer from whatever fed Open -- the video loader is a
             # shared external node, referenced not cloned
@@ -423,6 +437,11 @@ class H3ChunkClose:
                 # re-encoded between links. The re-encode is what climbed
                 # contrast down a chain.
                 src_kw["prev_latent"] = lat_outs[-1]
+            if mask_outs:
+                # the previous chunk's finished mask, for seeding a tracker
+                # that runs INSIDE the loop. Slice picks the single frame this
+                # chunk opens on.
+                src_kw["prev_mask"] = mask_outs[-1]
             src_kw["context_frames"] = int(open_widgets.get("context_frames", 39))
             src = graph.node("H3ChunkSlice", id=f"slice{ci}", **src_kw)
             mapping = {nid: graph.node(body[nid]["class_type"], id=f"c{ci}_{nid}")
@@ -467,6 +486,10 @@ class H3ChunkClose:
                 aud_outs.append(a)
             if is_link(latent_link) and latent_link[0] in mapping:
                 lat_outs.append(mapping[latent_link[0]].out(latent_link[1]))
+            # NOT trimmed by `skip`, unlike the picture and the audio: this is
+            # a seed, not output, and Slice indexes it from the chunk's START.
+            if is_link(mask_link) and mask_link[0] in mapping:
+                mask_outs.append(mapping[mask_link[0]].out(mask_link[1]))
 
         joined = outs[0]
         for nxt in outs[1:]:
@@ -551,15 +574,21 @@ class H3ChunkSlice:
             "extra_images": ("IMAGE",),
             "context_frames": ("INT", {"default": 39}),
             "prev_latent": ("LATENT",),
+            # APPENDED. The previous chunk's finished mask, for seeding a
+            # per-chunk tracker. Re-detecting a subject independently in every
+            # chunk moves the mask boundary at each seam, which frees appearance
+            # and shifts the character's features -- recorded 2026-08-25.
+            "prev_mask": ("MASK",),
         }}
 
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
-                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT")
+                    "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT",
+                    "MASK")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
                     "flow", "info", "chunk_count", "keyframe", "context",
-                    "extra", "pin", "prev_latent")
+                    "extra", "pin", "prev_latent", "prev_mask")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DEPRECATED = True          # keeps it out of the node menu
@@ -567,10 +596,30 @@ class H3ChunkSlice:
 
     def go(self, plan, chunk_index, source_images=None, mask=None,
            source_audio=None, prev_images=None, extra_images=None,
-           context_frames=39, prev_latent=None):
+           context_frames=39, prev_latent=None, prev_mask=None):
+        chunks = (plan or {}).get("chunks") or []
+        i = max(0, min(int(chunk_index), len(chunks) - 1)) if chunks else 0
+        seed = None
+        # `seed_mask` is the plan's own field for this, and it predates the
+        # feature: False on the first chunk of every shot. Across a scene change
+        # the previous shot's mask is the wrong shape in the wrong place, and
+        # seeding with it is worse than re-detecting. Falls back to `cut` for a
+        # plan built before the flag existed.
+        seedable = (chunks[i].get("seed_mask", not chunks[i].get("cut"))
+                    if chunks else False)
+        if prev_mask is not None and chunks and i > 0 and seedable:
+            # ONE frame, and it has to be the one this chunk OPENS on. Chunks
+            # overlap, so the previous chunk's LAST frame is not this chunk's
+            # first -- it is `start_i - start_{i-1}` frames into the previous
+            # run. Seeding with the wrong frame moves the mask boundary in
+            # exactly the way seeding exists to prevent. The mask accumulated by
+            # Close is untrimmed, so it is indexed from the previous START.
+            off = int(chunks[i]["start"]) - int(chunks[i - 1]["start"])
+            off = max(0, min(off, int(prev_mask.shape[0]) - 1))
+            seed = prev_mask[off:off + 1]
         return slice_chunk(plan, chunk_index, source_images, mask, source_audio,
                            prev_images, context_frames,
-                           extra_images) + (prev_latent,)
+                           extra_images) + (prev_latent, seed)
 
 
 class H3ChunkContext:
