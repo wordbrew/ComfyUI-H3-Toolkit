@@ -70,11 +70,13 @@ CONTRACT = {
     "H3ChunkOpen": (
         "chunkrun", None,
         ["images", "mask", "audio", "length", "chunk_index", "flow", "info",
-         "chunk_count", "keyframe", "context", "extra", "pin", "prev_latent"]),
+         "chunk_count", "keyframe", "context", "extra", "pin", "prev_latent",
+         "prev_mask"]),
     "H3ChunkSlice": (
         "chunkrun", None,
         ["images", "mask", "audio", "length", "chunk_index", "flow", "info",
-         "chunk_count", "keyframe", "context", "extra", "pin", "prev_latent"]),
+         "chunk_count", "keyframe", "context", "extra", "pin", "prev_latent",
+         "prev_mask"]),
     "H3ChunkClose": ("chunkrun", None, ["images", "info", "audio"]),
     "H3ChunkContext": (
         "chunkrun",
