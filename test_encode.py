@@ -141,7 +141,14 @@ req = H3EncodeAV.INPUT_TYPES()["required"]
 opt = H3EncodeAV.INPUT_TYPES()["optional"]
 check("required order", list(req), ["images", "vae", "megapixels", "divisible_by"])
 check("optional order", list(opt),
-      ["audio_vae", "source_audio", "pin_audio", "width", "height"])
+      ["audio_vae", "source_audio", "pin_audio", "width", "height",
+       "temporal_size", "temporal_overlap"])
+ok("temporal tiling was APPENDED, so no saved graph shifts",
+   list(opt)[-2:] == ["temporal_size", "temporal_overlap"])
+ok("tiling defaults OFF — one call, exactly the old behaviour",
+   opt["temporal_size"][1]["default"] == 0)
+ok("overlap default matches core's VAEEncodeTiled",
+   opt["temporal_overlap"][1]["default"] == 8)
 ok("pin_audio defaults ON — a video pass must not resample dialogue",
    opt["pin_audio"][1]["default"] is True)
 ok("megapixels reaches 4.0, matching crop.py's raised cap",

@@ -103,6 +103,30 @@ class H3EncodeAV:
                                  "centre-cropped to their aspect rather than "
                                  "stretched."}),
             "height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32}),
+            "temporal_size": ("INT", {"default": 0, "min": 0, "max": 4096,
+                              "step": 4,
+                              "tooltip": "0 = OFF, one encode call for the whole "
+                                         "clip — today's behaviour, and correct "
+                                         "until it does not fit.\n\n"
+                                         "Above 0, encode this many frames at a "
+                                         "time. The VAE is convolutional, so its "
+                                         "cost was always LINEAR in length; what "
+                                         "is also linear is peak memory in one "
+                                         "call, and past the card you spill to "
+                                         "system RAM and move tensors over PCIe "
+                                         "every layer. That is the apparent "
+                                         "hang. Tiling caps peak memory at one "
+                                         "tile so the linear time is actually "
+                                         "realised.\n\n"
+                                         "64 is core's own default. Lower it if "
+                                         "a tile still will not fit; a long clip "
+                                         "at 2x wants this on."}),
+            "temporal_overlap": ("INT", {"default": 8, "min": 4, "max": 4096,
+                                 "step": 4,
+                                 "tooltip": "Frames of overlap between tiles, "
+                                            "blended so the join does not show. "
+                                            "Only used when temporal_size is "
+                                            "above 0."}),
         }}
 
     RETURN_TYPES = ("LATENT", "INT", "INT", "INT", "STRING")
@@ -114,7 +138,8 @@ class H3EncodeAV:
                    "length into the H3 conditioning node so they cannot drift.")
 
     def go(self, images, vae, megapixels, divisible_by, audio_vae=None,
-           source_audio=None, pin_audio=True, width=0, height=0):
+           source_audio=None, pin_audio=True, width=0, height=0,
+           temporal_size=0, temporal_overlap=8):
         n = int(images.shape[0])
         # Trim DOWN, never up: the VAE takes 17n+5 and there is nothing to
         # invent at the tail. Reported rather than silent — losing frames off
@@ -149,7 +174,32 @@ class H3EncodeAV:
                                      mode="bicubic", align_corners=False,
                                      antialias=True).clamp(0, 1).movedim(1, -1)
 
-        z = vae.encode(src)                                   # [1, 24, T, h, w]
+        # TILED OR NOT, and why the choice exists.
+        #
+        # ComfyUI's plain VAE.encode has a batching loop, and for a VIDEO vae it
+        # is a no-op: the input is reshaped to [1, C, T, H, W], so shape[0] is 1
+        # and the loop runs once with every frame. Nothing chunks a long clip.
+        # Fine at 640x1120; at 2x on a 30-second take it exceeds the card, spills
+        # to system RAM, and crawls -- which reads as a hang rather than an OOM.
+        #
+        # encode_tiled caps peak memory at one tile. Spatial tiling is left at
+        # the full frame (tile_x/tile_y from the render size) because the seam
+        # risk is not worth taking while the temporal axis is the one that
+        # actually grows; `tile_t` alone is what a long clip needs.
+        tiled = int(temporal_size) > 0 and hasattr(vae, "encode_tiled")
+        if int(temporal_size) > 0 and not tiled:
+            logging.warning("H3EncodeAV: this VAE has no encode_tiled; "
+                            "temporal_size ignored and the clip goes through "
+                            "in one call.")
+        if tiled:
+            # spatial tiles are the WHOLE frame, so the tiling loop runs once
+            # across x and y and no spatial seam is possible; only tile_t does
+            # any dividing, which is the axis that actually grows
+            ov = max(4, min(int(temporal_overlap), int(temporal_size) // 2))
+            z = vae.encode_tiled(src, tile_x=tw, tile_y=th, overlap=0,
+                                 tile_t=int(temporal_size), overlap_t=ov)
+        else:
+            z = vae.encode(src)                               # [1, 24, T, h, w]
         at = audio_len(run)
 
         # The audio half always exists — the model expects a pair — and is
@@ -187,7 +237,16 @@ class H3EncodeAV:
                 f"frames, audio {at} steps\n"
                 f"  audio: {'PINNED from source' if pinned else 'silence, will be generated'}")
         if (sw, sh) != (tw, th):
-            info += f"\n  resized from {sw}x{th if sh == th else sh}"
+            info += f"\n  resized from {sw}x{sh}"
+        if tiled:
+            tiles = max(1, -(-run // max(1, int(temporal_size) - ov)))
+            info += (f"\n  encoded in ~{tiles} temporal tile(s) of "
+                     f"{int(temporal_size)} frames, {ov} overlap — peak memory "
+                     f"is one tile, not the clip")
+        elif run > 200 and mp > 1.03:
+            info += ("\n  ONE encode call for the whole clip. Past the card this "
+                     "spills to system RAM and crawls rather than erroring; set "
+                     "temporal_size (64 is core's default) if this is slow.")
         if dropped:
             info += (f"\n  TRIMMED {dropped} frame(s) off the end: {n} is not "
                      f"17n+5, nearest legal run below is {run}")
