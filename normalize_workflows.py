@@ -94,10 +94,26 @@ def widget_types(spec):
     for name, decl in list(spec.get("required", {}).items()) + \
             list(spec.get("optional", {}).items()):
         t = decl[0] if isinstance(decl, (tuple, list)) and decl else decl
+        opts = decl[1] if (isinstance(decl, (tuple, list)) and len(decl) > 1
+                           and isinstance(decl[1], dict)) else {}
         if isinstance(t, (list, tuple)):
             out.append((name, "COMBO"))            # a choice list -> a string
         elif t in ("INT", "FLOAT", "STRING", "BOOLEAN"):
             out.append((name, t))
+            # THE SEED TRAP. The frontend inserts a control_after_generate
+            # widget straight after a seed -- "fixed" / "increment" /
+            # "randomize" -- and it is NOT in INPUT_TYPES. So the saved array
+            # is one longer than the declaration and everything past the seed
+            # sits one slot later than it looks. Core marks these explicitly;
+            # the frontend also adds one for any INT simply NAMED seed, which
+            # is how our own H3LongFormLinks gets one without asking.
+            #
+            # Without this the check reports a surplus string on every node
+            # with a seed, which is exactly the crying-wolf that made the
+            # positional check useless.
+            if t == "INT" and (opts.get("control_after_generate")
+                               or name in ("seed", "noise_seed")):
+                out.append((name + "_control", "COMBO"))
     return out
 
 

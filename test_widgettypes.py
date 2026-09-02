@@ -125,6 +125,32 @@ ok("a node with no widgets at all is skipped",
 # ORDER ambiguity is exactly what sank the positional check. A converted widget
 # can leave its value out, shifting everything after it — the types still fit,
 # so this must stay quiet.
+# THE SEED TRAP, which the checker hit on its own first outing. The frontend
+# inserts a control_after_generate widget after a seed and it is not in
+# INPUT_TYPES, so the saved array is one longer than the declaration. Reporting
+# that would mean a false alarm on every node carrying a seed.
+print("a seed's control_after_generate widget is expected, not surplus")
+SEEDED = {"required": {
+    "seed": ("INT", {"default": 0}),
+    "text": ("STRING", {}),
+}}
+names = [n for n, _ in widget_types(SEEDED)]
+check("a synthetic control slot follows the seed", names,
+      ["seed", "seed_control", "text"])
+ok("an array WITH the control value is quiet",
+   problems(node([2691, "fixed", "hello"]), SEEDED)[0] == [])
+ok("and one without it is still quiet",
+   problems(node([2691, "hello"]), SEEDED)[0] == [])
+EXPLICIT = {"required": {
+    "noise": ("INT", {"control_after_generate": True}),
+    "text": ("STRING", {}),
+}}
+ok("core's explicit control_after_generate is honoured too",
+   problems(node([7, "randomize", "hi"]), EXPLICIT)[0] == [])
+ok("an INT not named seed gets no free slot",
+   problems(node([7, "randomize", "hi"]),
+            {"required": {"count": ("INT", {}), "text": ("STRING", {})}})[0] != [])
+
 print("a shifted array whose types still fit stays quiet")
 shifted = ["video editing", 5, "sty", "shots", "", 0, "", 1.0]
 ok("one widget converted to an input", problems(node(shifted), SPEC)[0] == [])
