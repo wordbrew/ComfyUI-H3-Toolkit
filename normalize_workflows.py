@@ -71,14 +71,21 @@ def pack_classes():
         spec.loader.exec_module(pk)
     except Exception:
         pass                      # some nodes need ComfyUI; the rest still load
+    # DERIVED FROM THE DIRECTORY, not a list kept by hand. The hand-kept list
+    # went stale the moment encode.py was added on 2026-09-01: H3EncodeAV was
+    # simply never checked, and the tool reported a clean bill for graphs
+    # containing it. A checker that silently skips what it does not know about
+    # is worse than no checker, because the clean report is believed.
     out = {}
-    for name in ("audio", "budget", "character", "chunkrun", "crop", "longform",
-                 "mask", "prompt_lint", "prompt_links", "prompt_rewriter",
-                 "prompt_scene", "video", "windowing"):
+    for path in sorted(root.glob("*.py")):
+        name = path.stem
+        if name.startswith(("test_", "_")) or name in (
+                "normalize_workflows", "validate_workflows", "setup"):
+            continue
         try:
             mod = importlib.import_module("h3pack_slots." + name)
         except Exception:
-            continue
+            continue                  # needs ComfyUI, or is not a node module
         out.update(getattr(mod, "NODE_CLASS_MAPPINGS", {}) or {})
     return out
 
@@ -194,7 +201,21 @@ def fix(path, classes, write):
         names = [i["name"] for i in saved]
         known = [x for x in names if x in decl]
         want = [x for x in decl if x in names]
-        if known == want:
+
+        # SOCKETS AND WIDGETS ARE COMPARED SEPARATELY, because the frontend
+        # itself writes sockets first and converted widgets after them --
+        # H3EncodeAV saves as (images, vae, audio_vae, source_audio, megapixels,
+        # ...) against a declaration that interleaves them. Comparing the merged
+        # list calls every such node broken, which is a graph ComfyUI wrote and
+        # loads back correctly. What actually has to hold is the relative order
+        # WITHIN each group; that still catches the August break, where a socket
+        # was appended past the widgets and its link was silently dropped.
+        wnames = {nm for nm, _ in widget_types(t)}
+        socket = [x for x in known if x not in wnames]
+        widget = [x for x in known if x in wnames]
+        want_socket = [x for x in want if x not in wnames]
+        want_widget = [x for x in want if x in wnames]
+        if socket == want_socket and widget == want_widget:
             continue
         notes.append(f"    {n['type']}#{n['id']}: {known} -> {want}")
         changed = True
