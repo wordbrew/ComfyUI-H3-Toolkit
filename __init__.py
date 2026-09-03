@@ -25,6 +25,8 @@ from .crop import (NODE_CLASS_MAPPINGS as _CROP_CLASSES,
                    NODE_DISPLAY_NAME_MAPPINGS as _CROP_NAMES)
 from .encode import (NODE_CLASS_MAPPINGS as _ENC_CLASSES,
                      NODE_DISPLAY_NAME_MAPPINGS as _ENC_NAMES)
+from .h3script import (NODE_CLASS_MAPPINGS as _SCRIPT_CLASSES,
+                       NODE_DISPLAY_NAME_MAPPINGS as _SCRIPT_NAMES)
 from .longform import (NODE_CLASS_MAPPINGS as _LF_CLASSES,
                        NODE_DISPLAY_NAME_MAPPINGS as _LF_NAMES)
 from .mask import (NODE_CLASS_MAPPINGS as _MASK_CLASSES,
@@ -53,6 +55,7 @@ _PARTS = (
     (_ENC_CLASSES, _ENC_NAMES),
     (_CL_CLASSES, _CL_NAMES),
     (_RUN_CLASSES, _RUN_NAMES),
+    (_SCRIPT_CLASSES, _SCRIPT_NAMES),
     (_LF_CLASSES, _LF_NAMES),
     (_MASK_CLASSES, _MASK_NAMES),
     (_LINT_CLASSES, _LINT_NAMES),
