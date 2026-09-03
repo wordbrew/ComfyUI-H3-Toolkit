@@ -100,14 +100,36 @@ ok("pictures listed", "<Picture 1>, <Picture 2> and <Picture 3>"
    in out["subject_defs"])
 ok("voice cited", "<Audio 1>" in out["subject_defs"])
 
-# --- THE bug this compiler exists to prevent -------------------------------- #
-print("fully_preserved never binds preservation to the PICTURES")
+# --- retention is about LIKENESS ------------------------------------------- #
+# It scopes what stays the same about a subject between shots. Pose and motion
+# are directed in the shot, via `note` and `do`. An earlier version wrote pose
+# instructions into this block to work around a static take; that conflated two
+# fields and encoded a guess as a rule -- the take that DID render motion used
+# the plain form, citing its pictures.
+print("fully_preserved states likeness, and cites the pictures")
 ret = out["retention"]
-ok("it says identity, not appearance-as-shown",
-   "governs WHO they are, not what they are doing" in ret)
-ok("it does not say 'as shown in'", "as shown in" not in ret)
-ok("and it hands pose to the action",
-   "pose, movement and expression come from the action" in ret)
+ok("the marker is present", "<Subject 1>: fully_preserved -" in ret)
+ok("it names what is preserved", "facial identity, hair, eye colour" in ret)
+ok("and cites the pictures", "as shown in <Picture 1>" in ret)
+ok("no pose or motion direction leaks into it",
+   not any(w in ret.lower() for w in ("pose", "movement come", "what they are "
+                                      "doing")))
+
+print("preserve / allow scope the likeness, and detail replaces the clause")
+scoped = hs.emit(hs.parse(
+    "@a = character A\n@a.pictures = 2\n"
+    "@a.retention = fully_preserved\n"
+    "@a.preserve = her face and the tattoo on her left arm\n"
+    "@a.allow = a natural gait and changing expression\n"
+    "shot | @a walks\n"))["retention"]
+ok("preserve is used", "her face and the tattoo on her left arm" in scoped)
+ok("allow is used", "while allowing a natural gait" in scoped)
+custom = hs.emit(hs.parse(
+    "@a = character A\n@a.retention = fully_preserved\n"
+    "@a.retention_detail = exactly as written here\n"
+    "shot | @a\n"))["retention"]
+check("detail replaces the whole clause", custom,
+      "<Subject 1>: fully_preserved - exactly as written here")
 
 # --- dialogue hand-off ------------------------------------------------------ #
 print("dialogue is emitted in H3 Dialogue's OWN input format, not timed here")
