@@ -39,8 +39,16 @@ GRAMMAR
     @name  = character <StoreName>      a subject whose anchors are in the store
     @name  = setting. <description>     the setting
     @name.retention = fully_preserved | partially_preserved | free
+    @name.preserve  = facial identity, hair, eye colour and build
+    @name.allow     = natural movement and changing expression
+    @name.retention_detail = <replaces the whole clause>
     @name.pictures  = 3
     @name.audio     = 1
+
+  RETENTION IS ABOUT LIKENESS, and only that. `preserve` and `allow` scope what
+  stays the same about a subject between shots. Pose, motion and performance go
+  in the shot -- `note` and `do` -- not here. Conflating the two makes the field
+  stop meaning what H3's format says it means.
 
     task       = reference generation | video editing
     soundscape = ...
@@ -106,6 +114,12 @@ def parse(text):
                             entry[attr] = int(rest)
                         except ValueError:
                             raise _err(lineno, f"{attr} takes a number", line)
+                    elif attr in ("preserve", "allow", "retention_detail"):
+                        # `preserve` lists what stays the same, `allow` what may
+                        # vary -- both LIKENESS scoping. `retention_detail`
+                        # replaces the whole clause when the default wording is
+                        # not what a shot needs.
+                        entry[attr] = rest
                     else:
                         raise _err(lineno, f"unknown attribute '{attr}'", line)
                     continue
@@ -239,20 +253,37 @@ def emit(doc):
             desc = f"{tok} is the setting: {_sub(c['description'], idx)}"
         else:
             desc = f"{tok} is {_sub(c['description'], idx)}"
+        if not desc.rstrip().endswith((".", "!", "?")):
+            desc += "."
         defs.append(desc)
 
+        # RETENTION IS ABOUT LIKENESS. It scopes what stays the same about a
+        # subject between shots; it is not where pose or motion is directed.
+        # Those belong in the shot description, which is where `note` and `do`
+        # already put them. An earlier version of this wrote pose instructions
+        # into the retention block to stop a take coming out static; that
+        # conflated two fields and encoded a guess as a rule. The take that
+        # worked used the plain form below, citing its pictures.
         r = c.get("retention", "partially_preserved")
-        if r == "fully_preserved":
-            # NEVER bind preservation to the pictures. Saying "preserve her as
-            # shown" makes the still's POSE part of what is preserved, and the
-            # take comes out static. Measured 2026-09-02.
-            note = ("their identity stays theirs throughout. This governs WHO "
-                    "they are, not what they are doing: pose, movement and "
-                    "expression come from the action described in the shot.")
+        detail = (c.get("retention_detail") or "").strip()
+        if detail:
+            note = _sub(detail, idx)
+        elif r == "fully_preserved":
+            # no possessive prepended: the author's own text supplies one
+            # ("her face"), and adding "their" in front produced "preserve
+            # their her face"
+            what = c.get("preserve") or ("facial identity, hair, eye colour "
+                                         "and build")
+            note = f"preserve {what}"
+            if got["pictures"]:
+                note += f" as shown in {_pictures(got['pictures'])}"
+            allow = (c.get("allow") or "").strip()
+            note += f", while allowing {allow}." if allow else "."
         elif r == "free":
             note = "no constraint."
         else:
-            note = "keep them consistent from shot to shot."
+            what = c.get("preserve") or "their appearance"
+            note = f"keep {what} consistent from shot to shot."
         rets.append(f"{tok}: {r} - {note}")
 
     body = []
