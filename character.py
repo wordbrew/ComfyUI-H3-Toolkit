@@ -177,9 +177,20 @@ class H3Character:
         subj = f"<Subject {subject_index}>"
         desc = (card.get("description") or f"the person in {pic_list}").strip()
 
-        lines = [f"{subj} is {desc}."]
+        # FOLD the pictures into the subject definition; never as their own
+        # sentence. docs/prompting-ref2va.md: "<Picture N> standalone ONLY when
+        # the image anchors a specific shot frame (first/last/keyframe);
+        # otherwise fold it into a <Subject N> definition." The template stub is
+        # one sentence: "<Subject 1> is [description; from <Picture 1>]."
+        #
+        # Emitting "<Subject 1>'s appearance is given by <Picture 1>." as a
+        # standalone sentence therefore told the model those anchors WERE frame
+        # anchors, and it obliged -- a reference showing up as the opening frame
+        # (WF 22, 2026-09-02).
+        first = f"{subj} is {desc.rstrip('.')}"
         if pics:
-            lines.append(f"{subj}'s appearance is given by {pic_list}.")
+            first += f", from {pic_list}"
+        lines = [first + "."]
         if voice is not None:
             lines.append(f"<Audio {audio_index}> is the voice for {subj} (S{subject_index}).")
         subject_def = "\n".join(lines)
