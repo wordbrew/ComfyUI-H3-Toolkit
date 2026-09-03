@@ -46,6 +46,8 @@ SCRIPT = """
 @ada  = character Ada
 @ada.pictures = 3
 @ada.audio = 1
+# pictures/audio are declared here only because these tests must not depend on
+# what happens to be in the character store; a real script omits them
 @man  = a man in his thirties, dark hair
 @man.retention = partially_preserved
 @room = setting. a bedroom in warm low light
@@ -213,3 +215,25 @@ if fails:
         print("  " + f)
     sys.exit(1)
 print("h3 script: all checks pass")
+
+# --- the store supplies what you would otherwise re-type -------------------- #
+# A character saved with H3 Character already has its anchors, voice and
+# description on disk. Making the author restate the anchor count is the kind
+# of bookkeeping this node exists to remove, so parse() reads the store. It has
+# to degrade silently when there is no store at all, which is the case here and
+# in any test run outside ComfyUI.
+print("the character store supplies pictures, voice and description")
+n, v, desc, ret = hs.store_card("almost-certainly-not-a-character")
+check("an unknown character reads as nothing", (n, v, desc, ret), (0, 0, "", ""))
+d = hs.parse("@x = character Nobody\nshot | @x\n")
+c = d["cast"][0]
+check("still parses without a store", c["kind"], "character")
+check("and defaults to fully_preserved", c["retention"], "fully_preserved")
+check("with no pictures claimed", c["pictures"], 0)
+ok("lint says so rather than letting it render silently",
+   any("pictures" in n for n in hs.lint(d, hs.emit(d))))
+ok("an explicit override still wins",
+   hs.parse("@x = character Nobody\n@x.pictures = 2\nshot | @x\n"
+            )["cast"][0]["pictures"] == 2)
+print()
+print("h3 script: store checks pass")

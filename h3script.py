@@ -29,26 +29,37 @@ WHAT IT DOES NOT DO, ON PURPOSE
   speech is simply never said. One implementation of that, not two. This emits
   lines in H3Dialogue's own input format and lets it do the timing.
 
-  It also does not read the character store for anchor counts. `pictures` is
-  declared, because a compiler that silently renumbers `<Picture n>` when a file
-  appears in a folder is worse than one that makes you say the number.
+  Anchor counts come FROM the character store, not from you. An earlier cut
+  made `pictures` a required declaration on the grounds that a folder changing
+  underneath you should not silently renumber `<Picture n>`. That protected the
+  compiler, not the author: nobody wants to type a number they already
+  established when they saved the character. The numbering is printed in `info`
+  every run, so a change is visible rather than silent.
 
 GRAMMAR
     # comment
     @name  = <description>              a subject
     @name  = character <StoreName>      a subject whose anchors are in the store
     @name  = setting. <description>     the setting
+  Five keywords and `@name`. That is the whole surface a take needs:
+
+    shot | ...      note ...      say @name ...      do ...      ---
+
+  A character's pictures, voice, description and retention all come from the
+  store. Everything below is an OVERRIDE, rarely typed, and exists mainly so a
+  form-shaped UI has fields to bind to -- the document carries more than the
+  text syntax asks for:
+
     @name.retention = fully_preserved | partially_preserved | free
     @name.preserve  = facial identity, hair, eye colour and build
     @name.allow     = natural movement and changing expression
     @name.retention_detail = <replaces the whole clause>
-    @name.pictures  = 3
+    @name.pictures  = 3        only when there is no store entry
     @name.audio     = 1
 
   RETENTION IS ABOUT LIKENESS, and only that. `preserve` and `allow` scope what
   stays the same about a subject between shots. Pose, motion and performance go
-  in the shot -- `note` and `do` -- not here. Conflating the two makes the field
-  stop meaning what H3's format says it means.
+  in the shot -- `note` and `do` -- not here.
 
     task       = reference generation | video editing
     soundscape = ...
@@ -69,6 +80,38 @@ CATEGORY = "MiniMax H3/prompt"
 
 RETENTIONS = ("fully_preserved", "partially_preserved", "free")
 NAME = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def store_card(name):
+    """(anchor count, voice count, description, retention) from the store.
+
+    Reads the same `models/h3_characters/<name>/` layout H3 Character writes,
+    so a character saved once is usable by name here with nothing re-typed.
+    Missing store, missing character or no ComfyUI at all -> all zeros, and the
+    script's own overrides take over.
+    """
+    try:
+        import os
+
+        from .character import characters_dir
+        d = os.path.join(characters_dir(), name)
+        if not os.path.isdir(d):
+            return 0, 0, "", ""
+        img = os.path.join(d, "images")
+        n = len([f for f in sorted(os.listdir(img))
+                 if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
+                ) if os.path.isdir(img) else 0
+        voice = 1 if os.path.exists(os.path.join(d, "voice.wav")) else 0
+        desc, ret = "", ""
+        card = os.path.join(d, "card.json")
+        if os.path.exists(card):
+            with open(card, encoding="utf-8") as fh:
+                data = json.load(fh)
+            desc = (data.get("description") or "").strip()
+            ret = (data.get("retention") or "").strip()
+        return n, voice, desc, ret
+    except Exception:
+        return 0, 0, "", ""
 
 
 class ScriptError(ValueError):
@@ -134,6 +177,16 @@ def parse(text):
                     entry["character"] = rest[len("character "):].strip()
                     entry["description"] = ""
                     entry["retention"] = "fully_preserved"
+                    # from the store, so nothing already established when the
+                    # character was saved has to be typed again here
+                    npic, naud, desc, ret = store_card(entry["character"])
+                    entry["pictures"] = npic
+                    entry["audio"] = naud
+                    if desc:
+                        entry["store_description"] = desc
+                    if ret in RETENTIONS:
+                        entry["retention"] = ret
+                    entry["from_store"] = bool(npic or desc)
                 elif rest.startswith("setting."):
                     entry["kind"] = "setting"
                     entry["description"] = rest[len("setting."):].strip()
@@ -371,7 +424,6 @@ class H3Script:
         return {"required": {
             "script": ("STRING", {"multiline": True, "default":
                        "@ada  = character Ada\n"
-                       "@ada.pictures = 3\n"
                        "@man  = a man in his thirties, dark hair\n"
                        "@room = setting. a bedroom in warm low light\n"
                        "\n"
