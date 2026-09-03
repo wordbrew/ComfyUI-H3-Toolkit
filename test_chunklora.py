@@ -151,6 +151,23 @@ res = cl.H3ChunkLora().go(sentinel, 0, "# only a comment\n")
 ok("same object back", (res["result"] if isinstance(res, dict) else res)[0]
    is sentinel)
 
+
+# --- the pickers are the point, not decoration ------------------------------ #
+# The first cut put lora_1..3 dropdowns on the node AND made the schedule name
+# files by typed string, which made the pickers ornamental and the schedule a
+# transcription exercise. Rows name the SLOT now.
+print("a schedule row names a picker slot, not a filename")
+plan_doc = {"chunks": [{"start": 0, "end": 243, "keep_from": 0, "pin": 0,
+                        "run": 243}]}
+try:
+    cl.H3ChunkLora().go(object(), 0, "00:00-00:10 | lora_1 | 0.5",
+                        chunk_plan=plan_doc, lora_1=None)
+    check("an empty picker raises", "no error", "ValueError")
+except ValueError as e:
+    ok("and it says which picker", "lora_1" in str(e) and "empty" in str(e))
+ok("a bare filename is still accepted",
+   "lora_1" not in str(cl.parse_span("00:00-00:10")))
+
 print()
 if fails:
     print(f"{len(fails)} failure(s)")

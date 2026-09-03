@@ -141,8 +141,12 @@ class H3ChunkLora:
                                        "without it every chunk gets chunk 0's "
                                        "LoRA and nothing says so."}),
             "schedule": ("STRING", {"multiline": True, "default":
-                         "# time span | lora file | strength\n"
-                         "# 00:00-00:20 | my_lora.safetensors | 0.4-0.9\n"},),
+                         "# time span | lora_1/2/3 | strength\n"
+                         "# 00:00-00:20 | lora_1 | 0.4-0.9\n"
+                         "# 00:20       | lora_2 | 0.8\n",
+                         "tooltip": "Times are on the FINISHED clip. Name the "
+                                    "PICKER SLOT (lora_1..3), not a filename. "
+                                    "A strength range ramps across the span."},),
         }, "optional": {
             "chunk_plan": ("H3_CHUNK_PLAN",),
             "lora_1": (names,),
@@ -189,6 +193,20 @@ class H3ChunkLora:
                 continue
             rows.append((r[1], span,
                          parse_strength(r[2] if len(r) > 2 else "1.0")))
+        slots = {"lora_1": lora_1, "lora_2": lora_2, "lora_3": lora_3}
+        resolved = []
+        for name, span, st in rows:
+            key = name.strip().lower()
+            if key in slots:
+                got = slots[key]
+                if not got or got in ("None", "(none)"):
+                    raise ValueError(
+                        f"H3 Chunk LoRA: the schedule names '{key}' but that "
+                        f"picker is empty. Choose a file in the {key} widget, "
+                        f"or write a filename in the schedule instead.")
+                name = got
+            resolved.append((name, span, st))
+        rows = resolved
 
         if not rows:
             return {"ui": {"h3char": ["H3 CHUNK LORA — no rows, model passed "
