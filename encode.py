@@ -105,28 +105,35 @@ class H3EncodeAV:
             "height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32}),
             "temporal_size": ("INT", {"default": 0, "min": 0, "max": 4096,
                               "step": 4,
-                              "tooltip": "0 = OFF, one encode call for the whole "
-                                         "clip — today's behaviour, and correct "
-                                         "until it does not fit.\n\n"
-                                         "Above 0, encode this many frames at a "
-                                         "time. The VAE is convolutional, so its "
-                                         "cost was always LINEAR in length; what "
-                                         "is also linear is peak memory in one "
-                                         "call, and past the card you spill to "
-                                         "system RAM and move tensors over PCIe "
-                                         "every layer. That is the apparent "
-                                         "hang. Tiling caps peak memory at one "
-                                         "tile so the linear time is actually "
-                                         "realised.\n\n"
-                                         "64 is core's own default. Lower it if "
-                                         "a tile still will not fit; a long clip "
-                                         "at 2x wants this on."}),
+                              "tooltip": "IGNORED BY THE H3 VAE. Kept because "
+                                         "removing an input silently rewires "
+                                         "every saved graph.\n\n"
+                                         "H3's VAE declares handles_tiling, so "
+                                         "encode_tiled routes to the model's own "
+                                         "method — which is literally `return "
+                                         "self.encode(x)` with every tiling "
+                                         "argument swallowed by **kwargs. It "
+                                         "always chunks internally at "
+                                         "clip_length = 17 frames and takes no "
+                                         "instruction about it.\n\n"
+                                         "So a long clip was never one giant "
+                                         "call: the 17-frame chunking was "
+                                         "happening all along, which is why it "
+                                         "fits. Above 0 this only picks which "
+                                         "core entry point is called; the result "
+                                         "is the same either way."}),
             "temporal_overlap": ("INT", {"default": 8, "min": 4, "max": 4096,
                                  "step": 4,
-                                 "tooltip": "Frames of overlap between tiles, "
-                                            "blended so the join does not show. "
-                                            "Only used when temporal_size is "
-                                            "above 0."}),
+                                 "tooltip": "IGNORED, as temporal_size is. The "
+                                            "H3 VAE's own encode_temporal slices "
+                                            "at 17-frame boundaries with NO "
+                                            "overlap and concatenates — spatial "
+                                            "tiling blends, temporal does not. "
+                                            "17 is the model's native block "
+                                            "(17n+5 runs, 5n+2 latent frames), "
+                                            "so whether that boundary is a seam "
+                                            "or just the architecture is an open "
+                                            "question, not a known fault."}),
         }}
 
     RETURN_TYPES = ("LATENT", "INT", "INT", "INT", "STRING")
@@ -174,18 +181,25 @@ class H3EncodeAV:
                                      mode="bicubic", align_corners=False,
                                      antialias=True).clamp(0, 1).movedim(1, -1)
 
-        # TILED OR NOT, and why the choice exists.
+        # THIS CHOICE DOES NOTHING, and the honest thing is to say so here
+        # rather than let the widgets imply otherwise.
         #
-        # ComfyUI's plain VAE.encode has a batching loop, and for a VIDEO vae it
-        # is a no-op: the input is reshaped to [1, C, T, H, W], so shape[0] is 1
-        # and the loop runs once with every frame. Nothing chunks a long clip.
-        # Fine at 640x1120; at 2x on a 30-second take it exceeds the card, spills
-        # to system RAM, and crawls -- which reads as a hang rather than an OOM.
+        # The H3 VAE sets `handles_tiling = True`, so `VAE.encode_tiled` routes
+        # to the model's own method -- and that method is:
         #
-        # encode_tiled caps peak memory at one tile. Spatial tiling is left at
-        # the full frame (tile_x/tile_y from the render size) because the seam
-        # risk is not worth taking while the temporal axis is the one that
-        # actually grows; `tile_t` alone is what a long clip needs.
+        #     def encode_tiled(self, x, **kwargs):
+        #         # tiling is always on internally with the reference's semantic
+        #         # tile sizes, ignore tiling fallbacks
+        #         return self.encode(x)
+        #
+        # Every tile argument is discarded. The VAE chunks temporally at
+        # `clip_length = 17` frames regardless, in `encode_temporal`, which
+        # slices disjointly and concatenates with no overlap and no blend.
+        #
+        # So the earlier reasoning here was wrong in both directions: a long
+        # clip was never one giant call (it was always chunked at 17), and these
+        # widgets never capped anything. Kept only because deleting inputs
+        # rewires saved graphs.
         tiled = int(temporal_size) > 0 and hasattr(vae, "encode_tiled")
         if int(temporal_size) > 0 and not tiled:
             logging.warning("H3EncodeAV: this VAE has no encode_tiled; "
