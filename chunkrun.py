@@ -358,7 +358,8 @@ class H3ChunkClose:
             return ["images"]
         return [] if opens else ["images"]
 
-    def go(self, flow, images=None, audio=None, latent=None, dynprompt=None,
+    def go(self, flow, images=None, audio=None, latent=None, mask=None,
+           dynprompt=None,
            unique_id=None):
         def _bail(msg):
             # `images` is lazy, so on a path check_lazy_status did not predict it

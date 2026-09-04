@@ -16,10 +16,37 @@ twice -- and it reports CONFLICT when core has moved under a patch, which means
 the patch needs rebasing rather than forcing.
 
 An update reverts these silently, and nothing errors afterwards -- the render
-just comes out wrong. **No ComfyUI CORE file is patched any more:** both core
-patches have been rewritten as subclasses that live in the pack, precisely
-because a silent revert cost more than the patches saved. What is left is one
-third-party pack.
+just comes out wrong. Both of the OLD core patches were rewritten as subclasses
+living in the pack, precisely because a silent revert cost more than the patches
+saved.
+
+## h3-denoise-mask-velocity.patch -- PROVISIONAL, and core (2026-09-03)
+
+Comfy-Org/ComfyUI#15988, verbatim, applied to `comfy/ldm/minimax/model.py`.
+Six lines: scale the video and audio velocity by their denoise masks before the
+outer x0 conversion.
+
+H3 gives each latent row its own timestep -- a masked row runs at `mask * sigma`
+-- but the conversion back to a clean-image estimate uses the GLOBAL sigma for
+every row. So a mask-0 row, which should not move at all, gets a full-strength
+velocity subtracted every step. Reported upstream as a repeating 16px grid
+(#15981); others on the PR thread report it also fixes long-form chain
+degradation, which is what we are testing it for.
+
+It could not be done as a subclass: the arithmetic is inline in
+`MiniMaxH3Model.forward`, between the wrapper call and the audio carry
+conversion, with nothing to override around it.
+
+TWO THINGS TO WATCH. The PR is still OPEN, so a ComfyUI update either reverts it
+silently or ships it -- and if it ships while this is still applied, the velocity
+is scaled TWICE. Re-run `apply.py` after any update, and delete this patch once
+it lands in a release.
+
+Unverified in a render as of 2026-09-03. Note that `samplers.py:642` already
+restores mask-0 rows from the clean latent after the model call, so a strictly
+binary pin -- which `H3LatentPin` produces at its default hold -- may be
+unaffected. The feathered AUDIO mask and `H3MaskInpaint`'s feathered edges are
+the rows where the error survives.
 
 ---
 
