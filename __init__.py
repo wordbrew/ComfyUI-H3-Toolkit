@@ -31,6 +31,8 @@ from .longform import (NODE_CLASS_MAPPINGS as _LF_CLASSES,
                        NODE_DISPLAY_NAME_MAPPINGS as _LF_NAMES)
 from .mask import (NODE_CLASS_MAPPINGS as _MASK_CLASSES,
                    NODE_DISPLAY_NAME_MAPPINGS as _MASK_NAMES)
+from .periodicity import (NODE_CLASS_MAPPINGS as _PER_CLASSES,
+                          NODE_DISPLAY_NAME_MAPPINGS as _PER_NAMES)
 from .prompt_lint import (NODE_CLASS_MAPPINGS as _LINT_CLASSES,
                           NODE_DISPLAY_NAME_MAPPINGS as _LINT_NAMES)
 from .prompt_links import (NODE_CLASS_MAPPINGS as _LINK_CLASSES,
@@ -58,6 +60,7 @@ _PARTS = (
     (_SCRIPT_CLASSES, _SCRIPT_NAMES),
     (_LF_CLASSES, _LF_NAMES),
     (_MASK_CLASSES, _MASK_NAMES),
+    (_PER_CLASSES, _PER_NAMES),
     (_LINT_CLASSES, _LINT_NAMES),
     (_LINK_CLASSES, _LINK_NAMES),
     (_RW_CLASSES, _RW_NAMES),
