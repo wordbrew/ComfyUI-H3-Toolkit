@@ -31,6 +31,11 @@ PATCHES = {
     # h3-window-absolute-positions.patch is SUPERSEDED -- the offset lives in
     # video.py now. Applying it would double the offset.
     "depthanythingv2-contiguous.patch": "custom_nodes/ComfyUI-DepthAnythingV2",
+    # PROVISIONAL, and the only CORE patch here. Comfy-Org/ComfyUI#15988,
+    # still OPEN as of 2026-09-03. Remove this entry once it ships in a
+    # release -- applying it on top of a build that already has it would
+    # scale the velocity twice.
+    "h3-denoise-mask-velocity.patch": ".",
 }
 
 
