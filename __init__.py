@@ -33,6 +33,8 @@ from .mask import (NODE_CLASS_MAPPINGS as _MASK_CLASSES,
                    NODE_DISPLAY_NAME_MAPPINGS as _MASK_NAMES)
 from .periodicity import (NODE_CLASS_MAPPINGS as _PER_CLASSES,
                           NODE_DISPLAY_NAME_MAPPINGS as _PER_NAMES)
+from .semantic import (NODE_CLASS_MAPPINGS as _SEM_CLASSES,
+                       NODE_DISPLAY_NAME_MAPPINGS as _SEM_NAMES)
 from .prompt_lint import (NODE_CLASS_MAPPINGS as _LINT_CLASSES,
                           NODE_DISPLAY_NAME_MAPPINGS as _LINT_NAMES)
 from .prompt_links import (NODE_CLASS_MAPPINGS as _LINK_CLASSES,
@@ -58,6 +60,7 @@ _PARTS = (
     (_CL_CLASSES, _CL_NAMES),
     (_RUN_CLASSES, _RUN_NAMES),
     (_SCRIPT_CLASSES, _SCRIPT_NAMES),
+    (_SEM_CLASSES, _SEM_NAMES),
     (_LF_CLASSES, _LF_NAMES),
     (_MASK_CLASSES, _MASK_NAMES),
     (_PER_CLASSES, _PER_NAMES),
