@@ -1314,6 +1314,7 @@
         "Node name for S&R": "H3SemanticBridge"
       },
       "widgets_values": [
+        "",
         "MiniMaxH3_SemanticBridge_v1.safetensors",
         0.1,
         "per_token",
