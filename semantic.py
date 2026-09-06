@@ -197,7 +197,13 @@ class H3SemanticBridge:
     def go(self, conditioning, clip, prompt, adapter, alpha, magnitude_match,
            apply_to):
         if float(alpha) == 0.0:
-            return (conditioning, "alpha 0 — passthrough, nothing applied")
+            # LOG IT ANYWAY. A passthrough that prints nothing is invisible in
+            # the log, and a sweep whose control leaves no trace cannot be read
+            # back afterwards — which is exactly what happened on 2026-09-05.
+            info = ("H3 SEMANTIC BRIDGE: alpha 0 — passthrough, nothing "
+                    f"applied ({apply_to}, {adapter})")
+            logging.info(info)
+            return (conditioning, info)
 
         n_text = prompt_token_count(clip, prompt) if apply_to == "prompt only" else 0
         out, notes = [], []

@@ -1,8 +1,8 @@
 {
   "id": "h3-22-generate-plus-pdd-upscale",
   "revision": 0,
-  "last_node_id": 119,
-  "last_link_id": 31,
+  "last_node_id": 123,
+  "last_link_id": 37,
   "nodes": [
     {
       "id": 8,
@@ -200,7 +200,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            12
+            34
           ]
         }
       ],
@@ -213,332 +213,6 @@
         "H3\\minimax_h3_ref2va_pruned_int8_convrot.safetensors",
         "default"
       ]
-    },
-    {
-      "id": 105,
-      "type": "H3Character",
-      "pos": [
-        20,
-        -1420
-      ],
-      "size": [
-        400,
-        200
-      ],
-      "flags": {},
-      "order": 9,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "image_1",
-          "type": "IMAGE",
-          "links": [
-            4
-          ]
-        },
-        {
-          "name": "image_2",
-          "type": "IMAGE",
-          "links": [
-            5
-          ]
-        },
-        {
-          "name": "image_3",
-          "type": "IMAGE",
-          "links": [
-            6
-          ]
-        },
-        {
-          "name": "image_4",
-          "type": "IMAGE",
-          "links": null
-        },
-        {
-          "name": "image_5",
-          "type": "IMAGE",
-          "links": null
-        },
-        {
-          "name": "voice",
-          "type": "AUDIO",
-          "links": [
-            7
-          ]
-        },
-        {
-          "name": "subject_def",
-          "type": "STRING",
-          "links": [
-            8
-          ]
-        },
-        {
-          "name": "retention",
-          "type": "STRING",
-          "links": [
-            9
-          ]
-        },
-        {
-          "name": "description",
-          "type": "STRING",
-          "links": null
-        },
-        {
-          "name": "info",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "H3Character"
-      },
-      "widgets_values": [
-        "example_character",
-        3,
-        1,
-        0,
-        1
-      ],
-      "title": "H3 Character — save one first with H3 Character (save)"
-    },
-    {
-      "id": 106,
-      "type": "H3ScenePrompt",
-      "pos": [
-        470,
-        -1560
-      ],
-      "size": [
-        441,
-        880
-      ],
-      "flags": {},
-      "order": 15,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "task_type",
-          "name": "task_type",
-          "type": "COMBO",
-          "widget": {
-            "name": "task_type"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "seconds",
-          "name": "seconds",
-          "type": "FLOAT",
-          "widget": {
-            "name": "seconds"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "style",
-          "name": "style",
-          "type": "STRING",
-          "widget": {
-            "name": "style"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "shots",
-          "name": "shots",
-          "type": "STRING",
-          "widget": {
-            "name": "shots"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "soundscape",
-          "name": "soundscape",
-          "type": "STRING",
-          "widget": {
-            "name": "soundscape"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "non_diegetic_music",
-          "name": "non_diegetic_music",
-          "type": "STRING",
-          "widget": {
-            "name": "non_diegetic_music"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "language",
-          "name": "language",
-          "type": "COMBO",
-          "widget": {
-            "name": "language"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "subject_def_1",
-          "name": "subject_def_1",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "subject_def_1"
-          },
-          "link": 8
-        },
-        {
-          "localized_name": "pictures_1",
-          "name": "pictures_1",
-          "shape": 7,
-          "type": "INT",
-          "widget": {
-            "name": "pictures_1"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "retention_1",
-          "name": "retention_1",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "retention_1"
-          },
-          "link": 9
-        },
-        {
-          "localized_name": "subject_def_2",
-          "name": "subject_def_2",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "subject_def_2"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "pictures_2",
-          "name": "pictures_2",
-          "shape": 7,
-          "type": "INT",
-          "widget": {
-            "name": "pictures_2"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "retention_2",
-          "name": "retention_2",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "retention_2"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "subject_def_3",
-          "name": "subject_def_3",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "subject_def_3"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "pictures_3",
-          "name": "pictures_3",
-          "shape": 7,
-          "type": "INT",
-          "widget": {
-            "name": "pictures_3"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "retention_3",
-          "name": "retention_3",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "retention_3"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "extra_direction",
-          "name": "extra_direction",
-          "shape": 7,
-          "type": "STRING",
-          "widget": {
-            "name": "extra_direction"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "links": [
-            10,
-            29
-          ]
-        },
-        {
-          "localized_name": "length",
-          "name": "length",
-          "type": "INT",
-          "links": [
-            11
-          ]
-        },
-        {
-          "localized_name": "lint",
-          "name": "lint",
-          "type": "STRING",
-          "links": null
-        },
-        {
-          "localized_name": "plan",
-          "name": "plan",
-          "type": "STRING",
-          "links": null
-        }
-      ],
-      "title": "③ RESULT — who replaces her; <Video 1> supplies the pose",
-      "properties": {
-        "Node name for S&R": "H3ScenePrompt"
-      },
-      "widgets_values": [
-        "reference generation",
-        8.0,
-        "Realistic video, shallow depth of field, warm practical light, handheld stillness",
-        "A close-up of <Subject 1> at the window, rain running down the glass. Slow push in.\n> S1: I told you I would come back.\n0:04 | Wider. She turns from the window and crosses the room, and sits. The camera holds still.\n> S1: You did not have to wait up.\n",
-        "Rain on glass, a quiet room tone, distant traffic, the creak of a chair",
-        "N/A",
-        "English",
-        "",
-        0,
-        "",
-        "",
-        0,
-        "",
-        "",
-        0,
-        "",
-        ""
-      ],
-      "color": "#533"
     },
     {
       "id": 107,
@@ -579,7 +253,7 @@
           "name": "ref_images.ref_image_0",
           "shape": 7,
           "type": "IMAGE",
-          "link": 4
+          "link": null
         },
         {
           "label": "ref_image_1",
@@ -587,7 +261,7 @@
           "name": "ref_images.ref_image_1",
           "shape": 7,
           "type": "IMAGE",
-          "link": 5
+          "link": null
         },
         {
           "label": "ref_image_2",
@@ -595,7 +269,7 @@
           "name": "ref_images.ref_image_2",
           "shape": 7,
           "type": "IMAGE",
-          "link": 6
+          "link": null
         },
         {
           "label": "ref_image_3",
@@ -627,7 +301,7 @@
           "name": "ref_audios.ref_audio_0",
           "shape": 7,
           "type": "AUDIO",
-          "link": 7
+          "link": null
         },
         {
           "label": "ref_audio_1",
@@ -644,7 +318,7 @@
           "widget": {
             "name": "prompt"
           },
-          "link": 10
+          "link": 32
         },
         {
           "localized_name": "width",
@@ -671,7 +345,7 @@
           "widget": {
             "name": "length"
           },
-          "link": 11
+          "link": null
         },
         {
           "localized_name": "ref_image_size",
@@ -729,7 +403,7 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 12
+          "link": 35
         },
         {
           "localized_name": "shift_video",
@@ -756,8 +430,8 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            13,
-            14
+            14,
+            36
           ]
         }
       ],
@@ -790,7 +464,7 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 13
+          "link": 37
         },
         {
           "localized_name": "conditioning",
@@ -1243,7 +917,7 @@
       "widgets_values": {
         "frame_rate": 24,
         "loop_count": 0,
-        "filename_prefix": "H3/gen_semantic_bridge",
+        "filename_prefix": "H3/window_object_test",
         "format": "video/h264-mp4",
         "pix_fmt": "yuv420p",
         "crf": 19,
@@ -1284,7 +958,7 @@
           "localized_name": "prompt",
           "name": "prompt",
           "type": "STRING",
-          "link": 29,
+          "link": 33,
           "widget": {
             "name": "prompt"
           }
@@ -1316,7 +990,7 @@
       "widgets_values": [
         "",
         "MiniMaxH3_SemanticBridge_v1.safetensors",
-        0.1,
+        0.0,
         "per_token",
         "prompt only"
       ]
@@ -1373,6 +1047,234 @@
       ],
       "color": "#432",
       "bgcolor": "#653"
+    },
+    {
+      "id": 120,
+      "type": "PrimitiveStringMultiline",
+      "pos": [
+        1300,
+        -940
+      ],
+      "size": [
+        460,
+        320
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "title": "the test prompt",
+      "inputs": [],
+      "properties": {},
+      "outputs": [
+        {
+          "localized_name": "STRING",
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            32,
+            33
+          ],
+          "slot_index": 0
+        }
+      ],
+      "widgets_values": [
+        "A locked-off medium shot of a plain grey room. A single warm floor lamp stands on the left side of the frame. In the centre of the room is a clear glass table.\n\nThree objects sit on the table in a row, left to right: a tall clear bottle half full of water, a small black box, and a green apple.\n\nA woman stands behind the table facing the camera. She holds a red mug in her left hand at chest height. Her right hand rests flat on the tabletop with the fingers spread apart.\n\nThe tabletop stays transparent and her legs are visible through the glass. Light from the lamp passes through the bottle and falls on the table surface.\n\nThe camera holds one fixed framing for the whole shot. She does not pick up any of the objects."
+      ]
+    },
+    {
+      "id": 121,
+      "type": "PathchSageAttentionKJ",
+      "pos": [
+        2700,
+        -1560
+      ],
+      "size": [
+        320,
+        80
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 34
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            35
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PathchSageAttentionKJ"
+      },
+      "widgets_values": [
+        "auto",
+        true
+      ]
+    },
+    {
+      "id": 122,
+      "type": "H3ContextWindows",
+      "pos": [
+        2700,
+        -1420
+      ],
+      "size": [
+        380,
+        246
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 36
+        },
+        {
+          "localized_name": "window_frames",
+          "name": "window_frames",
+          "type": "INT",
+          "widget": {
+            "name": "window_frames"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "overlap_frames",
+          "name": "overlap_frames",
+          "type": "INT",
+          "widget": {
+            "name": "overlap_frames"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "schedule",
+          "name": "schedule",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "schedule"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "fuse_method",
+          "name": "fuse_method",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "fuse_method"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "freenoise",
+          "name": "freenoise",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "freenoise"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "causal_window_fix",
+          "name": "causal_window_fix",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "causal_window_fix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "absolute_window_positions",
+          "name": "absolute_window_positions",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "absolute_window_positions"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "split_conds_to_windows",
+          "name": "split_conds_to_windows",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "split_conds_to_windows"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            37
+          ]
+        },
+        {
+          "localized_name": "info",
+          "name": "info",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3ContextWindows"
+      },
+      "widgets_values": [
+        90,
+        39,
+        "standard_static",
+        "pyramid",
+        false,
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "id": 123,
+      "type": "Note",
+      "pos": [
+        2700,
+        -1140
+      ],
+      "size": [
+        520,
+        900
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "title": "WINDOWED OBJECT TEST",
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "WINDOWED OBJECT PLACEMENT TEST\n\nDoes the semantic bridge hold a described background across window seams?\n\n192 frames at window 90 / overlap 39 = THREE windows, TWO seams.\n192 is a legal run (17*11+5) and divides by 3, so it is on the audio\nclock as well.\n\nRUN IT TWICE, same seed, changing only alpha:\n    alpha 0.0    the baseline — the node short-circuits to a passthrough\n    alpha 0.10   the treatment\n\nSCORE AT THREE TIMESTAMPS — first frame, middle, last frame. A single\nverdict on the whole clip cannot see drift across a seam, which is the\nentire measurement.\n\n    1  exactly three objects on the table\n    2  order left to right: bottle, black box, green apple\n    3  lamp still on the LEFT of frame\n    4  tabletop still transparent, legs visible through it\n    5  mug still in the same hand\n    6  other hand still flat on the table, fingers separated\n    7  light still passing through the bottle onto the table\n    8  she never picks anything up\n\nCount how many hold at all three timestamps. If the adapter does what\nthe hypothesis says, the 0.0 run drifts across the seams and the 0.10\nrun holds.\n\nWHY NO REFERENCES. Nothing on that card exists in a reference image, so\nreferences would add a second possible cause for every failure without\nmeasuring anything. In H3 28 they also made the prompt 3% of the\nconditioning; here it is 100%, so an effect on prompt tokens is at full\nstrength.\n\nONE STRING NODE feeds both the reference node and the bridge. If those\ntwo ever differ the span is computed from the wrong text and the wrong\ntokens are transformed — this makes that impossible.\n\nWHY NO LoRAs. This is a measurement graph. A character LoRA in a scene\nwith no character is a confound, and the turbo LoRA changes what step\ncount means. Sage attention IS here: it changes speed, not output.\n\nWHAT WE ALREADY KNOW, so it is not re-litigated: freenoise and\noverlap-linear were both measured null, so the drift is not a blending\nartifact. A reference image of the set and a room description with\ncountable features were both tried and the seams still shifted. This\ntests something different — not a better description, a better ENCODING\nof one.\n\nREAD THE BRIDGE INFO. At alpha 0 it now prints a passthrough line, so\nboth runs leave a trace in the log."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
     }
   ],
   "links": [
@@ -1399,86 +1301,6 @@
       107,
       2,
       "VAE"
-    ],
-    [
-      4,
-      105,
-      0,
-      107,
-      3,
-      "IMAGE"
-    ],
-    [
-      5,
-      105,
-      1,
-      107,
-      4,
-      "IMAGE"
-    ],
-    [
-      6,
-      105,
-      2,
-      107,
-      5,
-      "IMAGE"
-    ],
-    [
-      7,
-      105,
-      5,
-      107,
-      9,
-      "AUDIO"
-    ],
-    [
-      8,
-      105,
-      6,
-      106,
-      7,
-      "STRING"
-    ],
-    [
-      9,
-      105,
-      7,
-      106,
-      9,
-      "STRING"
-    ],
-    [
-      10,
-      106,
-      0,
-      107,
-      11,
-      "STRING"
-    ],
-    [
-      11,
-      106,
-      1,
-      107,
-      14,
-      "INT"
-    ],
-    [
-      12,
-      104,
-      0,
-      108,
-      0,
-      "MODEL"
-    ],
-    [
-      13,
-      108,
-      0,
-      109,
-      0,
-      "MODEL"
     ],
     [
       14,
@@ -1593,14 +1415,6 @@
       "CLIP"
     ],
     [
-      29,
-      106,
-      0,
-      117,
-      2,
-      "STRING"
-    ],
-    [
       30,
       117,
       0,
@@ -1615,6 +1429,54 @@
       118,
       0,
       "*"
+    ],
+    [
+      32,
+      120,
+      0,
+      107,
+      11,
+      "STRING"
+    ],
+    [
+      33,
+      120,
+      0,
+      117,
+      2,
+      "STRING"
+    ],
+    [
+      34,
+      104,
+      0,
+      121,
+      0,
+      "MODEL"
+    ],
+    [
+      35,
+      121,
+      0,
+      108,
+      0,
+      "MODEL"
+    ],
+    [
+      36,
+      108,
+      0,
+      122,
+      0,
+      "MODEL"
+    ],
+    [
+      37,
+      122,
+      0,
+      109,
+      0,
+      "MODEL"
     ]
   ],
   "groups": [

@@ -1,8 +1,8 @@
 {
   "id": "h3-22-generate-plus-pdd-upscale",
   "revision": 0,
-  "last_node_id": 119,
-  "last_link_id": 31,
+  "last_node_id": 125,
+  "last_link_id": 40,
   "nodes": [
     {
       "id": 8,
@@ -102,7 +102,8 @@
           "type": "VAE",
           "links": [
             2,
-            22
+            22,
+            37
           ]
         }
       ],
@@ -200,7 +201,7 @@
           "name": "MODEL",
           "type": "MODEL",
           "links": [
-            12
+            32
           ]
         }
       ],
@@ -498,9 +499,7 @@
           "localized_name": "length",
           "name": "length",
           "type": "INT",
-          "links": [
-            11
-          ]
+          "links": []
         },
         {
           "localized_name": "lint",
@@ -671,7 +670,7 @@
           "widget": {
             "name": "length"
           },
-          "link": 11
+          "link": null
         },
         {
           "localized_name": "ref_image_size",
@@ -688,7 +687,8 @@
           "name": "positive",
           "type": "CONDITIONING",
           "links": [
-            27
+            27,
+            36
           ]
         },
         {
@@ -706,7 +706,7 @@
         "",
         640,
         1120,
-        192,
+        141,
         "max"
       ]
     },
@@ -729,7 +729,7 @@
           "localized_name": "model",
           "name": "model",
           "type": "MODEL",
-          "link": 12
+          "link": 35
         },
         {
           "localized_name": "shift_video",
@@ -796,7 +796,7 @@
           "localized_name": "conditioning",
           "name": "conditioning",
           "type": "CONDITIONING",
-          "link": 30
+          "link": 40
         }
       ],
       "outputs": [
@@ -1243,7 +1243,7 @@
       "widgets_values": {
         "frame_rate": 24,
         "loop_count": 0,
-        "filename_prefix": "H3/gen_semantic_bridge",
+        "filename_prefix": "H3/keyframe_timeline",
         "format": "video/h264-mp4",
         "pix_fmt": "yuv420p",
         "crf": 19,
@@ -1252,103 +1252,6 @@
         "pingpong": false,
         "save_output": true
       }
-    },
-    {
-      "id": 117,
-      "type": "H3SemanticBridge",
-      "pos": [
-        2220,
-        -1180
-      ],
-      "size": [
-        380,
-        200
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "conditioning",
-          "name": "conditioning",
-          "type": "CONDITIONING",
-          "link": 27
-        },
-        {
-          "localized_name": "clip",
-          "name": "clip",
-          "type": "CLIP",
-          "link": 28
-        },
-        {
-          "localized_name": "prompt",
-          "name": "prompt",
-          "type": "STRING",
-          "link": 29,
-          "widget": {
-            "name": "prompt"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "conditioning",
-          "name": "conditioning",
-          "type": "CONDITIONING",
-          "links": [
-            30
-          ],
-          "slot_index": 0
-        },
-        {
-          "localized_name": "info",
-          "name": "info",
-          "type": "STRING",
-          "links": [
-            31
-          ],
-          "slot_index": 0
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "H3SemanticBridge"
-      },
-      "widgets_values": [
-        "",
-        "MiniMaxH3_SemanticBridge_v1.safetensors",
-        0.1,
-        "per_token",
-        "prompt only"
-      ]
-    },
-    {
-      "id": 118,
-      "type": "PreviewAny",
-      "pos": [
-        2640,
-        -1180
-      ],
-      "size": [
-        320,
-        120
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "source",
-          "name": "source",
-          "type": "*",
-          "link": 31
-        }
-      ],
-      "outputs": [],
-      "properties": {
-        "Node name for S&R": "PreviewAny"
-      },
-      "widgets_values": [],
-      "title": "bridge span"
     },
     {
       "id": 119,
@@ -1370,6 +1273,276 @@
       "properties": {},
       "widgets_values": [
         "SEMANTIC BRIDGE — over the PROMPT SPAN only\n\nWorkflow 22's generation pass with the PDD upscale removed. Every\ngeneration setting is untouched: res_multistep, simple / 20 / 1.0,\nshift 12/3, ref_image_size max, the H3 Character anchors and voice.\n\nWHAT THE NODE DOES\n  A distilled adapter (5120 -> 512 -> 512 -> 5120, SiLU) rewrites the\n  conditioning and is blended back in:\n\n      hybrid = h + alpha * (projected - h)\n\n  It targets what H3 recognises but mis-relates: which hand holds what,\n  left/right ordering, transparent vs reflective, and whether an action\n  was explicitly NOT requested.\n\nWHY `apply_to` IS `prompt only`\n  The published node blends EVERY token, and its author states plainly\n  that ref2va is unsupported and that reference AUDIO degraded lip-sync.\n  The reason is distributional: in ref2va the conditioning reads\n\n      <Picture 1>: [vision] ... <Audio 1>: <the prompt>\n\n  and those reference tokens never existed in the fl2va data the adapter\n  was trained on. The prompt is a contiguous SUFFIX -- the tokenizer emits\n  every reference first and calls add_text(prompt) last -- so masking the\n  trailing tokens leaves every reference block byte-identical.\n\n  `everything` reproduces the published behaviour, for comparison.\n\nTHE PROMPT INPUT IS WIRED, NOT TYPED. It comes from the same H3 Scene\nPrompt output the reference node gets. If it ever differs, the span is\ncomputed from the wrong string and the wrong tokens are transformed.\n\nREAD THE INFO OUTPUT ON THE FIRST RUN. It reports\n\n    prompt span = last N of T tokens (X%); Y reference token(s) untouched\n\nIf it says `not a usable suffix`, the count did not line up and the blend\nfell back to the whole sequence -- the result is then the published\nbehaviour, not ours.\n\nalpha 0.10 is the author's recommendation. 0.15 is what their published\nA/B examples used to make the difference visible. 0 is a passthrough.\n\nUNPROVEN. The adapter's evidence is representation fidelity plus two\nqualitative clips. Nothing measures video quality, and nothing has been\nmeasured on ref2va at all."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 120,
+      "type": "PathchSageAttentionKJ",
+      "pos": [
+        780,
+        -1560
+      ],
+      "size": [
+        320,
+        80
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "model",
+          "name": "model",
+          "type": "MODEL",
+          "link": 32
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "MODEL",
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            33
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PathchSageAttentionKJ"
+      },
+      "widgets_values": [
+        "auto",
+        true
+      ]
+    },
+    {
+      "id": 121,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        780,
+        -1440
+      ],
+      "size": [
+        428.1072031646398,
+        82
+      ],
+      "flags": {},
+      "order": 65,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 33
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            34
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.30.2",
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "h3\\minimax_h3_ref2v_lightx2v_turbo_4step_v0.1_resized_avg_rank_20_bf16.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "h3\\minimax_h3_ref2v_lightx2v_turbo_4step_v0.1_resized_avg_rank_20_bf16.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 122,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        780,
+        -1320
+      ],
+      "size": [
+        422.6162846649313,
+        82
+      ],
+      "flags": {},
+      "order": 69,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 34
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            35
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.30.2",
+        "Node name for S&R": "LoraLoaderModelOnly"
+      },
+      "widgets_values": [
+        "h3\\MysticXXX_MMH3-V4-ref2va.safetensors",
+        1
+      ],
+      "widgets_values_named": {
+        "lora_name": "h3\\MysticXXX_MMH3-V4-ref2va.safetensors",
+        "strength_model": 1
+      }
+    },
+    {
+      "id": 123,
+      "type": "LoadImage",
+      "pos": [
+        2280,
+        -1100
+      ],
+      "size": [
+        320,
+        320
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "title": "keyframe image",
+      "inputs": [],
+      "outputs": [
+        {
+          "localized_name": "IMAGE",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            38,
+            39
+          ],
+          "slot_index": 0
+        },
+        {
+          "localized_name": "MASK",
+          "name": "MASK",
+          "type": "MASK",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "ref_a.png",
+        "image"
+      ]
+    },
+    {
+      "id": 124,
+      "type": "H3KeyframeTimeline",
+      "pos": [
+        2280,
+        -1560
+      ],
+      "size": [
+        340,
+        260
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "conditioning",
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 36
+        },
+        {
+          "localized_name": "vae",
+          "name": "vae",
+          "type": "VAE",
+          "link": 37
+        },
+        {
+          "localized_name": "image_1",
+          "name": "image_1",
+          "type": "IMAGE",
+          "link": 38
+        },
+        {
+          "localized_name": "image_2",
+          "name": "image_2",
+          "type": "IMAGE",
+          "link": 39
+        },
+        {
+          "localized_name": "image_3",
+          "name": "image_3",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "localized_name": "image_4",
+          "name": "image_4",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "CONDITIONING",
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            40
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3KeyframeTimeline"
+      },
+      "widgets_values": [
+        141,
+        0.0,
+        -1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "id": 125,
+      "type": "Note",
+      "pos": [
+        2660,
+        -1560
+      ],
+      "size": [
+        500,
+        840
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "title": "KEYFRAME TIMELINE",
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "KEYFRAME TIMELINE — a picture at a time on the clip\n\nRun this AFTER the reference node. It attaches keyframes to the\nCONDITIONING with a timestamp; it does not write into the video you are\nmaking. That distinction is the whole reason it can work at any time at\nall -- see below.\n\nFOUR SLOTS. Each is an image plus a time in SECONDS. -1 disables a slot.\n  time_1 = 0.0    slot 1 at the first frame -- the PROVEN case\n  time_2 = 3.0    mid-clip -- the UNTESTED one\n  slots 3 and 4 disabled\n\nSTART WITH time_2 = -1 and confirm the first-frame case behaves. Then set\nit to 3.0 and see whether the shot actually arrives at that image at\nthree seconds.\n\nLENGTH IS 141 AND MUST MATCH the reference node. 141 is a legal run\n(17*8+5) and divides by 3, so it sits on the video and audio clocks both.\nThe node snaps internally, but a mismatch means the keyframe lands at the\nwrong time.\n\nWHY THIS IS NOT \"STICKING A FRAME IN THE LATENT\"\n\n  The video is stored in GROUPS, sized 1, 4, 4, 4, 4 repeating. Most\n  groups hold four frames mashed together; every fifth holds one. So the\n  single-frame slots are frames 0, 17, 34, 51 and so on -- the first\n  frame is not the only one.\n\n  But the compressor works FORWARDS: when it builds the slot for frame 17\n  it is also carrying memory of the sixteen frames before it. Drop a\n  standalone photo in there and you have written something that could\n  never have come out of a real video. Wave 8a measured that: error\n  roughly DOUBLED per link, and the model paid for it in contrast.\n\n  Frame 0 is the only position with no history, so a standalone photo is\n  exactly right there and nowhere else.\n\n  A KEYFRAME SIDESTEPS ALL OF IT. It is a conditioning row carrying a\n  time coordinate, sitting outside the target video in the packed\n  sequence. It never has to be a valid latent at that position. That is\n  why it works anywhere, and it is the same mechanism core's\n  MiniMaxH3AddGuide uses -- ours takes four in one node and coexists with\n  reference images, which stock could not do until the layout was\n  patched.\n\nFIRST REAL EXERCISE OF THE ROW-ORDER FIX. Until 2026-08-31 the patched\nlayout emitted reference rows before keyframe rows while core built the\nlatent list keyframes-first, so every reference latent landed in a\nkeyframe's slot whenever a graph used both. Nothing errored; the totals\nmatched and the contents shifted. This graph uses both, so if identity\ngoes strange with a keyframe attached, that is the first place to look."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -1455,22 +1628,6 @@
       107,
       11,
       "STRING"
-    ],
-    [
-      11,
-      106,
-      1,
-      107,
-      14,
-      "INT"
-    ],
-    [
-      12,
-      104,
-      0,
-      108,
-      0,
-      "MODEL"
     ],
     [
       13,
@@ -1601,20 +1758,76 @@
       "STRING"
     ],
     [
-      30,
-      117,
+      32,
+      104,
+      0,
+      120,
+      0,
+      "MODEL"
+    ],
+    [
+      33,
+      120,
+      0,
+      121,
+      0,
+      "MODEL"
+    ],
+    [
+      34,
+      121,
+      0,
+      122,
+      0,
+      "MODEL"
+    ],
+    [
+      35,
+      122,
+      0,
+      108,
+      0,
+      "MODEL"
+    ],
+    [
+      36,
+      107,
+      0,
+      124,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      37,
+      9,
+      0,
+      124,
+      1,
+      "VAE"
+    ],
+    [
+      38,
+      123,
+      0,
+      124,
+      2,
+      "IMAGE"
+    ],
+    [
+      39,
+      123,
+      0,
+      124,
+      3,
+      "IMAGE"
+    ],
+    [
+      40,
+      124,
       0,
       109,
       1,
       "CONDITIONING"
-    ],
-    [
-      31,
-      117,
-      1,
-      118,
-      0,
-      "*"
     ]
   ],
   "groups": [
