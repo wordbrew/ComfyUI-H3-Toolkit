@@ -1099,12 +1099,7 @@
     "filename_prefix": "AnimateDiff",
     "format": "image/gif",
     "pingpong": false,
-    "save_output": true,
-    "videopreview": {
-     "hidden": false,
-     "paused": false,
-     "params": {}
-    }
+    "save_output": true
    },
    "bgcolor": "#C00"
   },
@@ -1287,20 +1282,7 @@
     "frame_load_cap": 362,
     "skip_first_frames": 0,
     "select_every_nth": 1,
-    "format": "AnimateDiff",
-    "videopreview": {
-     "hidden": false,
-     "paused": false,
-     "params": {
-      "filename": "source_clip.mp4",
-      "type": "path",
-      "format": "video/mp4",
-      "force_rate": 24,
-      "frame_load_cap": 362,
-      "skip_first_frames": 0,
-      "select_every_nth": 1
-     }
-    }
+    "format": "AnimateDiff"
    }
   },
   {

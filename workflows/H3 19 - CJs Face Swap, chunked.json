@@ -2994,20 +2994,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "swap_sam3_00004.mp4",
-            "subfolder": "H3",
-            "type": "temp",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "swap_sam3_00004.png",
-            "fullpath": "C:\\SD\\ComfyUI\\Comfy-03-15-2026\\ComfyUI\\temp\\H3\\swap_sam3_00004.mp4"
-          }
-        }
+        "save_output": false
       },
       "widgets_values_named": {
         "frame_rate": 24,
@@ -3019,20 +3006,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "swap_sam3_00004.mp4",
-            "subfolder": "H3",
-            "type": "temp",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "swap_sam3_00004.png",
-            "fullpath": "C:\\SD\\ComfyUI\\Comfy-03-15-2026\\ComfyUI\\temp\\H3\\swap_sam3_00004.mp4"
-          }
-        }
+        "save_output": false
       }
     },
     {
@@ -3475,20 +3449,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": true,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "swap_sam3_00396-audio.mp4",
-            "subfolder": "H3",
-            "type": "output",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "swap_sam3_00396.png",
-            "fullpath": "C:\\SD\\ComfyUI\\Comfy-03-15-2026\\ComfyUI\\output\\H3\\swap_sam3_00396-audio.mp4"
-          }
-        }
+        "save_output": true
       },
       "widgets_values_named": {
         "frame_rate": 24,
@@ -3500,20 +3461,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": true,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "swap_sam3_00396-audio.mp4",
-            "subfolder": "H3",
-            "type": "output",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "swap_sam3_00396.png",
-            "fullpath": "C:\\SD\\ComfyUI\\Comfy-03-15-2026\\ComfyUI\\output\\H3\\swap_sam3_00396-audio.mp4"
-          }
-        }
+        "save_output": true
       }
     },
     {
@@ -3577,20 +3525,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "concatenation_00009-audio.mp4",
-            "subfolder": "H3",
-            "type": "temp",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "concatenation_00009.png",
-            "fullpath": "C:\\SD\\ComfyUI\\Comfy-03-15-2026\\ComfyUI\\temp\\H3\\concatenation_00009-audio.mp4"
-          }
-        }
+        "save_output": false
       },
       "widgets_values_named": {
         "frame_rate": 24,
@@ -3602,20 +3537,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "concatenation_00009-audio.mp4",
-            "subfolder": "H3",
-            "type": "temp",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "concatenation_00009.png",
-            "fullpath": "C:\\SD\\ComfyUI\\Comfy-03-15-2026\\ComfyUI\\temp\\H3\\concatenation_00009-audio.mp4"
-          }
-        }
+        "save_output": false
       }
     },
     {
@@ -4260,22 +4182,7 @@
         "skip_first_frames": 0,
         "select_every_nth": 1,
         "format": "AnimateDiff",
-        "choose video to upload": null,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "1761609511584148.webm",
-            "type": "input",
-            "format": "video/webm",
-            "force_rate": 24,
-            "custom_width": 0,
-            "custom_height": 0,
-            "frame_load_cap": 39,
-            "skip_first_frames": 0,
-            "select_every_nth": 1
-          }
-        }
+        "choose video to upload": null
       }
     },
     {
