@@ -48,6 +48,27 @@ CATEGORY = "MiniMax H3/long-form"
 OPEN_CLASS = "H3ChunkOpen"
 
 
+def _ones_mask(samples):
+    """A denoise mask of 1s shaped like `samples` — a no-op the sampler ignores.
+
+    H3's latent is a nested (video, audio) pair and the mask has to be nested the
+    same way, so this cannot be a bare `torch.ones_like`. Returns None for
+    anything that is not a latent tensor, because a mask nobody can use is worse
+    than no mask.
+    """
+    try:
+        import torch
+        import comfy.nested_tensor
+    except Exception:                       # pragma: no cover - outside ComfyUI
+        return None
+    if getattr(samples, "is_nested", False):
+        return comfy.nested_tensor.NestedTensor(
+            tuple(torch.ones_like(t) for t in samples.tensors))
+    if torch.is_tensor(samples):
+        return torch.ones_like(samples)
+    return None
+
+
 def _links(node):
     for key, val in (node.get("inputs") or {}).items():
         if is_link(val):
@@ -795,7 +816,22 @@ class H3ChunkLatentContext:
         if source_latent is None or int(context_length) <= 0:
             why = ("first chunk — nothing before it to continue from"
                    if source_latent is None else "context_length 0")
-            return (latent, 0, f"H3 CHUNK LATENT CONTEXT: passthrough ({why})")
+            # Pass through WITH an all-ones mask rather than no mask at all.
+            # The two are identical to the sampler -- `samplers.py` computes
+            # `out * denoise_mask + latent_image * (1 - denoise_mask)`, which is
+            # `out` when the mask is 1, and the model's per-row timesteps come
+            # out at the unmasked `1 - sigma` either way. What it buys is that a
+            # downstream node which REWRITES a prefix mask has something to
+            # rewrite. MAINodes' drift control refuses a latent with no
+            # noise_mask, and the first chunk -- the one with no prefix, where
+            # drift control correctly does nothing -- was the one that hit it.
+            out = latent
+            if isinstance(latent, dict) and "noise_mask" not in latent:
+                m = _ones_mask(latent.get("samples"))
+                if m is not None:
+                    out = dict(latent)
+                    out["noise_mask"] = m
+            return (out, 0, f"H3 CHUNK LATENT CONTEXT: passthrough ({why})")
 
         from .mask import H3LatentPin
         res = H3LatentPin().go(latent=latent, previous_latent=source_latent,
