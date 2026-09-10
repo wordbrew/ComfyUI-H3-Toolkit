@@ -1776,20 +1776,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": true,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "source.mp4",
-            "subfolder": "H3",
-            "type": "output",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "ref_a.png",
-            "fullpath": "source.mp4"
-          }
-        }
+        "save_output": true
       },
       "widgets_values_named": {
         "frame_rate": 24,
@@ -1801,20 +1788,7 @@
         "save_metadata": true,
         "trim_to_audio": false,
         "pingpong": false,
-        "save_output": true,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "source.mp4",
-            "subfolder": "H3",
-            "type": "output",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "ref_a.png",
-            "fullpath": "source.mp4"
-          }
-        }
+        "save_output": true
       }
     },
     {
