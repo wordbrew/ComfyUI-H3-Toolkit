@@ -2,7 +2,7 @@
   "id": "h3-22-generate-plus-pdd-upscale",
   "revision": 0,
   "last_node_id": 125,
-  "last_link_id": 40,
+  "last_link_id": 41,
   "nodes": [
     {
       "id": 8,
@@ -692,7 +692,8 @@
           "name": "LATENT",
           "type": "LATENT",
           "links": [
-            20
+            20,
+            41
           ]
         }
       ],
@@ -1496,6 +1497,13 @@
           "name": "image_4",
           "type": "IMAGE",
           "link": null
+        },
+        {
+          "localized_name": "latent",
+          "name": "latent",
+          "type": "LATENT",
+          "shape": 7,
+          "link": 41
         }
       ],
       "outputs": [
@@ -1507,6 +1515,12 @@
             40
           ],
           "slot_index": 0
+        },
+        {
+          "localized_name": "info",
+          "name": "info",
+          "type": "STRING",
+          "links": []
         }
       ],
       "properties": {
@@ -1514,12 +1528,17 @@
       },
       "widgets_values": [
         141,
-        0.0,
+        -1.0,
         -1.0,
         -1.0,
         -1.0,
         640,
-        1120
+        1120,
+        0,
+        119,
+        -1,
+        -1,
+        true
       ]
     },
     {
@@ -1803,6 +1822,14 @@
       109,
       1,
       "CONDITIONING"
+    ],
+    [
+      41,
+      107,
+      1,
+      124,
+      6,
+      "LATENT"
     ]
   ],
   "groups": [

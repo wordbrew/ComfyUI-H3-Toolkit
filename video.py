@@ -460,29 +460,100 @@ class H3KeyframeTimeline:
         opt["height"] = ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
                          "tooltip": "The canvas height, same as the H3 "
                                     "conditioning node's."})
+        opt["latent"] = ("LATENT", {"tooltip": "The H3 conditioning node's LATENT "
+                          "output. WIRE THIS — it is the canvas, measured rather "
+                          "than typed, and it overrides width/height. Core's "
+                          "AddGuide takes the same input for the same reason."})
+        for i in (1, 2, 3, 4):
+            opt[f"frame_{i}"] = ("INT", {"default": -1, "min": -1, "max": 9999,
+                                 "tooltip": f"Pixel frame for image_{i}, the "
+                                            f"model's own unit — it stores a "
+                                            f"frame index, not a time. Wins over "
+                                            f"time_{i} when set to 0 or more; -1 "
+                                            f"means 'use time_{i}'. Anchors land "
+                                            f"cleanly on multiples of 17 (see "
+                                            f"snap_to_grid)."})
+        opt["snap_to_grid"] = ("BOOLEAN", {"default": True,
+                               "tooltip": "Move each keyframe to the nearest "
+                                          "multiple of 17. FRAME_PER_TOKEN is "
+                                          "(1,4,4,4,4), so every fifth latent "
+                                          "step covers exactly ONE pixel frame "
+                                          "and the rest cover four — an anchor "
+                                          "off the grid is smeared across four "
+                                          "frames instead of landing on one. The "
+                                          "info output always says where each "
+                                          "keyframe actually went."})
         return {"required": req, "optional": opt}
 
-    RETURN_TYPES = ("CONDITIONING",)
+    RETURN_TYPES = ("CONDITIONING", "STRING")
+    RETURN_NAMES = ("conditioning", "info")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Add keyframes at arbitrary times, and let them coexist with "
                    "reference images. Run AFTER the H3 reference node. Middle "
                    "positions are experimental; first/last are the proven cases.")
 
+    @staticmethod
+    def _place(idx, frame_count, snap, notes, slot, asked):
+        """Clamp into the clip, optionally snap to a single-frame slot, and SAY SO.
+
+        The grid is not cosmetic. FRAME_PER_TOKEN is (1,4,4,4,4), so latent step k
+        covers one pixel frame when k % 5 == 0 and four otherwise — the clean
+        anchors are the multiples of 17 (0, 17, 34, 51 ...). Land between them and
+        the keyframe is smeared over the four frames its step covers. 5.0s is
+        frame 120; the clean slot is 119.
+        """
+        last = frame_count - 1
+        idx = 0 if idx <= 0 else min(idx, last)
+        moved = idx
+        # The LAST frame is its own proven anchor and is not on the 17 grid --
+        # core places `last_frame` at frame_count - 1 (nodes_minimax_h3.py:150).
+        # Snapping it back to 136 would move a trodden position onto an untrodden
+        # one, which is the opposite of the point.
+        if idx == last:
+            notes.append(f"image_{slot}: asked {asked} -> frame {idx}, the LAST "
+                         f"frame (its own anchor, like core's last_frame)")
+            return idx
+        if snap and idx > 0:
+            lo = (idx // 17) * 17
+            hi = lo + 17
+            moved = lo if (hi > last or (idx - lo) <= (hi - idx)) else hi
+        if moved != idx:
+            notes.append(f"image_{slot}: asked {asked} (frame {idx}) -> frame "
+                         f"{moved}, the nearest single-frame slot")
+        else:
+            on = " (a single-frame slot)" if idx % 17 == 0 else (
+                f" — NOT on the 17-frame grid, so it is smeared across the "
+                f"{4} frames its latent step covers")
+            notes.append(f"image_{slot}: asked {asked} -> frame {idx}{on}")
+        return moved
+
     def go(self, conditioning, vae, length, **kw):
         patch_packed_layout()
         frame_count = snap_run(length)
+        snap = bool(kw.get("snap_to_grid", True))
+        notes = []
         entries = []
         for i in (1, 2, 3, 4):
             img = kw.get(f"image_{i}")
             t = kw.get(f"time_{i}", -1.0)
+            f = kw.get(f"frame_{i}", -1)
+            # FRAMES WIN. The model stores `resolved_frame_index`, a pixel frame;
+            # seconds is a lossy layer over it that cannot express the grid below,
+            # and 5.0s lands on frame 120 when the clean slot is 119. time_N stays
+            # so saved graphs keep meaning what they meant.
+            if img is not None and f is not None and int(f) >= 0:
+                entries.append((self._place(int(f), frame_count, snap, notes,
+                                            i, "frame"), img))
+                continue
             if img is None or t is None or t < 0:
                 continue
-            idx = int(round(float(t) * 24.0))
-            idx = 0 if idx <= 0 else min(idx, frame_count - 1)
-            entries.append((idx, img))
+            entries.append((self._place(int(round(float(t) * 24.0)), frame_count,
+                                        snap, notes, i, f"{float(t):g}s"), img))
         if not entries:
-            return (conditioning,)
+            info = "H3 KEYFRAME TIMELINE: no keyframes — every slot disabled"
+            logging.info(info)
+            return (conditioning, info)
         entries.sort(key=lambda e: e[0])
 
         # RESIZE TO THE CANVAS BEFORE ENCODING. Stock's AddGuide does this
@@ -496,6 +567,19 @@ class H3KeyframeTimeline:
         # 640x1120 canvas. Cover-crop to the target aspect, then scale.
         import comfy.utils
         w_t, h_t = int(kw.get("width") or 0), int(kw.get("height") or 0)
+        # A LATENT beats two typed integers: it is the canvas as it actually is,
+        # not as someone remembered it, and it cannot fall out of step when the
+        # canvas changes. Core's AddGuide reads its target geometry the same way
+        # (nodes_minimax_h3.py:193-196). It also survives the case that produced
+        # the 250x115 report -- a graph in the browser that predates these
+        # widgets sends no value for them at all, and 0 silently means "encode
+        # at the image's own size".
+        lat = kw.get("latent")
+        if isinstance(lat, dict):
+            s = lat.get("samples")
+            v = s.tensors[0] if getattr(s, "is_nested", False) else s
+            if v is not None and getattr(v, "dim", lambda: 0)() == 5:
+                h_t, w_t = int(v.shape[3]) * 16, int(v.shape[4]) * 16
         keyframes = []
         for idx, img in entries:
             src = img[:1]
@@ -508,10 +592,12 @@ class H3KeyframeTimeline:
                 raise ValueError(
                     f"H3 Keyframe Timeline: the keyframe at {idx / 24.0:.2f}s "
                     f"encodes to a {z.shape[3]}x{z.shape[4]} latent, and the "
-                    f"DiT's 2x2 patch needs both EVEN. Wire this node's `width` "
-                    f"and `height` to the same canvas the H3 conditioning node "
-                    f"uses; the image is then resized to match instead of being "
-                    f"encoded at its own size.")
+                    f"DiT's 2x2 patch needs both EVEN, and nothing told this node "
+                    f"what the canvas is — so the image was encoded at its own "
+                    f"size. Wire the H3 conditioning node's LATENT output into "
+                    f"this node's `latent` input; that is the canvas measured "
+                    f"rather than typed. `width`/`height` also work, but a graph "
+                    f"saved before those widgets existed sends no value for them.")
             keyframes.append({"resolved_frame_index": idx, "latent": z,
                               "latent_t": z.shape[2] if z.dim() == 5 else 1})
 
@@ -525,7 +611,11 @@ class H3KeyframeTimeline:
             meta["frame_count"] = frame_count
             meta["cond_video_latents"] = [k["latent"] for k in keyframes] + ref_lats
             out.append([cond, meta])
-        return (out,)
+        info = (f"H3 KEYFRAME TIMELINE: {len(keyframes)} keyframe(s) over "
+                f"{frame_count} frames at {w_t or '?'}x{h_t or '?'}\n  "
+                + "\n  ".join(notes))
+        logging.info(info.replace("\n", " | "))
+        return (out, info)
 
 
 class H3MotionContext:
