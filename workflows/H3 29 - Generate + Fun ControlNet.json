@@ -1653,7 +1653,7 @@
       "widgets_values": [
         640,
         1120,
-        "lanczos",
+        "nearest-exact",
         "crop",
         "0, 0, 0",
         "center",
