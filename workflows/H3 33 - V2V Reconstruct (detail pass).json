@@ -1,5 +1,5 @@
 {
-  "id": "h3-33-v2v-style-shift",
+  "id": "h3-33-v2v-reconstruct",
   "revision": 0,
   "last_node_id": 52,
   "last_link_id": 28,
@@ -789,10 +789,10 @@
         "Node name for S&R": "H3GuideStrength"
       },
       "widgets_values": [
-        0.9,
+        0.999,
         0.999
       ],
-      "title": "Guide Strength  <-- the real lever"
+      "title": "Guide Strength"
     },
     {
       "id": 22,
@@ -1295,7 +1295,7 @@
       "widgets_values": {
         "frame_rate": 24,
         "loop_count": 0,
-        "filename_prefix": "H3/v2v_style",
+        "filename_prefix": "H3/v2v_reconstruct",
         "format": "video/h264-mp4",
         "pix_fmt": "yuv420p",
         "crf": 19,
@@ -1352,7 +1352,7 @@
         "text": ""
       },
       "widgets_values": [
-        "WHY A DENSE GUIDE IGNORED THE PROMPT, AND THE FIX\n\nH3 mixes noise into every visual condition row, and the\namount is read from the conditioning:\n\n  # comfy/ldm/minimax/model.py:502\n  aug = payload.get(\"visual_cond_noise_aug\", 0.999)\n  if aug < 1.0:\n      r = aug * r + (1.0 - aug) * noise\n\nNOTHING in ComfyUI ever set that key -- not core, not\nthis pack -- so every render before H3GuideStrength ran\nat 0.999. Guide rows arrive 99.9% clean AND are labelled\nas finished (model.py:584, seg_t[\"cond\"]). Both say the\nsame thing: trust this row.\n\nRight for one reference image. Wrong for a guide clip\ncovering all 90 frames, which then fully specifies every\noutput frame. The first run of this workflow changed\nnothing for exactly that reason -- not a weak style\nsignal, an unarguable guide.\n\nTHE SWEEP, same seed, same clip:\n\n  visual 0.999  the old behaviour: output = input\n  visual 0.90   <-- start here (set now)\n  visual 0.70   looser; expect real style movement\n  visual 0.50   expect structure to start slipping\n\nFind where style appears and motion still holds. THEN\nadd the style LoRA on top, and only then reach for CFG.\n\nCAVEAT: _cond_video_rows walks keyframes AND references\ntogether, and seg_t sets \"cond\" and \"ref_img\" from the\nsame number. This dial cannot loosen a guide while\nleaving reference images alone. Fine here -- no refs.\n\nUNPROVEN at every value except 0.999."
+        "WHAT THIS IS: RECONSTRUCTION, NOT RESTYLE\n\nThe whole source clip goes in as ONE guide clip on\nAddGuide at frame 0, at full denoise. The guide rows sit\nat the target's own time coordinates and the model takes\nthem as GROUND TRUTH, so the output comes back as the\nsource, regenerated. That is a detail / reconstruction\npass, and it is what this arrangement was copied from.\n\nIt does NOT restyle. Measured 2026-09-09: guide strength\nlowered to 0.5, two style LoRAs at 1.0, and a frame-by-\nframe comparison against the source shows the same\nsubject, the same background, the same staging.\n\nFOR A STYLE CHANGE USE H3 34, which encodes the source\nINTO the latent and denoises part of the way. That is the\nmechanism that redraws.\n\nH3GuideStrength (below) exposes visual_cond_noise_aug,\nwhich core reads at model.py:502 and which NOTHING had\never set -- every render before it ran at the 0.999\ndefault, guide rows arriving 99.9% clean and labelled as\nfinished. It is a real dial, and lowering it does change\nthe output, but it did not buy a style change here. One\nnumber covers keyframes AND reference images, so it\ncannot loosen a guide while leaving references alone.\n\nUNTESTED as a detail pass -- that is the thing it should\nactually be good at, and nobody has measured it."
       ],
       "color": "#432",
       "bgcolor": "#653"
