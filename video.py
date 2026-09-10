@@ -447,6 +447,19 @@ class H3KeyframeTimeline:
             opt[f"image_{i}"] = ("IMAGE",)
             opt[f"time_{i}"] = ("FLOAT", {"default": -1.0, "min": -1.0, "max": 150.0,
                                           "step": 0.1})
+        # APPENDED, per the slot contract -- these go last so saved graphs keep
+        # their wiring. See the class docstring for why they are not optional in
+        # any meaningful sense.
+        opt["width"] = ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
+                        "tooltip": "The canvas width, same as the H3 conditioning "
+                                   "node's. Keyframe rows are placed on the "
+                                   "TARGET's spatial grid, so the image has to be "
+                                   "encoded at the target's size. 0 encodes the "
+                                   "image as-is, which only works if it already "
+                                   "matches."})
+        opt["height"] = ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
+                         "tooltip": "The canvas height, same as the H3 "
+                                    "conditioning node's."})
         return {"required": req, "optional": opt}
 
     RETURN_TYPES = ("CONDITIONING",)
@@ -472,9 +485,33 @@ class H3KeyframeTimeline:
             return (conditioning,)
         entries.sort(key=lambda e: e[0])
 
+        # RESIZE TO THE CANVAS BEFORE ENCODING. Stock's AddGuide does this
+        # (`_resize(image, width, height, "center")`, nodes_minimax_h3.py:218) and
+        # this node did not, which is a crash rather than a soft error: keyframe
+        # rows are positioned on the TARGET's spatial grid, and an image that
+        # encodes to odd latent dims dies inside `patchify_video`, whose reshape
+        # is bare --
+        #     shape '[1, 24, 1, 1, 61, 2, 34, 2]' is invalid for input of size 203688
+        # which was a 1104x1968 keyframe (latent 69x123, both ODD) against a
+        # 640x1120 canvas. Cover-crop to the target aspect, then scale.
+        import comfy.utils
+        w_t, h_t = int(kw.get("width") or 0), int(kw.get("height") or 0)
         keyframes = []
         for idx, img in entries:
-            z = vae.encode(img[:1])
+            src = img[:1]
+            if w_t > 0 and h_t > 0:
+                s = src[..., :3].movedim(-1, 1)
+                s = comfy.utils.common_upscale(s, w_t, h_t, "lanczos", "center")
+                src = s.movedim(1, -1)
+            z = vae.encode(src)
+            if z.dim() == 5 and (z.shape[3] % 2 or z.shape[4] % 2):
+                raise ValueError(
+                    f"H3 Keyframe Timeline: the keyframe at {idx / 24.0:.2f}s "
+                    f"encodes to a {z.shape[3]}x{z.shape[4]} latent, and the "
+                    f"DiT's 2x2 patch needs both EVEN. Wire this node's `width` "
+                    f"and `height` to the same canvas the H3 conditioning node "
+                    f"uses; the image is then resized to match instead of being "
+                    f"encoded at its own size.")
             keyframes.append({"resolved_frame_index": idx, "latent": z,
                               "latent_t": z.shape[2] if z.dim() == 5 else 1})
 
