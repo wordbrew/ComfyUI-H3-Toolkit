@@ -289,6 +289,33 @@ check("and the layout emits rows in that same order",
       "keyframes first, then refs" in
       (pathlib.Path(root / "video.py").read_text()), True)
 
+# --- keyframe span ----------------------------------------------------------- #
+# The layout must budget rows from the LATENT, not from a key only our own nodes
+# write. Core's MiniMaxH3AddGuide anchors a multi-frame guide CLIP and sets no
+# `latent_t`; budgeting 1 step for it is a hard shape error inside _forward.
+print("a keyframe's row span is read off the tensor")
+check("a 27-step guide clip spans 27, with no latent_t key at all",
+      vid.keyframe_span({"latent": Z(27), "resolved_frame_index": 0}), 27)
+check("a single-frame keyframe still spans 1",
+      vid.keyframe_span({"latent": Z(1), "resolved_frame_index": 0}), 1)
+check("the tensor WINS over a stale latent_t",
+      vid.keyframe_span({"latent": Z(12), "latent_t": 1}), 12)
+check("latent_t is the fallback when there is no video latent",
+      vid.keyframe_span({"audio_latent": A(90), "latent_t": 4}), 4)
+check("and a bare audio-only keyframe defaults to 1",
+      vid.keyframe_span({"audio_latent": A(90)}), 1)
+
+# The reason the change is safe for OUR nodes: every keyframe they emit already
+# sets latent_t to the tensor's own shape[2], so reading the tensor returns the
+# identical number. Assert that on real node output rather than by inspection.
+meta, items, v, av = run(
+    ref_images={"ref_image_1": T(1, 1024, 768, "REF")},
+    context_images=T(60, 1120, 640, "CTX"), context_frames="22")
+kfs = meta["minimax_keyframes"]
+check("the long-form node emits keyframes to check", len(kfs) > 0, True)
+check("tensor span agrees with the latent_t our node wrote, on every one",
+      [vid.keyframe_span(k) for k in kfs], [k["latent_t"] for k in kfs])
+
 print()
 if fails:
     print(f"{len(fails)} failure(s)")

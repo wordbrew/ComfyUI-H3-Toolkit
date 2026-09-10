@@ -128,6 +128,34 @@ def take_window_start():
     return v
 
 
+def keyframe_span(kf):
+    """How many LATENT steps one keyframe occupies in the packed sequence.
+
+    READ IT OFF THE TENSOR. Stock does exactly that -- `vt = video_latent.shape[2]`
+    at `comfy/ldm/minimax/model.py:347` -- and the layout has to agree with the
+    model, because `_forward` then writes `all_video_rows[~img_update] =
+    cond_video_rows` and a disagreement is a hard shape error, not a soft one.
+
+    This used to read a `latent_t` key with a default of 1. Only OUR nodes write
+    that key. Core's `MiniMaxH3AddGuide` does not, and it is the one node that can
+    anchor a multi-frame guide CLIP -- so a 27-step clip was given a single row
+    slot and the render died with
+
+        value tensor of shape [10368, 96] cannot be broadcast to
+        indexing result of shape [384, 96]
+
+    10368 = 27 steps x 384 rows; 384 = the one step the layout had budgeted. Every
+    keyframe we had ever built ourselves was a single frame, so the wrong default
+    was right every time and the bug sat here unseen.
+
+    The key is still honoured as a fallback for a block that carries no tensor.
+    """
+    lat = kf.get("latent")
+    if lat is not None and getattr(lat, "dim", lambda: 0)() == 5:
+        return int(lat.shape[2])
+    return int(kf.get("latent_t", 1))
+
+
 def patch_packed_layout():
     """Replace PackedLayout so refs + keyframes can share one packed sequence.
 
@@ -274,7 +302,7 @@ def patch_packed_layout():
                     # An earlier version here walked the spans cumulatively to the
                     # containing LATENT frame, which is a different (wrong) quantity.
                     cond_t = cursor + FRAME_RESCALE * float(idx)
-                kf_t = int(kf.get("latent_t", 1))
+                kf_t = keyframe_span(kf)
                 if kf.get("latent") is not None:
                     if kf_t > 1:
                         n = kf_t * frame_rows
