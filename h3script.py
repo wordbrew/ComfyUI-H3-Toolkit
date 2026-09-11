@@ -478,22 +478,25 @@ def lora_schedule(doc, chunks):
     the same number for dialogue; here it is simply the running total of
     `end - keep_from`.
 
-    -> (schedule text, {slot: filename}, notes)
+    THREE SLOTS PER NODE IS NOT A CEILING. H3 Chunk Lora is model-in / model-out,
+    so more than three LoRAs means chaining another one -- this returns a GROUP
+    per node rather than dropping the rest, which an earlier cut did while
+    claiming they "will not be scheduled".
+
+    -> [(schedule text, {slot: filename}), ...], one entry per H3 Chunk Lora node
     """
-    slots, order = {}, []
+    order = []
     for shot in doc.get("shots", []):
         for lora in shot.get("loras", []):
             name = lora.get("name")
             if name and name not in order:
                 order.append(name)
-    notes = []
-    for i, name in enumerate(order[:3]):
-        slots[f"lora_{i + 1}"] = name
-    if len(order) > 3:
-        notes.append(f"{len(order)} different LoRAs are named but H3 Chunk Lora "
-                     f"has three slots — {', '.join(order[3:])} will not be "
-                     f"scheduled")
-    by_name = {n: f"lora_{i + 1}" for i, n in enumerate(order[:3])}
+    # group of three, and which slot each file takes within its own group
+    groups = [order[i:i + 3] for i in range(0, len(order), 3)] or [[]]
+    by_name = {}
+    for gi, group in enumerate(groups):
+        for si, name in enumerate(group):
+            by_name[name] = (gi, f"lora_{si + 1}")
 
     # where each shot sits on the FINISHED clip
     finished, pos = [], 0
@@ -506,7 +509,8 @@ def lora_schedule(doc, chunks):
         s = frames / 24.0
         return f"{int(s // 60):02d}:{int(round(s % 60)):02d}"
 
-    rows, at = [], 0
+    rows = [[] for _ in groups]
+    at = 0
     for shot in doc.get("shots", []):
         n = int(shot.get("frames") or 0)
         span = [f for f in finished if at <= f[0] < at + (n or 10 ** 9)]
@@ -514,13 +518,19 @@ def lora_schedule(doc, chunks):
             start = span[0][1]
             end = span[-1][1] + span[-1][2]
             for lora in shot["loras"]:
-                slot = by_name.get(lora.get("name"))
-                if not slot:
+                hit = by_name.get(lora.get("name"))
+                if not hit:
                     continue
-                rows.append(f"{stamp_at(start)}-{stamp_at(end)} | {slot} | "
-                            f"{lora.get('strength', '1.0')}")
+                gi, slot = hit
+                rows[gi].append(f"{stamp_at(start)}-{stamp_at(end)} | {slot} | "
+                                f"{lora.get('strength', '1.0')}")
         at += n or 0
-    return "\n".join(rows), slots, notes
+
+    out = []
+    for gi, group in enumerate(groups):
+        slots = {f"lora_{i + 1}": name for i, name in enumerate(group)}
+        out.append(("\n".join(rows[gi]), slots))
+    return out
 
 
 def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
@@ -904,14 +914,30 @@ class H3Script:
         chunks, plan_info = build_plan(doc, chunk_frames=chunk_frames,
                                        context=context)
         rows += [f"  {n}" for n in audio_clock_notes(doc, chunk_frames)]
-        sched, slots, lora_notes = lora_schedule(doc, chunks)
-        if slots:
-            # the slot map is the part you cannot guess: H3 Chunk Lora addresses
-            # a PICKER SLOT, so the schedule is meaningless until lora_1..3 are
-            # set to these files
-            rows.append("  lora slots — set these on H3 Chunk Lora:")
+        groups = lora_schedule(doc, chunks)
+        sched = groups[0][0] if groups else ""
+        # THE SLOT MAP IS THE PART YOU CANNOT GUESS. H3 Chunk Lora addresses a
+        # PICKER SLOT, so a schedule means nothing until lora_1..3 hold these
+        # files. More than three LoRAs is another node chained after this one,
+        # not a limit -- each group below is one node.
+        for gi, (text, slots) in enumerate(groups):
+            if not slots:
+                continue
+            if len(groups) == 1:
+                which = "H3 Chunk Lora"
+            elif gi == 0:
+                which = "H3 Chunk Lora #1"
+            else:
+                which = f"H3 Chunk Lora #{gi + 1}, chained after #{gi}"
+            rows.append(f"  {which} — set these pickers:")
             rows += [f"    {k} = {v}" for k, v in slots.items()]
-        rows += [f"  {n}" for n in lora_notes]
+            if gi:
+                # only the FIRST group rides the lora_schedule output; the rest
+                # have nowhere to go but here, so print them ready to paste
+                rows.append("    schedule:")
+                rows += [f"      {r}" for r in text.splitlines()]
+            else:
+                rows.append("    schedule: on the lora_schedule output")
         if cuts:
             rows.append(f"  cuts at {', '.join(str(c) for c in cuts)} "
                         f"of {total} frames — wire cut_frames into H3 Chunk Plan")
