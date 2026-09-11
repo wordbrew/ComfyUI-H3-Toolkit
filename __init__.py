@@ -168,6 +168,27 @@ def _register_routes():
             return web.json_response({"ok": False,
                                       "error": f"{type(exc).__name__}: {exc}"})
 
+    @routes.post(ROUTE_PREFIX + "/script/timing")
+    async def _script_timing(request):
+        """Where the lines land, and which ones the chunking will eat."""
+        from .h3script import ScriptError, parse, timing
+        data = await _body(request)
+        try:
+            doc = data.get("document")
+            if doc is None:
+                doc = parse(data.get("text", ""))
+            return web.json_response({"ok": True, **timing(
+                doc,
+                total_frames=int(data.get("total_frames", 345)),
+                chunk_frames=int(data.get("chunk_frames", 141)),
+                context=int(data.get("context", 39)),
+                mode=data.get("mode", "fixed"))})
+        except ScriptError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        except (KeyError, TypeError, ValueError) as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
     @routes.post(ROUTE_PREFIX + "/script/compile")
     async def _script_compile(request):
         """Numbering + lint for a document, without running anything."""
