@@ -119,6 +119,71 @@ def _register_routes():
             return web.json_response({}, status=404)
         return web.json_response(data)
 
+    # --- the script document, for an editor ------------------------------- #
+    #
+    # THE DOCUMENT IS THE THING; the DSL is one serialization of it. These three
+    # routes are the whole server side of a shot/dialogue editor: text in, a
+    # document out, a document in, text back, and a dry-run compile so a panel
+    # can show the <Subject n> / <Picture n> numbering and the lint WITHOUT
+    # queueing a render.
+    #
+    # A ScriptError carries the line it is on, so a bad script answers 200 with
+    # ok:false rather than a 500 — an editor wants to show the message next to
+    # the line, not a stack trace.
+
+    async def _body(request):
+        try:
+            return await request.json()
+        except Exception:
+            return {}
+
+    @routes.post(ROUTE_PREFIX + "/script/parse")
+    async def _script_parse(request):
+        from .h3script import ScriptError, parse
+        data = await _body(request)
+        try:
+            return web.json_response({"ok": True,
+                                      "document": parse(data.get("text", ""))})
+        except ScriptError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+
+    @routes.post(ROUTE_PREFIX + "/script/serialize")
+    async def _script_serialize(request):
+        from .h3script import ScriptError, serialize
+        data = await _body(request)
+        try:
+            return web.json_response({"ok": True,
+                                      "text": serialize(data.get("document"))})
+        except (ScriptError, KeyError, TypeError) as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
+    @routes.post(ROUTE_PREFIX + "/script/compile")
+    async def _script_compile(request):
+        """Numbering + lint for a document, without running anything."""
+        from .h3script import ScriptError, emit, lint, parse, serialize
+        data = await _body(request)
+        try:
+            doc = data.get("document")
+            if doc is None:
+                doc = parse(data.get("text", ""))
+            out = emit(doc)
+            return web.json_response({
+                "ok": True,
+                "document": doc,
+                "text": serialize(doc),
+                "index": out["index"],
+                "counts": out["counts"],
+                "fields": {k: v for k, v in out.items()
+                           if isinstance(v, (str, int, float))},
+                "lint": lint(doc, out),
+            })
+        except ScriptError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        except (KeyError, TypeError) as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
 
 _register_routes()
 
