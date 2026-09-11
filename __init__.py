@@ -137,6 +137,16 @@ def _register_routes():
         except Exception:
             return {}
 
+    @routes.get(ROUTE_PREFIX + "/characters")
+    async def _characters(request):
+        """Saved characters, so the panel offers a list instead of a spelling."""
+        try:
+            from .character import list_characters
+            return web.json_response({"ok": True, "characters": list_characters()})
+        except Exception as exc:
+            return web.json_response({"ok": False, "characters": [],
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
     @routes.post(ROUTE_PREFIX + "/script/parse")
     async def _script_parse(request):
         from .h3script import ScriptError, parse
