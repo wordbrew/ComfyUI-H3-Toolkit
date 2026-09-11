@@ -125,6 +125,61 @@ def store_card(name):
         return 0, 0, "", ""
 
 
+MAX_PICTURES = 4       # the reference node's ref_image slots
+MAX_VOICES = 2
+
+
+def cast_media(doc):
+    """The pictures and voices the script's own numbering refers to.
+
+    THE GAP THIS CLOSES. The script decides that @skye is <Subject 1> and holds
+    <Picture 1>..<Picture 3>, and then the pictures actually encoded came from
+    LoadImage nodes wired separately to the reference node. Nothing checked they
+    were the same images -- so the prompt could cite three anchors of one person
+    while three pictures of somebody else went to the model. That is the "five
+    nodes that have to agree" failure, still standing in the one place the
+    compiler had not reached.
+
+    Pulled from the store in the SAME order `index()` assigns, so the picture
+    cited and the picture shown cannot come apart.
+
+    -> (images, voices, notes). Torch-free until it actually loads something, so
+    the module still imports without ComfyUI.
+    """
+    images, voices, notes = [], [], []
+    for entry in doc.get("cast", []):
+        if entry.get("kind") != "character":
+            continue
+        name = entry.get("character") or entry["name"]
+        try:
+            import os
+
+            from .character import IMAGE_EXT, _load_audio, _load_image, characters_dir
+            d = os.path.join(characters_dir(), name)
+            img_dir = os.path.join(d, "images")
+            found = []
+            if os.path.isdir(img_dir):
+                for f in sorted(os.listdir(img_dir)):
+                    if f.lower().endswith(IMAGE_EXT):
+                        found.append(os.path.join(img_dir, f))
+            want = int(entry.get("pictures") or len(found))
+            for path in found[:want]:
+                images.append(_load_image(path))
+            if int(entry.get("audio") or 0):
+                for cand in ("voice.wav", "voice.flac", "voice.mp3"):
+                    vp = os.path.join(d, cand)
+                    if os.path.isfile(vp):
+                        voices.append(_load_audio(vp))
+                        break
+        except Exception as exc:      # no store, no ComfyUI, no PIL
+            notes.append(f"@{entry['name']}: could not read the store ({exc})")
+    if len(images) > MAX_PICTURES:
+        notes.append(f"{len(images)} anchors across the cast, but the reference "
+                     f"node takes {MAX_PICTURES} — the rest are cited in the "
+                     f"prompt and not shown, which is worse than not citing them")
+    return images[:MAX_PICTURES], voices[:MAX_VOICES], notes
+
+
 class ScriptError(ValueError):
     """A problem with the script, reported with the line it is on."""
 
@@ -947,11 +1002,14 @@ class H3Script:
     # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
     # drew are the cuts it plans.
     RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT",
-                                     "H3_CHUNK_PLAN", "STRING", "STRING")
+                                     "H3_CHUNK_PLAN", "STRING", "STRING") + \
+                   ("IMAGE",) * MAX_PICTURES + ("AUDIO",) * MAX_VOICES
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
                     "document", "info", "cut_frames", "total_frames", "plan",
-                    "lora_schedule", "prompt")
+                    "lora_schedule", "prompt") + \
+                   tuple(f"picture_{i + 1}" for i in range(MAX_PICTURES)) + \
+                   tuple(f"voice_{i + 1}" for i in range(MAX_VOICES))
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Compile a take written in @names into H3's prompt fields. "
@@ -979,6 +1037,15 @@ class H3Script:
         payload = plan_payload(doc, chunk_frames=chunk_frames, context=context)
         chunks = payload["chunks"]
         rows += [f"  {n}" for n in audio_clock_notes(doc, chunk_frames)]
+
+        # the cast's own anchors, in the order this node numbered them
+        pics, voices, media_notes = cast_media(doc)
+        if pics:
+            rows.append(f"  picture_1..picture_{len(pics)} carry the cast's own "
+                        f"anchors — wire them to the reference node so the "
+                        f"pictures CITED are the pictures SHOWN")
+        rows += [f"  {n}" for n in media_notes]
+
         groups = lora_schedule(doc, chunks)
         sched = groups[0][0] if groups else ""
         # THE SLOT MAP IS THE PART YOU CANNOT GUESS. H3 Chunk Lora addresses a
@@ -1015,7 +1082,9 @@ class H3Script:
                            out["speaker_map"],
                            json.dumps(doc, indent=2), info,
                            ",".join(str(c) for c in cuts), total, payload,
-                           sched, out["prompt"])}
+                           sched, out["prompt"],
+                           *(list(pics) + [None] * MAX_PICTURES)[:MAX_PICTURES],
+                           *(list(voices) + [None] * MAX_VOICES)[:MAX_VOICES])}
 
 
 NODE_CLASS_MAPPINGS = {"H3Script": H3Script}

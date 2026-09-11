@@ -205,7 +205,10 @@ check("returns", hs.H3Script.RETURN_NAMES,
        "cut_frames", "total_frames", "plan", "lora_schedule",
        # one assembled string, because that is what every consumer takes; the
        # separate fields are for showing, not for wiring
-       "prompt"))
+       "prompt",
+       # the cast's OWN anchors, in the order this node numbered them, so the
+       # picture cited and the picture shown cannot come apart
+       "picture_1", "picture_2", "picture_3", "picture_4", "voice_1", "voice_2"))
 check("the original ten keep their positions", hs.H3Script.RETURN_NAMES[:10],
       ("head", "subject_defs", "retention", "soundscape", "music",
        "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info"))
