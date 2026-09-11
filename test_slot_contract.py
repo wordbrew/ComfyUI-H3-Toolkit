@@ -46,7 +46,11 @@ CONTRACT = {
         "windowing",
         ["model", "window_frames", "overlap_frames", "schedule", "fuse_method",
          "freenoise", "causal_window_fix", "absolute_window_positions",
-         "split_conds_to_windows"],
+         "split_conds_to_windows",
+         # appended 2026-09-11. It went in at the FRONT of the optional dict
+         # first, which would have shifted every saved graph's widget values by
+         # one -- caught here, which is what this file is for.
+         "margin_frames"],
         ["model", "info"]),
     "H3WindowPlan": (
         "windowing",
