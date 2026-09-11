@@ -90,7 +90,8 @@ function openPanel(node) {
     "display:flex;align-items:center;justify-content:center;" });
   const panel = el("div", { style:
     "background:#1e1e1e;color:#ddd;border:1px solid #555;border-radius:8px;" +
-    "width:min(860px,94vw);max-height:88vh;display:flex;flex-direction:column;" +
+    "width:min(1700px,96vw);height:min(94vh,1100px);display:flex;" +
+    "flex-direction:column;" +
     "font-family:system-ui,sans-serif;box-shadow:0 10px 40px rgba(0,0,0,.5);" });
   const head = el("div", { style:
     "padding:12px 16px;border-bottom:1px solid #444;display:flex;" +
@@ -99,10 +100,12 @@ function openPanel(node) {
     el("div", { textContent: "Nothing here needs remembering — add people, then shots.",
                 style: "color:#888;font-size:11px;" }),
   ]);
-  const body = el("div", { style: "padding:14px 16px;overflow:auto;flex:1;" });
+  const body = el("div", { style:
+    "padding:10px 16px 14px;overflow:auto;flex:1 1 auto;min-height:0;" });
   const timing = el("div", { style:
     "padding:8px 16px;border-top:1px solid #3a3a3a;background:#242424;" +
-    "font-size:11px;color:#aaa;white-space:pre-wrap;max-height:150px;overflow:auto;" });
+    "font-size:11px;color:#aaa;white-space:pre-wrap;" +
+    "max-height:min(28vh,320px);overflow:auto;flex:0 0 auto;" });
   const status = el("div", { style: "color:#8a8;font-size:11px;white-space:pre-wrap;flex:1;" });
   const foot = el("div", { style:
     "padding:10px 16px;border-top:1px solid #444;display:flex;gap:8px;align-items:center;" });
@@ -155,6 +158,8 @@ function openPanel(node) {
     "background:#1b1f23;border-radius:5px;padding:9px 11px 11px;" +
     "margin-bottom:6px;overflow-x:auto;" });
   const boardInner = el("div", { style: "min-width:640px;position:relative;" });
+  // the board is the thing worth giving room to; the forms below it can scroll
+  board.style.cssText += "flex:0 0 auto;";
   board.append(boardInner);
   boardWrap.append(toolbar, board);
   let selShot = 0;
@@ -793,8 +798,8 @@ function openPanel(node) {
   const addShot = el("button", { textContent: "Add a shot", style: BTN });
   addShot.onclick = () => { shotBox.append(shotCard()); refresh(); };
 
-  body.append(boardWrap,
-              heading("People and places"), castBox, row([addPerson, addPlace]),
+  boardWrap.style.cssText = "padding:10px 16px 0;flex:0 0 auto;";
+  body.append(heading("People and places"), castBox, row([addPerson, addPlace]),
               heading("Shots"), shotBox, row([addShot]));
 
   const showPrompt = el("button", { textContent: "Show the prompt", style: BTN });
@@ -845,7 +850,7 @@ function openPanel(node) {
     back.remove();
   };
   foot.append(status, showPrompt, cancel, save);
-  panel.append(head, body, timing, foot);
+  panel.append(head, boardWrap, body, timing, foot);
   back.append(panel);
   back.onclick = (e) => { if (e.target === back) back.remove(); };
   document.body.append(back);
