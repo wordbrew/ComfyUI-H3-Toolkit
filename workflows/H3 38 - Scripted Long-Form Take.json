@@ -1,8 +1,8 @@
 {
   "id": "h3-38-scripted-long-form",
   "revision": 0,
-  "last_node_id": 40,
-  "last_link_id": 82,
+  "last_node_id": 41,
+  "last_link_id": 99,
   "nodes": [
     {
       "id": 12,
@@ -113,7 +113,7 @@
           "name": "ref_images.ref_image_0",
           "shape": 7,
           "type": "IMAGE",
-          "link": 40
+          "link": 97
         },
         {
           "label": "ref_image_1",
@@ -121,7 +121,7 @@
           "name": "ref_images.ref_image_1",
           "shape": 7,
           "type": "IMAGE",
-          "link": 41
+          "link": 98
         },
         {
           "label": "ref_image_2",
@@ -129,7 +129,7 @@
           "name": "ref_images.ref_image_2",
           "shape": 7,
           "type": "IMAGE",
-          "link": 42
+          "link": 99
         },
         {
           "label": "ref_image_3",
@@ -153,7 +153,7 @@
           "widget": {
             "name": "prompt"
           },
-          "link": 44
+          "link": 83
         },
         {
           "localized_name": "width",
@@ -478,9 +478,7 @@
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            42
-          ]
+          "links": []
         },
         {
           "localized_name": "MASK",
@@ -544,9 +542,7 @@
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            41
-          ]
+          "links": []
         },
         {
           "localized_name": "MASK",
@@ -610,9 +606,7 @@
           "localized_name": "IMAGE",
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [
-            40
-          ]
+          "links": []
         },
         {
           "localized_name": "MASK",
@@ -1111,7 +1105,9 @@
           "localized_name": "chunk_index",
           "name": "chunk_index",
           "type": "INT",
-          "links": []
+          "links": [
+            90
+          ]
         },
         {
           "localized_name": "flow",
@@ -1131,7 +1127,9 @@
           "localized_name": "chunk_count",
           "name": "chunk_count",
           "type": "INT",
-          "links": []
+          "links": [
+            91
+          ]
         },
         {
           "localized_name": "keyframe",
@@ -1439,7 +1437,7 @@
       ],
       "flags": {},
       "order": 14,
-      "mode": 4,
+      "mode": 0,
       "inputs": [
         {
           "localized_name": "head",
@@ -1448,7 +1446,7 @@
           "widget": {
             "name": "head"
           },
-          "link": null
+          "link": 84
         },
         {
           "localized_name": "beats",
@@ -1457,7 +1455,7 @@
           "widget": {
             "name": "beats"
           },
-          "link": null
+          "link": 96
         },
         {
           "localized_name": "tail",
@@ -1475,7 +1473,7 @@
           "widget": {
             "name": "link_index"
           },
-          "link": null
+          "link": 90
         },
         {
           "localized_name": "seconds_per_link",
@@ -1503,7 +1501,7 @@
           "widget": {
             "name": "subject_def_1"
           },
-          "link": null
+          "link": 85
         },
         {
           "localized_name": "retention_1",
@@ -1513,7 +1511,7 @@
           "widget": {
             "name": "retention_1"
           },
-          "link": null
+          "link": 86
         },
         {
           "localized_name": "expected_count",
@@ -1523,7 +1521,7 @@
           "widget": {
             "name": "expected_count"
           },
-          "link": null
+          "link": 91
         },
         {
           "localized_name": "task_type",
@@ -1534,6 +1532,31 @@
             "name": "task_type"
           },
           "link": null
+        },
+        {
+          "localized_name": "soundscape",
+          "name": "soundscape",
+          "type": "STRING",
+          "widget": {
+            "name": "soundscape"
+          },
+          "link": 87
+        },
+        {
+          "localized_name": "music",
+          "name": "music",
+          "type": "STRING",
+          "widget": {
+            "name": "music"
+          },
+          "link": 88
+        },
+        {
+          "localized_name": "chunk_plan",
+          "name": "chunk_plan",
+          "type": "H3_CHUNK_PLAN",
+          "shape": 7,
+          "link": 89
         }
       ],
       "outputs": [
@@ -1541,7 +1564,9 @@
           "localized_name": "prompt",
           "name": "prompt",
           "type": "STRING",
-          "links": []
+          "links": [
+            83
+          ]
         },
         {
           "localized_name": "length",
@@ -1574,7 +1599,7 @@
           "links": []
         }
       ],
-      "title": "3. one clause per chunk  (replaced by H3 Script)",
+      "title": "H3 Long-Form Links — makes the prompt PER CHUNK",
       "properties": {
         "Node name for S&R": "H3LongFormLinks"
       },
@@ -1589,7 +1614,10 @@
         "<Subject 1> is the woman in <Picture 1> and <Picture 2> and <Picture 3>,",
         "<Subject 1> (Shot 1): fully_preserved — face, wavy brunette hair, and body match <Picture 1> and <Picture 2> and <Picture 3> exactly.",
         0,
-        "keyframe completion"
+        "keyframe completion",
+        141,
+        "",
+        ""
       ],
       "widgets_values_named": {
         "head": "A woman in a rust knit jumper stands in a long grey gallery with tall windows down the left side and flat overcast daylight.",
@@ -2278,7 +2306,7 @@
       ],
       "size": [
         470,
-        430
+        520
       ],
       "flags": {},
       "order": 0,
@@ -2317,49 +2345,65 @@
           "localized_name": "head",
           "name": "head",
           "type": "STRING",
-          "links": []
+          "links": [
+            84
+          ]
         },
         {
           "localized_name": "subject_defs",
           "name": "subject_defs",
           "type": "STRING",
-          "links": []
+          "links": [
+            85
+          ]
         },
         {
           "localized_name": "retention",
           "name": "retention",
           "type": "STRING",
-          "links": []
+          "links": [
+            86
+          ]
         },
         {
           "localized_name": "soundscape",
           "name": "soundscape",
           "type": "STRING",
-          "links": []
+          "links": [
+            87
+          ]
         },
         {
           "localized_name": "music",
           "name": "music",
           "type": "STRING",
-          "links": []
+          "links": [
+            88
+          ]
         },
         {
           "localized_name": "dialogue_lines",
           "name": "dialogue_lines",
           "type": "STRING",
-          "links": []
+          "links": [
+            92
+          ]
         },
         {
           "localized_name": "dialogue_actions",
           "name": "dialogue_actions",
           "type": "STRING",
-          "links": []
+          "links": [
+            93
+          ]
         },
         {
           "localized_name": "speaker_map",
           "name": "speaker_map",
           "type": "STRING",
-          "links": []
+          "links": [
+            94
+          ]
         },
         {
           "localized_name": "document",
@@ -2393,7 +2437,9 @@
           "type": "H3_CHUNK_PLAN",
           "links": [
             57,
-            73
+            73,
+            89,
+            95
           ]
         },
         {
@@ -2408,9 +2454,49 @@
           "localized_name": "prompt",
           "name": "prompt",
           "type": "STRING",
+          "links": []
+        },
+        {
+          "localized_name": "picture_1",
+          "name": "picture_1",
+          "type": "IMAGE",
           "links": [
-            44
+            97
           ]
+        },
+        {
+          "localized_name": "picture_2",
+          "name": "picture_2",
+          "type": "IMAGE",
+          "links": [
+            98
+          ]
+        },
+        {
+          "localized_name": "picture_3",
+          "name": "picture_3",
+          "type": "IMAGE",
+          "links": [
+            99
+          ]
+        },
+        {
+          "localized_name": "picture_4",
+          "name": "picture_4",
+          "type": "IMAGE",
+          "links": []
+        },
+        {
+          "localized_name": "voice_1",
+          "name": "voice_1",
+          "type": "AUDIO",
+          "links": []
+        },
+        {
+          "localized_name": "voice_2",
+          "name": "voice_2",
+          "type": "AUDIO",
+          "links": []
         }
       ],
       "properties": {
@@ -2448,8 +2534,143 @@
       "color": "#432",
       "bgcolor": "#653",
       "widgets_values": [
-        "ONE NODE WHERE FIVE HAD TO AGREE\n\nPress \"Edit the take\" on H3 Script. Shots sit on a real\nclock, the chunks the planner will make are drawn under\nthem, and every line shows at the second it is spoken --\nred when the chunking will eat it.\n\nWHAT IT FEEDS, and why nothing else plans:\n\n  prompt  -> the reference node. One assembled string:\n             subject_definitions, summary, retention_\n             analysis, detailed_description, soundscape,\n             music. The <Subject n> / <Picture n>\n             numbering is worked out for you.\n  plan    -> H3 Chunk Open and H3 Seam Check. This is\n             the SAME plan the board drew, so the\n             timeline cannot describe one render while\n             ComfyUI performs another.\n  info    -> the preview. Numbering, the audio-clock\n             warnings, and the lora slot map.\n\nH3 Long-Form Links and H3 Chunk Plan are BYPASSED, not\ndeleted, so you can see what was replaced. Do not switch\nthem back on alongside: two sources for the same cuts is\nthe disagreement this node exists to remove.\n\nSTILL BY HAND, because the graph has no socket for them:\n  dialogue_lines / dialogue_actions / speaker_map ->\n    H3 Dialogue, if you want the lines timed rather than\n    described in the prompt.\n  lora_schedule -> H3 Chunk Lora, with the picker slots\n    set to the files `info` names.\n\nShot lengths here are 141 and 243 — both on the 17n+5\ngrid AND divisible by 3, so the 24 fps and 40 Hz clocks\nstay together. The panel warns when one is not."
+        "ONE SCRIPT, WIRED ALL THE WAY THROUGH\n\nPress \"Edit the take\" on H3 Script.\n\n  H3 Script -> H3 Dialogue -> H3 Long-Form Links -> the\n  reference node, with the plan going to the chunk loop.\n\nWHY H3 LONG-FORM LINKS IS STILL HERE. It is what makes\nthe prompt PER CHUNK — it takes link_index from H3 Chunk\nOpen and emits that chunk's clause. An earlier cut of\nthis workflow bypassed it and fed H3 Script's own\n`prompt` straight to the reference node, which gave every\nchunk the SAME static prompt. That is a regression from\nH3 14, not a simplification.\n\nWHY H3 DIALOGUE IS HERE. It is where a line you PLACED on\nthe timeline becomes a timestamp. H3 Script deliberately\ndoes not time dialogue — H3 Dialogue owns the rule that\nno line may start inside a carried handle, and one\nimplementation of that is the point. Without this node\nthe speech is only described, never scheduled.\n\nWHERE THE PICTURES COME FROM. picture_1..3 are the cast's\nown anchors, pulled from the character store in the ORDER\nH3 Script numbered them. So <Picture 1> in the prompt and\nthe first image the model sees are the same file. They\nused to come from separate LoadImage nodes that nothing\nchecked against the script.\n\nH3 Chunk Plan stays BYPASSED: H3 Script emits the plan,\nand two sources for one set of cuts is the disagreement\nbeing removed. The panel goes red if it finds one in the\ngraph that disagrees.\n\nSTILL BY HAND: lora_schedule -> H3 Chunk Lora, with the\npickers set to the files `info` names.\n\nShot lengths are 141 and 243 — on the 17n+5 grid and\ndivisible by three, so both clocks stay together."
       ]
+    },
+    {
+      "id": 41,
+      "type": "H3Dialogue",
+      "pos": [
+        927.643617596726,
+        1513.661719126676
+      ],
+      "size": [
+        430,
+        300
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "lines",
+          "name": "lines",
+          "type": "STRING",
+          "widget": {
+            "name": "lines"
+          },
+          "link": 92
+        },
+        {
+          "localized_name": "chunk_plan",
+          "name": "chunk_plan",
+          "type": "H3_CHUNK_PLAN",
+          "link": 95
+        },
+        {
+          "localized_name": "actions",
+          "name": "actions",
+          "type": "STRING",
+          "shape": 7,
+          "widget": {
+            "name": "actions"
+          },
+          "link": 93
+        },
+        {
+          "localized_name": "syllables_per_second",
+          "name": "syllables_per_second",
+          "type": "FLOAT",
+          "widget": {
+            "name": "syllables_per_second"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "gap",
+          "name": "gap",
+          "type": "FLOAT",
+          "widget": {
+            "name": "gap"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "tail_margin",
+          "name": "tail_margin",
+          "type": "FLOAT",
+          "widget": {
+            "name": "tail_margin"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "pacing",
+          "name": "pacing",
+          "type": "COMBO",
+          "widget": {
+            "name": "pacing"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "max_gap",
+          "name": "max_gap",
+          "type": "FLOAT",
+          "widget": {
+            "name": "max_gap"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "speaker_map",
+          "name": "speaker_map",
+          "type": "STRING",
+          "shape": 7,
+          "widget": {
+            "name": "speaker_map"
+          },
+          "link": 94
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "beats",
+          "name": "beats",
+          "type": "STRING",
+          "links": [
+            96
+          ]
+        },
+        {
+          "localized_name": "timeline",
+          "name": "timeline",
+          "type": "STRING",
+          "links": []
+        },
+        {
+          "localized_name": "lint",
+          "name": "lint",
+          "type": "STRING",
+          "links": []
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-H3-Toolkit",
+        "ver": "1.0.0",
+        "Node name for S&R": "H3Dialogue"
+      },
+      "widgets_values": [
+        "",
+        "",
+        4.3,
+        0.4,
+        0.6,
+        "spread",
+        3.0,
+        ""
+      ],
+      "title": "H3 Dialogue — a placed line becomes a timestamp here"
     }
   ],
   "links": [
@@ -2556,38 +2777,6 @@
       26,
       2,
       "VAE"
-    ],
-    [
-      40,
-      23,
-      0,
-      26,
-      3,
-      "IMAGE"
-    ],
-    [
-      41,
-      24,
-      0,
-      26,
-      4,
-      "IMAGE"
-    ],
-    [
-      42,
-      25,
-      0,
-      26,
-      5,
-      "IMAGE"
-    ],
-    [
-      44,
-      39,
-      14,
-      26,
-      8,
-      "STRING"
     ],
     [
       45,
@@ -2780,6 +2969,142 @@
       21,
       0,
       "STRING"
+    ],
+    [
+      83,
+      9,
+      0,
+      26,
+      8,
+      "STRING"
+    ],
+    [
+      84,
+      39,
+      0,
+      9,
+      0,
+      "STRING"
+    ],
+    [
+      85,
+      39,
+      1,
+      9,
+      6,
+      "STRING"
+    ],
+    [
+      86,
+      39,
+      2,
+      9,
+      7,
+      "STRING"
+    ],
+    [
+      87,
+      39,
+      3,
+      9,
+      10,
+      "STRING"
+    ],
+    [
+      88,
+      39,
+      4,
+      9,
+      11,
+      "STRING"
+    ],
+    [
+      89,
+      39,
+      12,
+      9,
+      12,
+      "H3_CHUNK_PLAN"
+    ],
+    [
+      90,
+      32,
+      4,
+      9,
+      3,
+      "INT"
+    ],
+    [
+      91,
+      32,
+      7,
+      9,
+      8,
+      "INT"
+    ],
+    [
+      92,
+      39,
+      5,
+      41,
+      0,
+      "STRING"
+    ],
+    [
+      93,
+      39,
+      6,
+      41,
+      2,
+      "STRING"
+    ],
+    [
+      94,
+      39,
+      7,
+      41,
+      8,
+      "STRING"
+    ],
+    [
+      95,
+      39,
+      12,
+      41,
+      1,
+      "H3_CHUNK_PLAN"
+    ],
+    [
+      96,
+      41,
+      0,
+      9,
+      1,
+      "STRING"
+    ],
+    [
+      97,
+      39,
+      15,
+      26,
+      3,
+      "IMAGE"
+    ],
+    [
+      98,
+      39,
+      16,
+      26,
+      4,
+      "IMAGE"
+    ],
+    [
+      99,
+      39,
+      17,
+      26,
+      5,
+      "IMAGE"
     ]
   ],
   "groups": [
