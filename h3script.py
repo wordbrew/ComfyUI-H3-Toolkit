@@ -340,6 +340,105 @@ def serialize(doc):
     return "\n".join(out).strip() + "\n"
 
 
+def timing(doc, total_frames, chunk_frames=90, context=39, mode="fixed",
+           syllables_per_second=4.3, gap=0.4, tail_margin=0.6, lead_in=0.075):
+    """Where every line lands, and which ones the chunking will eat.
+
+    THE FAILURE THIS MAKES VISIBLE
+      The first `pin` frames of every chunk after the first are reproduced from
+      the previous chunk under a denoise mask of 0. Nothing new happens there, so
+      a line starting inside that region is NEVER SAID — measured 2026-08-28, and
+      invisible until you listen to a finished render. A line running past its
+      chunk's end is cut off mid-word instead.
+
+      Both are properties of the PLAN, not of the writing, so neither is
+      guessable while you type. That is the whole reason this exists: an editor
+      can show it before a render rather than after one comes back wrong.
+
+    It reuses the planner and the same window arithmetic H3Dialogue uses
+    (`chunkplan.plan`, `story.chunk_windows`), so what is shown is what will
+    happen rather than a second opinion about it.
+
+    -> {"chunks": [...], "lines": [...], "problems": [...]} , all plain data.
+    """
+    from .chunkplan import plan as _plan
+    from .story import chunk_windows, syllables
+
+    chunks, _info = _plan(int(total_frames), chunk_frames=int(chunk_frames),
+                          mode=mode, context=int(context))
+    windows = chunk_windows(chunks, lead_in=lead_in, tail_margin=tail_margin)
+
+    # the document's lines in order, flattened, keeping which shot they came from
+    flat = []
+    for si, shot in enumerate(doc.get("shots", [])):
+        for ci, chunk in enumerate(shot.get("chunks", [])):
+            for line in chunk.get("lines", []):
+                flat.append({"shot": si, "split": ci, "who": line.get("who", ""),
+                             "line": line.get("line", "")})
+
+    out_lines, problems = [], []
+    # one speech window per plan chunk; lines fill them in order, which is what
+    # H3Dialogue does with a flat list
+    wi, cursor = 0, None
+    for item in flat:
+        if wi >= len(windows):
+            item = dict(item, chunk=None, start=None,
+                        problem="past the end of the take — no chunk left to say it in")
+            problems.append(item["problem"] + f": “{item['line']}”")
+            out_lines.append(item)
+            continue
+        w = windows[wi]
+        if cursor is None:
+            cursor = w["lo"]
+        dur = syllables(item["line"]) / max(0.1, float(syllables_per_second))
+        problem = None
+        if cursor + dur > w["hi"]:
+            # it does not fit here; try the next chunk before calling it a fault
+            wi += 1
+            if wi < len(windows):
+                w = windows[wi]
+                cursor = w["lo"]
+                if cursor + dur > w["hi"]:
+                    problem = "too long for a whole chunk — it will be cut off"
+            else:
+                problem = "past the end of the take — no chunk left to say it in"
+        rec = {"shot": item["shot"], "split": item["split"], "who": item["who"],
+               "line": item["line"], "chunk": wi if wi < len(windows) else None,
+               "start": None if wi >= len(windows) else round(cursor + w["offset"], 2),
+               "local": None if wi >= len(windows) else round(cursor, 2),
+               "seconds": round(dur, 2), "problem": problem}
+        if problem:
+            problems.append(f"{problem}: “{item['line']}”")
+        out_lines.append(rec)
+        cursor = cursor + dur + float(gap)
+
+    # WHAT THE PIN ACTUALLY COSTS. Lines are always placed at or after a chunk's
+    # `lo`, so none can literally start inside the pin — the damage shows up one
+    # step removed, as speech time that does not exist. Saying "N seconds of every
+    # take are unspeakable" is the true form of the warning, and it explains the
+    # "no chunk left" problems above rather than leaving them mysterious.
+    lost = sum(w["pin_s"] for w in windows)
+    speech = sum(max(0.0, w["hi"] - w["lo"]) for w in windows)
+    if lost > 0:
+        problems.append(
+            f"the pins cost {lost:.1f}s of the take: every chunk after the first "
+            f"reproduces its opening from the one before, so nothing can be said "
+            f"there. {speech:.1f}s is sayable in total.")
+
+    return {
+        "chunks": [{"index": i, "pin_s": round(w["pin_s"], 2),
+                    "run_s": round(w["run_s"], 2),
+                    "speech_from": round(w["lo"], 2),
+                    "speech_to": round(w["hi"], 2),
+                    "starts_at": round(w["offset"] + w["lo"], 2)}
+                   for i, w in enumerate(windows)],
+        "lines": out_lines,
+        "problems": problems,
+        "sayable_seconds": round(speech, 2),
+        "pinned_seconds": round(lost, 2),
+    }
+
+
 def index(doc):
     """Assign <Subject n>, <Picture n> and <Audio n>. Declaration order wins.
 

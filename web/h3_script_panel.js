@@ -90,6 +90,9 @@ function openPanel(node) {
                 style: "color:#888;font-size:11px;" }),
   ]);
   const body = el("div", { style: "padding:14px 16px;overflow:auto;flex:1;" });
+  const timing = el("div", { style:
+    "padding:8px 16px;border-top:1px solid #3a3a3a;background:#242424;" +
+    "font-size:11px;color:#aaa;white-space:pre-wrap;max-height:150px;overflow:auto;" });
   const status = el("div", { style: "color:#8a8;font-size:11px;white-space:pre-wrap;flex:1;" });
   const foot = el("div", { style:
     "padding:10px 16px;border-top:1px solid #444;display:flex;gap:8px;align-items:center;" });
@@ -220,6 +223,23 @@ function openPanel(node) {
     return wrap;
   }
 
+  // THE PLAN IS IN THE GRAPH, not in this panel. H3ChunkPlan already holds the
+  // take's length, chunk size and context; reading them keeps the timing strip
+  // describing the render that will actually happen instead of a default.
+  function planFromGraph() {
+    const n = app.graph?._nodes?.find((x) => x.type === "H3ChunkPlan");
+    const get = (name, fallback) => {
+      const w = n?.widgets?.find((x) => x.name === name);
+      const v = Number(w?.value);
+      return Number.isFinite(v) && v > 0 ? v : fallback;
+    };
+    return {
+      total_frames: get("total_frames", 345),
+      chunk_frames: get("chunk_frames", 141),
+      context: get("context", 39),
+    };
+  }
+
   function currentNames() {
     return [...castBox.children].map((c) => c._read?.()?.name).filter(Boolean);
   }
@@ -243,7 +263,29 @@ function openPanel(node) {
       const who = d.cast.map((c) => `${c.name} = Subject ${r.index?.[c.name]?.subject ?? "?"}`);
       status.textContent = who.join("   ") +
         (r.lint?.length ? "\n" + r.lint.join("\n") : "");
+      drawTiming(d);
     }, 150);
+  }
+
+  async function drawTiming(d) {
+    const t = await post("/script/timing", { document: d, ...planFromGraph() });
+    if (!t.ok) { timing.textContent = t.error; return; }
+    const bar = t.chunks.map((c, i) =>
+      `chunk ${i}: ${c.pin_s ? `${c.pin_s}s pinned, ` : ""}` +
+      `speakable ${c.speech_from}\u2013${c.speech_to}s`).join("    ");
+    const lines = t.lines.map((l) => {
+      const when = l.start === null ? "  —  " : `${String(l.start).padStart(5)}s`;
+      return `${when}  ${l.who}: ${l.line}` + (l.problem ? `   \u2190 ${l.problem}` : "");
+    });
+    timing.innerHTML = "";
+    timing.append(el("div", { textContent: bar, style: "color:#89a;margin-bottom:5px;" }));
+    for (const [i, text] of lines.entries()) {
+      timing.append(el("div", { textContent: text,
+        style: t.lines[i].problem ? "color:#d88;" : "color:#9a9;" }));
+    }
+    for (const p of t.problems) {
+      timing.append(el("div", { textContent: p, style: "color:#dc8;margin-top:5px;" }));
+    }
   }
 
   // ---- wiring ------------------------------------------------------------ //
@@ -270,7 +312,7 @@ function openPanel(node) {
     back.remove();
   };
   foot.append(status, cancel, save);
-  panel.append(head, body, foot);
+  panel.append(head, body, timing, foot);
   back.append(panel);
   back.onclick = (e) => { if (e.target === back) back.remove(); };
   document.body.append(back);
