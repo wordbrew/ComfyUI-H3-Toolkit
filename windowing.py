@@ -66,7 +66,13 @@ def _pixel_frame_at(latent_index):
 
 
 def _audio_span_for_latent(latent_index):
-    """(start, end) audio latent indices covered by one video latent frame."""
+    """(start, end) audio latent indices covered by ONE video latent frame.
+
+    No longer used for window mapping -- see `map_modalities`, which takes the
+    tick count from the window's frame length instead, because unioning these
+    per-token spans over-counts by one at any start off the 51-frame grid. Kept
+    because the per-token span is still the right answer for a single token.
+    """
     start_px = _pixel_frame_at(latent_index)
     span_px = FRAME_PER_TOKEN[int(latent_index) % 5]
     a0 = int(start_px * AUDIO_LATENT_HZ // FPS)
@@ -74,22 +80,47 @@ def _audio_span_for_latent(latent_index):
     return a0, max(a1, a0 + 1)
 
 
+def audio_ticks_for_frames(frames):
+    """How many 40 Hz ticks a pixel-frame count is worth. 3 frames = 5 ticks."""
+    return int(round(int(frames) * AUDIO_LATENT_HZ / FPS))
+
+
 def map_modalities(primary_indices, latent_shapes, dim):
-    """Video window indices -> the audio indices covering the same real time."""
+    """Video window indices -> the audio indices covering the same real time.
+
+    THE COUNT COMES FROM THE WINDOW'S LENGTH, not from unioning per-token spans.
+
+      A window of N pixel frames is worth exactly `round(N * 40 / 24)` ticks --
+      what the model gets for a standalone clip of that length. Taking each
+      token's span with a FLOORED start and a CEILED end and unioning them
+      returns one more than that whenever the window does not begin on the
+      51-frame grid, because both ends round outwards. Measured over every legal
+      start of a 90-frame window: 8 of 13 came back 151 instead of 150.
+
+      It never fired at the defaults -- window 90 / overlap 39 is a stride of 51,
+      and the widget tooltip has always said so. But a default is not a
+      guarantee, and a window one tick long is a window the model was never
+      trained on.
+
+      Spotted by DrakenZA/Comfyui-H3-DrakenNodes while reading this file.
+    """
     result = [list(primary_indices)]
     if not latent_shapes or len(latent_shapes) < 2:
         return result
     audio_total = int(latent_shapes[1][AUDIO_TIME_DIM])
-    seen, audio_indices = set(), []
-    for v in primary_indices:
-        a0, a1 = _audio_span_for_latent(v)
-        for a in range(max(0, a0), min(a1, audio_total)):
-            if a not in seen:
-                seen.add(a)
-                audio_indices.append(a)
-    if not audio_indices:                       # never hand back an empty window
-        audio_indices = [0]
-    result.append(audio_indices)
+    idx = sorted(int(v) for v in primary_indices)
+    if not idx or audio_total <= 0:
+        result.append([0])
+        return result
+
+    frames = sum(FRAME_PER_TOKEN[v % 5] for v in idx)
+    ticks = max(1, min(audio_ticks_for_frames(frames), audio_total))
+
+    # Clamped at the end so the final window takes the clip's last ticks rather
+    # than running off it -- the same rule the video side already follows.
+    start = audio_ticks_for_frames(_pixel_frame_at(idx[0]))
+    start = max(0, min(start, audio_total - ticks))
+    result.append(list(range(start, start + ticks)))
     return result
 
 

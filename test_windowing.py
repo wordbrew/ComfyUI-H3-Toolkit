@@ -16,7 +16,8 @@ import types
 sys.modules.setdefault("torch", types.ModuleType("torch"))
 
 from timing import video_latent_t                        # noqa: E402
-from windowing import frames_for_latent, window_schedule  # noqa: E402
+from windowing import (FRAME_PER_TOKEN, audio_ticks_for_frames,      # noqa: E402
+                       frames_for_latent, map_modalities, window_schedule)
 
 fails = []
 
@@ -242,6 +243,31 @@ else:
 
     print(f"windowing: {checked} override(s) checked against core "
           f"({origin}) at {root}")
+
+# --- the audio window's LENGTH ---------------------------------------------- #
+# A window of N pixel frames is worth round(N * 40/24) ticks. Unioning each
+# token's span with a floored start and a ceiled end returned one MORE than that
+# on any start off the 51-frame grid -- 8 of 13 starts for a 90-frame window. It
+# never fired at the defaults (window 90 / overlap 39 is a stride of 51), which
+# is exactly why it survived: a default is not a guarantee.
+print("every window gets the tick count its frame count is worth")
+_shapes = [[1, 24, 102, 70, 40], [1, 32, 2, 567]]      # a 345-frame clip
+_bad = []
+for _s in range(0, 102 - 27 + 1, 5):                    # every legal 90f window
+    _idx = list(range(_s, _s + 27))
+    _got = len(map_modalities(_idx, _shapes, 2)[1])
+    _want = audio_ticks_for_frames(sum(FRAME_PER_TOKEN[v % 5] for v in _idx))
+    if _got != _want:
+        _bad.append((_s, _got, _want))
+check("no window is over or under length", _bad, [])
+check("a 90-frame window is 150 ticks",
+      len(map_modalities(list(range(0, 27)), _shapes, 2)[1]), 150)
+check("a start off the 51-grid is still 150",
+      len(map_modalities(list(range(5, 32)), _shapes, 2)[1]), 150)
+check("the last window ends exactly at the clip",
+      map_modalities(list(range(75, 102)), _shapes, 2)[1][-1] + 1, 567)
+check("3 frames is 5 ticks", audio_ticks_for_frames(3), 5)
+check("141 frames is a whole 235 ticks", audio_ticks_for_frames(141), 235)
 
 if fails:
     print("FAIL")
