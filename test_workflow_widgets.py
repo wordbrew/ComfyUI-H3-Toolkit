@@ -86,6 +86,13 @@ def widget_slots(cls):
     for group in ("required", "optional"):
         for name, decl in (spec.get(group) or {}).items():
             t = decl[0] if isinstance(decl, (list, tuple)) else decl
+            cfg = decl[1] if isinstance(decl, (list, tuple)) and len(decl) > 1 else {}
+            # `forceInput` makes an otherwise-widget entry a SOCKET, so it takes
+            # no slot in widgets_values. Missing that reported H3ChunkLora's
+            # `chunk_index` as holding the wrong value in a workflow that was
+            # perfectly fine.
+            if isinstance(cfg, dict) and cfg.get("forceInput"):
+                continue
             if isinstance(t, list):
                 out.append((name, "COMBO"))
             elif t in SOCKET_TYPES:

@@ -284,7 +284,7 @@
       ],
       "widgets_values": [
         "reference generation",
-        31.0,
+        14.0,
         "Realistic video. A single continuous take from one locked-off tripod in a bright pottery studio with whitewashed brick walls and daylight from a wide window on the left.",
         "<Subject 1> works at the wheel, centring a ball of clay and drawing it up into a cylinder. She does not stand up and the camera does not move.",
         "the wheel turning, wet clay under her hands, the room's own quiet, a distant street outside the window",
@@ -384,7 +384,7 @@
         640,
         1120,
         753,
-        "max"
+        "match"
       ]
     },
     {
@@ -472,9 +472,9 @@
         false,
         true,
         false,
-        17
+        0
       ],
-      "title": "H3 Context Windows — margin 17 is the thing under test"
+      "title": "H3 Context Windows — set margin_frames to run the A/B (0 = baseline)"
     },
     {
       "id": 11,

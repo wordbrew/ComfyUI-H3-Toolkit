@@ -1105,9 +1105,13 @@ class H3ContextWindows:
                                          "is where neighbouring windows disagree "
                                          "most — blending cannot fix a "
                                          "disagreement about CONTENT, so throw "
-                                         "those tokens away instead. 0 is off; "
-                                         "try 17 or 34. Costs compute per "
-                                         "window, changes no seam positions."}),
+                                         "those tokens away instead.\n\n"
+                                         "IT IS NOT FREE. 17 frames each side "
+                                         "takes a 27-latent window to 37, and "
+                                         "attention is roughly quadratic — near "
+                                         "2x the work per window, 3x at 34. "
+                                         "Multiply by windows x steps. Leave it "
+                                         "at 0 unless you are running the A/B."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")
@@ -1240,12 +1244,23 @@ class H3ContextWindows:
         # cost was spent on a widget that read standard_static while the handler
         # ran uniform, and on a mode that turned itself off when the node was
         # cached -- both invisible from the outside, both one line to catch.
+        # THE MARGIN GOES IN THE LOG. Without it the only way to tell whether a
+        # slow run had one was to reverse-engineer the printed window widths,
+        # which is exactly what happened on 2026-09-11: a run at 3x the expected
+        # cost and no line anywhere saying why.
+        m_tok = int(margin_frames) // 17 * 5
+        margin_note = "off" if m_tok <= 0 else (
+            f"{int(margin_frames)} frames ({m_tok} latent) each side — windows "
+            f"are EVALUATED at {w_lat + 2 * m_tok} latent instead of {w_lat}, "
+            f"about {((w_lat + 2 * m_tok) / max(1, w_lat)) ** 2:.1f}x the "
+            f"attention per window")
         logging.info("H3 context windows: %s frames (%s latent), overlap %s (%s), "
                      "stride %s | schedule %s | fuse %s | freenoise %s | "
-                     "causal_fix %s | absolute positions %s | split conds %s",
+                     "causal_fix %s | absolute positions %s | split conds %s | "
+                     "margin %s",
                      wf, w_lat, of, o_lat, wf - of, schedule, fuse_method,
                      freenoise, causal_window_fix, absolute,
-                     split_conds_to_windows)
+                     split_conds_to_windows, margin_note)
 
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
