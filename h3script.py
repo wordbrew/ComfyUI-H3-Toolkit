@@ -465,6 +465,64 @@ def audio_clock_notes(doc, chunk_frames=141):
     return notes
 
 
+def lora_schedule(doc, chunks):
+    """Per-shot `lora` lines -> H3 Chunk Lora's schedule, plus the slot map.
+
+    TWO THINGS THE COMPILER IS FOR, again. H3 Chunk Lora addresses LoRAs by SLOT
+    (`lora_1`..`lora_3`), not by filename, and by time on the FINISHED clip --
+    which is not the time on the source, because the join drops each chunk's
+    carried handle. Writing that schedule by hand means holding both conversions
+    in your head while editing shots that move.
+
+    A shot's finished start is the kept frames before it. `chunk_windows` derives
+    the same number for dialogue; here it is simply the running total of
+    `end - keep_from`.
+
+    -> (schedule text, {slot: filename}, notes)
+    """
+    slots, order = {}, []
+    for shot in doc.get("shots", []):
+        for lora in shot.get("loras", []):
+            name = lora.get("name")
+            if name and name not in order:
+                order.append(name)
+    notes = []
+    for i, name in enumerate(order[:3]):
+        slots[f"lora_{i + 1}"] = name
+    if len(order) > 3:
+        notes.append(f"{len(order)} different LoRAs are named but H3 Chunk Lora "
+                     f"has three slots — {', '.join(order[3:])} will not be "
+                     f"scheduled")
+    by_name = {n: f"lora_{i + 1}" for i, n in enumerate(order[:3])}
+
+    # where each shot sits on the FINISHED clip
+    finished, pos = [], 0
+    for c in chunks:
+        kept = int(c["end"]) - int(c["keep_from"])
+        finished.append((int(c["keep_from"]), pos, kept))
+        pos += kept
+
+    def stamp_at(frames):
+        s = frames / 24.0
+        return f"{int(s // 60):02d}:{int(round(s % 60)):02d}"
+
+    rows, at = [], 0
+    for shot in doc.get("shots", []):
+        n = int(shot.get("frames") or 0)
+        span = [f for f in finished if at <= f[0] < at + (n or 10 ** 9)]
+        if shot.get("loras") and span:
+            start = span[0][1]
+            end = span[-1][1] + span[-1][2]
+            for lora in shot["loras"]:
+                slot = by_name.get(lora.get("name"))
+                if not slot:
+                    continue
+                rows.append(f"{stamp_at(start)}-{stamp_at(end)} | {slot} | "
+                            f"{lora.get('strength', '1.0')}")
+        at += n or 0
+    return "\n".join(rows), slots, notes
+
+
 def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
            syllables_per_second=4.3, gap=0.4, tail_margin=0.6, lead_in=0.075):
     """Where every line lands, which chunk holds it, and what will be lost.
@@ -814,10 +872,11 @@ class H3Script:
     # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
     # drew are the cuts it plans.
     RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT",
-                                     "H3_CHUNK_PLAN")
+                                     "H3_CHUNK_PLAN", "STRING")
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
-                    "document", "info", "cut_frames", "total_frames", "plan")
+                    "document", "info", "cut_frames", "total_frames", "plan",
+                    "lora_schedule")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Compile a take written in @names into H3's prompt fields. "
@@ -845,6 +904,14 @@ class H3Script:
         chunks, plan_info = build_plan(doc, chunk_frames=chunk_frames,
                                        context=context)
         rows += [f"  {n}" for n in audio_clock_notes(doc, chunk_frames)]
+        sched, slots, lora_notes = lora_schedule(doc, chunks)
+        if slots:
+            # the slot map is the part you cannot guess: H3 Chunk Lora addresses
+            # a PICKER SLOT, so the schedule is meaningless until lora_1..3 are
+            # set to these files
+            rows.append("  lora slots — set these on H3 Chunk Lora:")
+            rows += [f"    {k} = {v}" for k, v in slots.items()]
+        rows += [f"  {n}" for n in lora_notes]
         if cuts:
             rows.append(f"  cuts at {', '.join(str(c) for c in cuts)} "
                         f"of {total} frames — wire cut_frames into H3 Chunk Plan")
@@ -856,7 +923,8 @@ class H3Script:
                            out["dialogue_lines"], out["dialogue_actions"],
                            out["speaker_map"],
                            json.dumps(doc, indent=2), info,
-                           ",".join(str(c) for c in cuts), total, chunks)}
+                           ",".join(str(c) for c in cuts), total, chunks,
+                           sched)}
 
 
 NODE_CLASS_MAPPINGS = {"H3Script": H3Script}

@@ -90,6 +90,24 @@ shot | she stands at the window
   lora h3/Thing.safetensors 0.8 1.0
 """)
 
+print("shot lengths and per-shot loras survive the round trip")
+roundtrips("a shot with a length and a lora", """
+@ada = a woman
+shot 141 | she stands at the window
+  lora h3/Thing.safetensors 0.8
+  say @ada hi
+""")
+roundtrips("a placed line keeps its time", """
+@ada = a woman
+shot 243 | she crosses the room
+  say @ada @2.5 asks Do you want to play?
+""")
+doc = hs.parse("@ada = a woman\nshot 141 | s\n  say @ada @2.5 hi\n")
+check("the time is on the line, in seconds",
+      doc["shots"][0]["chunks"][0]["lines"][0]["at"], 2.5)
+check("and it is written back as @2.5", "@ada @2.5" in hs.serialize(doc), True)
+check("the shot's length is written back", "shot 141 |" in hs.serialize(doc), True)
+
 print("defaults are left out rather than written back")
 doc = hs.parse("@ada = a woman with red hair\nshot | a shot\n")
 text = hs.serialize(doc)

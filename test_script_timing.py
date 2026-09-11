@@ -168,6 +168,31 @@ check("cut_frames names the shot boundary", _res[10], "141")
 check("total_frames is the take", _res[11], 384)
 ok("the plan is a list of chunk dicts",
    isinstance(_res[12], list) and "keep_from" in _res[12][0])
+check("lora_schedule output exists", isinstance(_res[13], str), True)
+
+print("per-shot loras become a schedule in slots, on the FINISHED clip")
+ldoc = hs.parse("@ada = a woman\nshot 141 | one\n  lora h3/A.safetensors 0.8\n"
+                "  say @ada hi\nshot 243 | two\n  lora h3/B.safetensors 0.4 -> 0.9\n"
+                "  say @ada there\n")
+lchunks, _ = hs.build_plan(ldoc, chunk_frames=141, context=39)
+sched, slots, lnotes = hs.lora_schedule(ldoc, lchunks)
+check("two files take two slots", slots,
+      {"lora_1": "h3/A.safetensors", "lora_2": "h3/B.safetensors"})
+ok("the schedule names SLOTS, never filenames",
+   "lora_1" in sched and ".safetensors" not in sched)
+ok("a ramp survives", "0.4-0.9" in sched)
+check("one row per scheduled lora", len(sched.splitlines()), 2)
+ok("the first shot starts the finished clip at 00:00", sched.startswith("00:00-"))
+
+print("a fourth lora is reported rather than silently dropped")
+four = hs.parse("@a = x\n" + "".join(
+    f"shot 141 | s{i}\n  lora h3/L{i}.safetensors 1.0\n" for i in range(4)))
+fchunks, _ = hs.build_plan(four, chunk_frames=141, context=39)
+_, fslots, fnotes = hs.lora_schedule(four, fchunks)
+check("only three slots exist", len(fslots), 3)
+ok("and the fourth is named in a note", any("will not be scheduled" in n
+                                            for n in fnotes))
+
 ok("the default script in the widget actually parses",
    hs.parse(hs.H3Script.INPUT_TYPES()["required"]["script"][1]["default"])
    is not None)

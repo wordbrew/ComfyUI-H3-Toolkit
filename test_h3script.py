@@ -202,14 +202,15 @@ check("returns", hs.H3Script.RETURN_NAMES,
        # APPENDED, per the slot contract — these carry the shot lengths into
        # H3 Chunk Plan, and `plan` IS the plan the timeline drew, so the board
        # cannot describe one render while ComfyUI performs another.
-       "cut_frames", "total_frames", "plan"))
+       "cut_frames", "total_frames", "plan", "lora_schedule"))
 check("the original ten keep their positions", hs.H3Script.RETURN_NAMES[:10],
       ("head", "subject_defs", "retention", "soundscape", "music",
        "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info"))
 check("one per type", len(hs.H3Script.RETURN_TYPES),
       len(hs.H3Script.RETURN_NAMES))
 check("the plan rides the same bus the chunk nodes consume",
-      hs.H3Script.RETURN_TYPES[-1], "H3_CHUNK_PLAN")
+      hs.H3Script.RETURN_TYPES[hs.H3Script.RETURN_NAMES.index("plan")],
+      "H3_CHUNK_PLAN")
 
 print()
 if fails:
