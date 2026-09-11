@@ -106,6 +106,30 @@ doc = hs.parse("@ada = a woman\nshot | s\n  say @ada come here\n")
 check("a bare line is written as says", "says come here" in hs.serialize(doc), True)
 check("and it still round-trips", hs.parse(hs.serialize(doc)), doc)
 
+print("how a line is said is a PHRASE, not one of six words")
+roundtrips("a piped verb phrase", """
+@ada = a woman with red hair
+shot | she stands at the window
+  say @ada | says quietly, half-turning away | I told you I would come back.
+""")
+doc = hs.parse("@ada = a woman\nshot | s\n"
+               "  say @ada | almost laughing | Do you want to play?\n")
+line = doc["shots"][0]["chunks"][0]["lines"][0]
+check("the whole phrase is the verb", line["verb"], "almost laughing")
+check("and none of it leaks into the spoken line",
+      line["line"], "Do you want to play?")
+check("a phrase is written back piped", "| almost laughing |" in hs.serialize(doc), True)
+
+doc = hs.parse("@ada = a woman\nshot | s\n  say @ada whispers come here\n")
+check("a bare verb stays bare", "@ada whispers come here" in hs.serialize(doc), True)
+
+print("a pipe inside the spoken line does not break the round trip")
+roundtrips("a line containing a pipe", """
+@ada = a woman
+shot | s
+  say @ada | says | she typed a || b and laughed
+""")
+
 print("serialize does not need a store, a graph or torch")
 check("output is text", isinstance(hs.serialize(hs.parse(
     "@ada = a woman\nshot | s\n")), str), True)

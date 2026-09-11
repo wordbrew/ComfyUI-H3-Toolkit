@@ -21,7 +21,13 @@
 import { app } from "../../scripts/app.js";
 
 const API = "/h3_toolkit";
-const TONES = ["says", "whispers", "moans", "asks", "shouts", "sighs"];
+// SUGGESTIONS, not a vocabulary. "says quietly, half-turning away" reads nothing
+// like "says", and that phrase is real prompt surface — the compiler takes any
+// phrase and H3Dialogue always did. A closed dropdown quietly threw that away.
+const TONES = ["says", "whispers", "moans", "asks", "shouts", "sighs",
+               "says quietly", "almost laughing", "under her breath",
+               "flatly", "half-turning away"];
+const TONE_LIST = "h3-tones";
 const WIDGET = "script";
 
 async function post(path, body) {
@@ -97,6 +103,12 @@ function openPanel(node) {
   const foot = el("div", { style:
     "padding:10px 16px;border-top:1px solid #444;display:flex;gap:8px;align-items:center;" });
 
+  if (!document.getElementById(TONE_LIST)) {
+    const dl = el("datalist", { id: TONE_LIST });
+    for (const v of TONES) dl.append(el("option", { value: v }));
+    document.body.append(dl);
+  }
+
   const castBox = el("div");
   const shotBox = el("div");
 
@@ -146,7 +158,9 @@ function openPanel(node) {
     if (kind === "say") {
       const names = currentNames();
       const who = select(names.length ? names : ["(add a person)"], data?.who, "width:120px;");
-      const tone = select(TONES, data?.verb || "says", "width:110px;");
+      const tone = input(data?.verb || "says", "how they say it", "width:150px;");
+      tone.setAttribute("list", TONE_LIST);
+      tone.oninput = refresh;
       const words = input(data?.line, "what they say", "flex:1;");
       for (const n of [who, tone, words]) n.onchange = refresh;
       wrap.append(row([el("span", { textContent: "speaks", style: "color:#888;width:56px;font-size:11px;" }),
@@ -267,6 +281,32 @@ function openPanel(node) {
     }, 150);
   }
 
+  // A SHOT IS ONE OR MORE CHUNKS, never fewer. Shots become cuts and the planner
+  // opens a chunk at each one, so a shot always starts on a boundary — but a shot
+  // longer than chunk_frames spans several, which is what a split is for. The
+  // editor showed shots and the strip showed chunks with nothing tying them
+  // together, so which chunk a line would land in was still a guess.
+  function markShots(t) {
+    const cards = [...shotBox.children];
+    const spans = new Map();
+    for (const l of t.lines || []) {
+      if (l.chunk === null || l.chunk === undefined) continue;
+      const cur = spans.get(l.shot) || [l.chunk, l.chunk];
+      spans.set(l.shot, [Math.min(cur[0], l.chunk), Math.max(cur[1], l.chunk)]);
+    }
+    cards.forEach((card, i) => {
+      let tag = card.querySelector(".h3-span");
+      if (!tag) {
+        tag = el("span", { className: "h3-span",
+          style: "font-size:10px;color:#89a;margin-left:6px;white-space:nowrap;" });
+        card.querySelector("span")?.after(tag);
+      }
+      const s = spans.get(i);
+      tag.textContent = !s ? "" : s[0] === s[1] ? `chunk ${s[0]}`
+                                                : `chunks ${s[0]}\u2013${s[1]}`;
+    });
+  }
+
   async function drawTiming(d) {
     const t = await post("/script/timing", { document: d, ...planFromGraph() });
     if (!t.ok) { timing.textContent = t.error; return; }
@@ -286,6 +326,7 @@ function openPanel(node) {
     for (const p of t.problems) {
       timing.append(el("div", { textContent: p, style: "color:#dc8;margin-top:5px;" }));
     }
+    markShots(t);
   }
 
   // ---- wiring ------------------------------------------------------------ //

@@ -68,6 +68,11 @@ GRAMMAR
     shot | <description>
       note <text>                       adds to the description
       say  @name [verb] <line>          dialogue, in order
+      say  @name | how they say it | <line>
+                                        the same, when "how" is a PHRASE --
+                                        "says quietly, half-turning away". The
+                                        six bare verbs are a shortcut, not the
+                                        vocabulary; H3Dialogue takes any phrase.
       do   <text>                       action for the current chunk
       lora <file> <strength|a -> b>
       ---                               chunk break, as in H3 Dialogue
@@ -79,6 +84,9 @@ import re
 CATEGORY = "MiniMax H3/prompt"
 
 RETENTIONS = ("fully_preserved", "partially_preserved", "free")
+# the verbs that need no pipe. NOT the vocabulary -- any phrase works via
+# `say @name | how they say it | the line`, which is what H3Dialogue takes.
+SPEECH_VERBS = ("moans", "asks", "whispers", "says", "shouts", "sighs")
 NAME = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 
 
@@ -229,11 +237,28 @@ def parse(text):
             if who not in by_name:
                 raise _err(lineno, f"@{who} is not declared", line)
             after = rest[m.end():].strip()
+            # HOW IT IS SAID IS FREE TEXT, and that is where the prompting room is
+            # -- "says quietly, half-turning away" reads nothing like "says". Six
+            # bare words used to be the entire vocabulary here, which threw the
+            # rest of the phrase into the spoken line. H3Dialogue downstream has
+            # always taken a free verb (its own default is "says lightly"), so the
+            # limit was ours alone.
+            #
+            # The pipe is the escape, and it is the separator H3Dialogue already
+            # uses:  say @ada | says quietly, half-turning | Come here.
+            # A bare recognised verb still works, because most lines want one.
             speech_verb = "says"
-            for v in ("moans", "asks", "whispers", "says", "shouts", "sighs"):
-                if after.startswith(v + " "):
-                    speech_verb, after = v, after[len(v):].strip()
-                    break
+            if after.startswith("|"):
+                parts = [p.strip() for p in after[1:].split("|", 1)]
+                if len(parts) != 2:
+                    raise _err(lineno, "a piped say needs '| how they say it | "
+                                       "the line'", line)
+                speech_verb, after = parts[0] or "says", parts[1]
+            else:
+                for v in SPEECH_VERBS:
+                    if after.startswith(v + " "):
+                        speech_verb, after = v, after[len(v):].strip()
+                        break
             if not after:
                 raise _err(lineno, "say has no line to speak", line)
             cur["lines"].append({"who": who, "verb": speech_verb,
@@ -256,7 +281,6 @@ def parse(text):
 
 
 _SETTING_DEFAULTS = {"task": "reference generation", "soundscape": "", "music": "N/A"}
-_SPEECH_VERBS = ("moans", "asks", "whispers", "says", "shouts", "sighs")
 # order matters: parse() reads these off `@name.<attr> = ...` lines
 _CAST_ATTRS = ("retention", "pictures", "audio", "preserve", "allow",
                "retention_detail")
@@ -333,9 +357,12 @@ def serialize(doc):
             for action in chunk.get("actions", []):
                 out.append(f"  do   {action}")
             for line in chunk.get("lines", []):
-                verb = line.get("verb", "says")
-                verb = verb if verb in _SPEECH_VERBS else "says"
-                out.append(f"  say  @{line['who']} {verb} {line['line']}")
+                verb = (line.get("verb") or "says").strip()
+                if verb in SPEECH_VERBS and "|" not in line["line"]:
+                    out.append(f"  say  @{line['who']} {verb} {line['line']}")
+                else:
+                    # a phrase, or a line containing a pipe: the explicit form
+                    out.append(f"  say  @{line['who']} | {verb} | {line['line']}")
 
     return "\n".join(out).strip() + "\n"
 
