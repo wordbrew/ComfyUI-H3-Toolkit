@@ -255,6 +255,91 @@ def parse(text):
     return doc
 
 
+_SETTING_DEFAULTS = {"task": "reference generation", "soundscape": "", "music": "N/A"}
+_SPEECH_VERBS = ("moans", "asks", "whispers", "says", "shouts", "sighs")
+# order matters: parse() reads these off `@name.<attr> = ...` lines
+_CAST_ATTRS = ("retention", "pictures", "audio", "preserve", "allow",
+               "retention_detail")
+
+
+def _head_line(entry):
+    """The `@name = ...` line for one cast entry."""
+    if entry.get("kind") == "character":
+        return f"@{entry['name']} = character {entry.get('character', '')}".rstrip()
+    if entry.get("kind") == "setting":
+        return f"@{entry['name']} = setting. {entry.get('description', '')}".rstrip()
+    return f"@{entry['name']} = {entry.get('description', '')}".rstrip()
+
+
+def serialize(doc):
+    """The document -> the DSL. The inverse of `parse`, and the half a UI needs.
+
+    WHY THIS EXISTS
+      `parse` turned text into a document and `emit` turned a document into H3's
+      fields, but nothing turned a document back into text. That is the direction
+      an editor writes in: the panel edits the document, serializes, and the text
+      in the node's widget stays the readable form of the same thing. Without it
+      a UI has to own its own storage and the two drift.
+
+    WHAT ROUND-TRIPPING MEANS HERE
+      `parse(serialize(doc)) == doc`, NOT `serialize(parse(text)) == text`.
+      Comments, blank lines and the author's spacing are not in the document and
+      cannot come back. The document is what has to survive.
+
+    OVERRIDES ARE EMITTED ONLY WHEN THEY DIFFER
+      A character's pictures, audio, description and retention come from the
+      store, so writing them back would freeze today's values into the script and
+      a re-saved character would stop taking effect. Rather than special-case
+      that, each head line is re-parsed on its own and only the attributes that
+      differ from that baseline are written -- which consults the store exactly
+      the way a later `parse` will.
+    """
+    doc = doc or {}
+    out = []
+
+    for entry in doc.get("cast", []):
+        head = _head_line(entry)
+        out.append(head)
+        try:
+            base = parse(head)["cast"][0]
+        except ScriptError:
+            base = {}
+        for attr in _CAST_ATTRS:
+            if attr not in entry:
+                continue
+            if base.get(attr) == entry[attr]:
+                continue
+            if entry[attr] in ("", None):
+                continue
+            out.append(f"@{entry['name']}.{attr} = {entry[attr]}")
+
+    settings = [f"{k} = {doc[k]}" for k, default in _SETTING_DEFAULTS.items()
+                if doc.get(k, default) != default]
+    if settings:
+        out.append("")
+        out.extend(settings)
+
+    for shot in doc.get("shots", []):
+        out.append("")
+        out.append(f"shot | {shot.get('description', '')}".rstrip())
+        for note in shot.get("notes", []):
+            out.append(f"  note {note}")
+        for lora in shot.get("loras", []):
+            strength = str(lora.get("strength", "1.0")).replace("-", " ")
+            out.append(f"  lora {lora['name']} {strength}".rstrip())
+        for i, chunk in enumerate(shot.get("chunks", [])):
+            if i:
+                out.append("  ---")
+            for action in chunk.get("actions", []):
+                out.append(f"  do   {action}")
+            for line in chunk.get("lines", []):
+                verb = line.get("verb", "says")
+                verb = verb if verb in _SPEECH_VERBS else "says"
+                out.append(f"  say  @{line['who']} {verb} {line['line']}")
+
+    return "\n".join(out).strip() + "\n"
+
+
 def index(doc):
     """Assign <Subject n>, <Picture n> and <Audio n>. Declaration order wins.
 
