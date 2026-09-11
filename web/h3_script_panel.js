@@ -655,6 +655,9 @@ function openPanel(node) {
       const shots = lastTiming?.shots || [];
       let si = shots.findIndex((s) => frames >= s.start && frames < s.start + s.frames);
       if (si < 0) si = frames < 0 ? 0 : shots.length - 1;
+      // the time stored is JOINED seconds — what the ruler above reads, and what
+      // H3 Dialogue reports back. It was briefly shot-relative, so the panel,
+      // the document and the emitted line each meant something different by it.
 
       if (si !== rec.shot) {
         const found = beatNodeFor(rec);
@@ -666,7 +669,7 @@ function openPanel(node) {
           rec.shot = si;
         }
       }
-      const secs = Math.max(0, (frames - (shots[si]?.start || 0)) / 24);
+      const secs = Math.max(0, frames / 24);
       const l = docLine(rec);
       if (l) { l.at = Math.round(secs * 10) / 10; writeBack(); }
       refresh();

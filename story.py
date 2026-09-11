@@ -101,6 +101,108 @@ def chunk_windows(chunks, lead_in=0.075, tail_margin=0.6):
     return out
 
 
+def place_lines(queue, chunks, win, gap=0.4, pacing="spread", max_gap=3.0):
+    """Put spoken lines on the clock. THE ONLY implementation of this.
+
+    `h3script.timing()` draws the same schedule on the panel's timeline, and for
+    a while it had its own copy of this loop -- it packed from each chunk's floor
+    and knew nothing about `pacing`. Since "spread" is the DEFAULT, the board
+    showed one set of times and H3 Dialogue produced another the moment a chunk
+    held two lines, which is most takes. A board that lies is worse than no
+    board, so there is one packer and both callers use it.
+
+    `queue` is items with `dur` (and anything else the caller wants carried
+    through); None forces a break to the next chunk. An item carrying `at_joined`
+    is PLACED BY HAND -- it goes in the chunk covering that joined time and takes
+    no part in the spreading, because a time someone dragged to is not a
+    suggestion.
+
+    -> (per-chunk lists of items with `at` in chunk-local seconds, notes)
+    """
+    placed = [[] for _ in chunks]
+    notes = []
+    ci, t = 0, None
+    for item in queue:
+        if item is None:
+            ci += 1
+            t = None
+            continue
+
+        # placed by hand: the chunk is whichever one covers that joined time
+        if item.get("at_joined") is not None:
+            want = float(item["at_joined"])
+            # A CHUNK'S KEPT SPAN STARTS AT THE HANDLE, not at the speakable
+            # floor. Testing against `lo` left the handle itself belonging to no
+            # chunk, so a line dragged into one fell through to a fallback and
+            # was reported against the wrong chunk -- losing the one warning this
+            # whole path exists to produce.
+            hit = None
+            for k, w in enumerate(win):
+                lo_j = w["offset"] + w["pin_s"]
+                hi_j = w["offset"] + w["run_s"]
+                if lo_j - 1e-6 <= want < hi_j - 1e-6:
+                    hit = k
+                    break
+            if hit is None:
+                hit = max(0, min(len(chunks) - 1, ci))
+            local = want - win[hit]["offset"]
+            # MARK THE ITEM, not just the log. Both callers show problems per
+            # line -- the panel colours that line red -- so a note on its own
+            # leaves the line looking fine and the warning somewhere else.
+            trouble = None
+            if local < win[hit]["lo"] - 1e-6:
+                trouble = (f"starts inside the {win[hit]['pin_s']:.2f}s carried "
+                           f"handle — those frames are stamped back from the "
+                           f"chunk before, so it is never said")
+            elif local + item["dur"] > win[hit]["hi"] + 1e-6:
+                trouble = "runs past the end of its chunk — cut off mid-word"
+            if trouble:
+                notes.append(f"WARN placement: {item.get('text','')[:44]!r} "
+                             f"{trouble}")
+            placed[hit].append(dict(item, at=local, pinned=True, problem=trouble))
+            continue
+
+        while ci < len(chunks):
+            w = win[ci]
+            start = w["lo"] if t is None else t + float(gap)
+            if start + item["dur"] <= w["hi"] + 1e-6:
+                placed[ci].append(dict(item, at=start))
+                t = start + item["dur"]
+                break
+            ci += 1
+            t = None
+        else:
+            notes.append(f"ERROR overflow: {item.get('text','')[:44]!r} did not fit "
+                         f"in any remaining chunk. Add a chunk, shorten the "
+                         f"line, or raise syllables_per_second.")
+            break
+
+    # Pack first to decide WHICH chunk each line belongs to, then re-space within
+    # it. Placement and pacing are separate problems, and solving them in one
+    # greedy pass is what put two short lines at 0.6s and 1.7s of a ten-second
+    # window with eight seconds of silence behind them -- measured 2026-08-30.
+    if pacing == "spread":
+        for w, items in zip(win, placed):
+            free = [x for x in items if not x.get("pinned")]
+            if len(free) < 2:
+                continue
+            span = w["hi"] - w["lo"]
+            spoken = sum(x["dur"] for x in free)
+            g = (span - spoken) / (len(free) - 1)
+            g = max(float(gap), min(float(max_gap), g))
+            at = w["lo"]
+            for x in free:
+                x["at"] = at
+                at += x["dur"] + g
+            over = (free[-1]["at"] + free[-1]["dur"]) - w["hi"]
+            if over > 0:
+                for x in free:
+                    x["at"] = max(w["lo"], x["at"] - over)
+        for items in placed:
+            items.sort(key=lambda x: x["at"])
+    return placed, notes
+
+
 class H3Shotlist:
     """Write the shots; get the frame counts, the cuts and the clause scaffold.
 
@@ -355,6 +457,18 @@ class H3Dialogue:
                 continue
             f = [x.strip() for x in line.split("|")]
             spk = f[0]
+            # `S1@5.9` -- a time somebody placed on the timeline, in JOINED
+            # seconds on the finished clip. Without this the drag changed the
+            # board and nothing else.
+            at_joined = None
+            if "@" in spk:
+                spk, _, when = spk.partition("@")
+                spk = spk.strip()
+                try:
+                    at_joined = float(when)
+                except ValueError:
+                    raise ValueError(
+                        f"H3 Dialogue: {when!r} after @ is not a time in seconds.")
             m = _SPEAKER.match(spk)
             if not m:
                 raise ValueError(
@@ -365,61 +479,16 @@ class H3Dialogue:
             if not text:
                 raise ValueError(f"H3 Dialogue: {line!r} has no spoken text.")
             cur.append({"n": int(m.group(1)), "verb": verb, "text": text,
+                        "at_joined": at_joined,
                         "dur": syllables(text) / max(0.5, float(syllables_per_second))})
         if cur:
             groups.append(cur)
 
         win = chunk_windows(chunks, tail_margin=float(tail_margin))
         acts = [a for a in (actions or "").splitlines()]
-
-        # pack: honour a forced break, otherwise fill each chunk to its ceiling
         queue = [ln for g in groups for ln in ([None] + g)][1:]   # None = break
-        placed = [[] for _ in chunks]
-        ci, t, notes = 0, None, []
-        for item in queue:
-            if item is None:
-                ci += 1
-                t = None
-                continue
-            while ci < len(chunks):
-                w = win[ci]
-                start = w["lo"] if t is None else t + float(gap)
-                if start + item["dur"] <= w["hi"] + 1e-6:
-                    placed[ci].append(dict(item, at=start))
-                    t = start + item["dur"]
-                    break
-                ci += 1
-                t = None
-            else:
-                notes.append(f"ERROR overflow: {item['text'][:44]!r} did not fit "
-                             f"in any remaining chunk. Add a chunk, shorten the "
-                             f"line, or raise syllables_per_second.")
-                break
-
-        # Pack first to decide WHICH chunk each line belongs to, then re-space
-        # within the chunk. Placement and pacing are separate problems, and
-        # solving them in one greedy pass is what put two short lines at 0.6s
-        # and 1.7s of a ten-second window with eight seconds of silence behind
-        # them -- measured 2026-08-30, and the same complaint as the four-second
-        # hole that prompted this node.
-        if pacing == "spread":
-            for i, (w, items) in enumerate(zip(win, placed)):
-                if len(items) < 2:
-                    continue
-                span = w["hi"] - w["lo"]
-                spoken = sum(x["dur"] for x in items)
-                g = (span - spoken) / (len(items) - 1)
-                g = max(float(gap), min(float(max_gap), g))
-                at = w["lo"]
-                for x in items:
-                    x["at"] = at
-                    at += x["dur"] + g
-                # a max_gap ceiling can still push the last line past the end;
-                # pull the whole run back rather than clipping it
-                over = (items[-1]["at"] + items[-1]["dur"]) - w["hi"]
-                if over > 0:
-                    for x in items:
-                        x["at"] = max(w["lo"], x["at"] - over)
+        placed, notes = place_lines(queue, chunks, win, gap=float(gap),
+                                    pacing=pacing, max_gap=float(max_gap))
 
         beats, rows = [], []
         for i, (c, w, items) in enumerate(zip(chunks, win, placed)):
