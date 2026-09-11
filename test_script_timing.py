@@ -60,6 +60,12 @@ def take(*lines):
     return hs.parse("@ada = a woman\nshot | a shot\n" + body)
 
 
+def two_shots(placed_at):
+    """Two shots, the second holding one line placed by hand at `placed_at`."""
+    return hs.parse("@ada = a woman\nshot 141 | one\n  say @ada hi\n"
+                    f"shot 243 | two\n  say @ada @{placed_at} asks Do you want to play?\n")
+
+
 print("the first chunk has no pin; every one after it does")
 t = hs.timing(take("hello"), total_frames=345, chunk_frames=141, context=39)
 check("three chunks over 345 frames", len(t["chunks"]), 3)
@@ -71,7 +77,8 @@ ok("a pinned chunk cannot be spoken in from t=0",
 print("the pin is reported as time the take cannot use")
 ok("pinned_seconds is the sum of the pins",
    abs(t["pinned_seconds"] - sum(c["pin_s"] for c in t["chunks"])) < 0.01)
-ok("and it is stated as a problem", any("pins cost" in p for p in t["problems"]))
+ok("and it is stated as a problem",
+   any("carried handles cost" in p for p in t["problems"]))
 ok("sayable_seconds is less than the take",
    t["sayable_seconds"] < 345 / 24.0)
 
@@ -89,10 +96,10 @@ t = hs.timing(many, total_frames=345, chunk_frames=141, context=39)
 overflow = [l for l in t["lines"] if l["problem"]]
 ok("some lines overflow", len(overflow) > 0)
 ok("every line is still accounted for", len(t["lines"]) == 12)
-ok("the overflow says why", any("no chunk left" in (l["problem"] or "")
+ok("the overflow says why", any("no room left" in (l["problem"] or "")
                                 for l in overflow))
 
-print("a longer take holds more of the same dialogue")
+print("a shot with no declared length still spans the whole take")
 t2 = hs.timing(many, total_frames=345 * 2, chunk_frames=141, context=39)
 ok("fewer problems with more room",
    len([l for l in t2["lines"] if l["problem"]]) <
@@ -103,7 +110,36 @@ t = hs.timing(hs.parse("@ada = a woman\nshot | a silent shot\n"),
               total_frames=141, chunk_frames=141, context=39)
 check("no lines", t["lines"], [])
 check("one chunk, so no pin and no complaint about one",
-      any("pins cost" in p for p in t["problems"]), False)
+      any("carried handles cost" in p for p in t["problems"]), False)
+
+print("shot lengths drive the cuts, and a cut opens an unpinned chunk")
+doc = hs.parse("@ada = a woman\nshot 141 | one\n  say @ada hi\n"
+               "shot 243 | two\n  say @ada there\n")
+t = hs.timing(doc, chunk_frames=141, context=39)
+check("the cut sits at the first shot's end", t["cuts"], [141])
+check("total comes from the shots", t["total_frames"], 384)
+check("the first chunk carries nothing", t["chunks"][0]["pin"], 0)
+ok("a chunk is filed under the shot its KEPT region belongs to",
+   t["chunks"][0]["shot"] == 0 and t["chunks"][1]["shot"] == 1)
+
+print("a line placed by hand CAN land in a carried handle — the silent failure")
+l = [x for x in hs.timing(two_shots("0"), chunk_frames=141, context=39)["lines"]
+     if x["placed"]][0]
+ok("placed at the very start of a pinned chunk is caught",
+   "carried handle" in (l["problem"] or ""))
+l = [x for x in hs.timing(two_shots("1.0"), chunk_frames=141, context=39)["lines"]
+     if x["placed"]][0]
+check("clear of the handle is fine", l["problem"], None)
+l = [x for x in hs.timing(two_shots("9.9"), chunk_frames=141, context=39)["lines"]
+     if x["placed"]][0]
+ok("past the chunk's end is cut off, and says so",
+   "cut off" in (l["problem"] or ""))
+
+print("a FLOWED line is never accused of starting in a handle")
+t = hs.timing(take("one", "two", "three"), total_frames=345,
+              chunk_frames=141, context=39)
+ok("no flowed line claims a handle problem",
+   not any("carried handle" in (l["problem"] or "") for l in t["lines"]))
 
 print()
 print(f"{len(fails)} failure(s)" if fails else "script timing: all checks pass")

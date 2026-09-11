@@ -208,9 +208,26 @@ def parse(text):
                 doc[key] = rest.strip()
                 continue
             if body.startswith("shot"):
-                _, _, desc = body.partition("|")
+                head, _, desc = body.partition("|")
+                # A SHOT HAS A LENGTH, because a shot is a cut and a cut is where
+                # the planner opens a chunk. Optional: a shot with no number is
+                # sized by the planner as before, which keeps every script
+                # written before this parseable.
+                frames = None
+                rest_head = head[len("shot"):].strip()
+                if rest_head:
+                    try:
+                        frames = int(rest_head)
+                    except ValueError:
+                        raise _err(lineno, f"a shot's length must be a frame "
+                                           f"count, got {rest_head!r}", line)
+                    if frames < 5:
+                        raise _err(lineno, "the shortest legal run is 5 frames",
+                                   line)
                 shot = {"description": desc.strip(), "notes": [],
                         "chunks": [{"lines": [], "actions": []}], "loras": []}
+                if frames is not None:
+                    shot["frames"] = frames
                 doc["shots"].append(shot)
                 continue
             raise _err(lineno, "expected a cast line, a setting, or 'shot |'",
@@ -237,6 +254,21 @@ def parse(text):
             if who not in by_name:
                 raise _err(lineno, f"@{who} is not declared", line)
             after = rest[m.end():].strip()
+            # PLACED BY HAND: `@2.5` is seconds from the shot's own start. A cast
+            # name can never begin with a digit (see NAME), so this cannot collide
+            # with one. Without it a line simply flows after the one before, which
+            # is what H3Dialogue does on its own.
+            at = None
+            if after.startswith("@"):
+                tok, _, tail = after.partition(" ")
+                try:
+                    at = float(tok[1:])
+                except ValueError:
+                    raise _err(lineno, f"expected a time like @2.5 after the "
+                                       f"speaker, got {tok!r}", line)
+                if at < 0:
+                    raise _err(lineno, "a placed time cannot be negative", line)
+                after = tail.strip()
             # HOW IT IS SAID IS FREE TEXT, and that is where the prompting room is
             # -- "says quietly, half-turning away" reads nothing like "says". Six
             # bare words used to be the entire vocabulary here, which threw the
@@ -261,8 +293,10 @@ def parse(text):
                         break
             if not after:
                 raise _err(lineno, "say has no line to speak", line)
-            cur["lines"].append({"who": who, "verb": speech_verb,
-                                 "line": after})
+            entry_line = {"who": who, "verb": speech_verb, "line": after}
+            if at is not None:
+                entry_line["at"] = at
+            cur["lines"].append(entry_line)
         elif verb == "lora":
             parts = rest.replace("->", " ").split()
             if not parts:
@@ -345,7 +379,9 @@ def serialize(doc):
 
     for shot in doc.get("shots", []):
         out.append("")
-        out.append(f"shot | {shot.get('description', '')}".rstrip())
+        frames = shot.get("frames")
+        head = f"shot {int(frames)} |" if frames else "shot |"
+        out.append(f"{head} {shot.get('description', '')}".rstrip())
         for note in shot.get("notes", []):
             out.append(f"  note {note}")
         for lora in shot.get("loras", []):
@@ -358,107 +394,174 @@ def serialize(doc):
                 out.append(f"  do   {action}")
             for line in chunk.get("lines", []):
                 verb = (line.get("verb") or "says").strip()
+                at = line.get("at")
+                where = f"@{line['who']}" + (f" @{float(at):g}" if at is not None else "")
                 if verb in SPEECH_VERBS and "|" not in line["line"]:
-                    out.append(f"  say  @{line['who']} {verb} {line['line']}")
+                    out.append(f"  say  {where} {verb} {line['line']}")
                 else:
                     # a phrase, or a line containing a pipe: the explicit form
-                    out.append(f"  say  @{line['who']} | {verb} | {line['line']}")
+                    out.append(f"  say  {where} | {verb} | {line['line']}")
 
     return "\n".join(out).strip() + "\n"
 
 
-def timing(doc, total_frames, chunk_frames=90, context=39, mode="fixed",
+def cuts_from(doc, chunk_frames=141):
+    """Shot lengths -> the cut frames H3 Chunk Plan takes.
+
+    A shot IS a cut: the planner opens a chunk at each one, and that chunk gets
+    no carried prefix, which is where the contrast carry resets. Shots with no
+    length of their own are sized at `chunk_frames`, so a script written before
+    lengths existed still plans the way it always did.
+    """
+    cuts, at = [], 0
+    for shot in doc.get("shots", []):
+        if at:
+            cuts.append(at)
+        at += int(shot.get("frames") or chunk_frames)
+    return cuts, at
+
+
+def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
            syllables_per_second=4.3, gap=0.4, tail_margin=0.6, lead_in=0.075):
-    """Where every line lands, and which ones the chunking will eat.
+    """Where every line lands, which chunk holds it, and what will be lost.
 
     THE FAILURE THIS MAKES VISIBLE
       The first `pin` frames of every chunk after the first are reproduced from
       the previous chunk under a denoise mask of 0. Nothing new happens there, so
-      a line starting inside that region is NEVER SAID — measured 2026-08-28, and
-      invisible until you listen to a finished render. A line running past its
-      chunk's end is cut off mid-word instead.
+      a line starting inside that region is NEVER SAID -- measured 2026-08-28,
+      and invisible until you listen to a finished render. A line running past
+      its chunk's end is cut off mid-word instead.
 
-      Both are properties of the PLAN, not of the writing, so neither is
-      guessable while you type. That is the whole reason this exists: an editor
-      can show it before a render rather than after one comes back wrong.
+      Auto-flowed lines cannot land in a handle, because they start at the chunk
+      floor. A line PLACED by hand can, and that is the one way to lose speech
+      silently -- so placed lines are checked against the floor and flowed ones
+      are not, rather than warning about something that cannot happen.
 
-    It reuses the planner and the same window arithmetic H3Dialogue uses
-    (`chunkplan.plan`, `story.chunk_windows`), so what is shown is what will
-    happen rather than a second opinion about it.
-
-    -> {"chunks": [...], "lines": [...], "problems": [...]} , all plain data.
+    It reuses the planner and the window arithmetic H3Dialogue uses
+    (`chunkplan.plan`, `story.chunk_windows`), so this is what will happen rather
+    than a second opinion about it.
     """
     from .chunkplan import plan as _plan
     from .story import chunk_windows, syllables
 
-    chunks, _info = _plan(int(total_frames), chunk_frames=int(chunk_frames),
-                          mode=mode, context=int(context))
+    cuts, from_shots = cuts_from(doc, chunk_frames)
+    total = int(total_frames or from_shots or chunk_frames)
+    chunks, _info = _plan(total, chunk_frames=int(chunk_frames), mode=mode,
+                          cuts=cuts or None, context=int(context))
     windows = chunk_windows(chunks, lead_in=lead_in, tail_margin=tail_margin)
 
-    # the document's lines in order, flattened, keeping which shot they came from
-    flat = []
-    for si, shot in enumerate(doc.get("shots", [])):
-        for ci, chunk in enumerate(shot.get("chunks", [])):
-            for line in chunk.get("lines", []):
-                flat.append({"shot": si, "split": ci, "who": line.get("who", ""),
-                             "line": line.get("line", "")})
+    # which chunks belong to which shot, by frame range.
+    #
+    # ONLY when lengths were actually declared. A script that never gave a shot a
+    # length used to let its dialogue spread over the whole take, and capping it
+    # at chunk_frames would silently shorten every take written before lengths
+    # existed. No lengths -> no bounds -> the old behaviour exactly.
+    sized = any(s.get("frames") for s in doc.get("shots", []))
+    bounds, at = [], 0
+    if sized:
+        for shot in doc.get("shots", []):
+            n = int(shot.get("frames") or chunk_frames)
+            bounds.append((at, at + n))
+            at += n
+
+    # A CHUNK'S KEPT REGION IS keep_from..end, NOT start..end. Chunks overlap by
+    # the carried handle -- chunk 1 of a 141-frame shot starts at 102, 39 frames
+    # back inside chunk 0 -- so mapping by `start` files a chunk under the
+    # previous shot and puts its lines in the wrong place.
+    def kept(i):
+        c = chunks[i]
+        return int(c["keep_from"]), int(c["end"])
+
+    def shot_windows(si):
+        if si >= len(bounds):
+            return list(enumerate(windows))
+        lo, hi = bounds[si]
+        out = [(i, w) for i, w in enumerate(windows)
+               if kept(i)[0] < hi and kept(i)[1] > lo]
+        return out or [(min(range(len(windows)),
+                            key=lambda i: abs(kept(i)[0] - lo)), windows[0])][:1]
 
     out_lines, problems = [], []
-    # one speech window per plan chunk; lines fill them in order, which is what
-    # H3Dialogue does with a flat list
-    wi, cursor = 0, None
-    for item in flat:
-        if wi >= len(windows):
-            item = dict(item, chunk=None, start=None,
-                        problem="past the end of the take — no chunk left to say it in")
-            problems.append(item["problem"] + f": “{item['line']}”")
-            out_lines.append(item)
+    for si, shot in enumerate(doc.get("shots", [])):
+        mine = shot_windows(si)
+        if not mine:
             continue
-        w = windows[wi]
-        if cursor is None:
-            cursor = w["lo"]
-        dur = syllables(item["line"]) / max(0.1, float(syllables_per_second))
-        problem = None
-        if cursor + dur > w["hi"]:
-            # it does not fit here; try the next chunk before calling it a fault
-            wi += 1
-            if wi < len(windows):
-                w = windows[wi]
-                cursor = w["lo"]
-                if cursor + dur > w["hi"]:
-                    problem = "too long for a whole chunk — it will be cut off"
-            else:
-                problem = "past the end of the take — no chunk left to say it in"
-        rec = {"shot": item["shot"], "split": item["split"], "who": item["who"],
-               "line": item["line"], "chunk": wi if wi < len(windows) else None,
-               "start": None if wi >= len(windows) else round(cursor + w["offset"], 2),
-               "local": None if wi >= len(windows) else round(cursor, 2),
-               "seconds": round(dur, 2), "problem": problem}
-        if problem:
-            problems.append(f"{problem}: “{item['line']}”")
-        out_lines.append(rec)
-        cursor = cursor + dur + float(gap)
+        base = bounds[si][0] if si < len(bounds) else 0
+        wi, cursor = 0, None
+        for ch in shot.get("chunks", []):
+            for line in ch.get("lines", []):
+                text = line.get("line", "")
+                dur = syllables(text) / max(0.1, float(syllables_per_second))
+                rec = {"shot": si, "who": line.get("who", ""), "line": text,
+                       "seconds": round(dur, 2), "placed": "at" in line,
+                       "problem": None, "chunk": None, "start": None}
 
-    # WHAT THE PIN ACTUALLY COSTS. Lines are always placed at or after a chunk's
-    # `lo`, so none can literally start inside the pin — the damage shows up one
-    # step removed, as speech time that does not exist. Saying "N seconds of every
-    # take are unspeakable" is the true form of the warning, and it explains the
-    # "no chunk left" problems above rather than leaving them mysterious.
+                if "at" in line:
+                    # seconds from the SHOT's start; find the chunk covering it
+                    abs_f = base + float(line["at"]) * 24.0
+                    hit = next((iw for iw in mine
+                                if kept(iw[0])[0] <= abs_f < kept(iw[0])[1]),
+                               mine[-1])
+                    ci, w = hit
+                    local = abs_f / 24.0 - chunks[ci]["start"] / 24.0
+                    if local < w["lo"] - 1e-6:
+                        rec["problem"] = (
+                            f"starts inside the {w['pin_s']:.2f}s carried handle "
+                            f"— those frames are stamped back from the chunk "
+                            f"before, so it is never said")
+                    elif local + dur > w["hi"]:
+                        rec["problem"] = "runs past the end of its chunk — cut off mid-word"
+                    rec["chunk"] = ci
+                    rec["start"] = round(w["offset"] + local, 2)
+                    rec["local"] = round(local, 2)
+                else:
+                    if wi >= len(mine):
+                        rec["problem"] = "no room left in this shot"
+                    else:
+                        ci, w = mine[wi]
+                        if cursor is None:
+                            cursor = w["lo"]
+                        if cursor + dur > w["hi"]:
+                            wi += 1
+                            if wi < len(mine):
+                                ci, w = mine[wi]
+                                cursor = w["lo"]
+                                if cursor + dur > w["hi"]:
+                                    rec["problem"] = ("longer than a whole chunk "
+                                                      "— it will be cut off")
+                            else:
+                                rec["problem"] = "no room left in this shot"
+                        if rec["problem"] != "no room left in this shot":
+                            rec["chunk"] = ci
+                            rec["start"] = round(w["offset"] + cursor, 2)
+                            rec["local"] = round(cursor, 2)
+                            cursor = cursor + dur + float(gap)
+                if rec["problem"]:
+                    problems.append(f"{rec['problem']}: \u201c{text}\u201d")
+                out_lines.append(rec)
+
     lost = sum(w["pin_s"] for w in windows)
     speech = sum(max(0.0, w["hi"] - w["lo"]) for w in windows)
     if lost > 0:
         problems.append(
-            f"the pins cost {lost:.1f}s of the take: every chunk after the first "
-            f"reproduces its opening from the one before, so nothing can be said "
-            f"there. {speech:.1f}s is sayable in total.")
+            f"the carried handles cost {lost:.1f}s of the take: every chunk after "
+            f"a cut reproduces its opening from the one before, so nothing can be "
+            f"said there. {speech:.1f}s is sayable in total.")
 
     return {
-        "chunks": [{"index": i, "pin_s": round(w["pin_s"], 2),
-                    "run_s": round(w["run_s"], 2),
-                    "speech_from": round(w["lo"], 2),
-                    "speech_to": round(w["hi"], 2),
+        "total_frames": total,
+        "cuts": cuts,
+        "chunks": [{"index": i, "shot": next((s for s, (lo, hi) in enumerate(bounds)
+                                              if lo <= c["keep_from"] < hi), None),
+                    "start": c["keep_from"], "frames": c["end"] - c["keep_from"],
+                    "source_start": c["start"], "run": c["run"],
+                    "pin": c.get("pin", 0),
+                    "pin_s": round(w["pin_s"], 2), "run_s": round(w["run_s"], 2),
+                    "speech_from": round(w["lo"], 2), "speech_to": round(w["hi"], 2),
                     "starts_at": round(w["offset"] + w["lo"], 2)}
-                   for i, w in enumerate(windows)],
+                   for i, (c, w) in enumerate(zip(chunks, windows))],
+        "shots": [{"index": i, "start": lo, "frames": hi - lo}
+                  for i, (lo, hi) in enumerate(bounds)],
         "lines": out_lines,
         "problems": problems,
         "sayable_seconds": round(speech, 2),
@@ -646,10 +749,14 @@ class H3Script:
                        "  do   his hips work in a steady rhythm\n"}),
         }}
 
-    RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING")
+    # APPENDED, per the slot contract: cut_frames and total_frames go last so
+    # every saved graph keeps its wiring. They are what makes a shot's length
+    # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
+    # drew are the cuts it plans.
+    RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT")
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
-                    "document", "info")
+                    "document", "info", "cut_frames", "total_frames")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Compile a take written in @names into H3's prompt fields. "
@@ -673,6 +780,10 @@ class H3Script:
         if notes:
             rows.append("  lint:")
             rows += [f"    {n}" for n in notes]
+        cuts, total = cuts_from(doc)
+        if cuts:
+            rows.append(f"  cuts at {', '.join(str(c) for c in cuts)} "
+                        f"of {total} frames — wire cut_frames into H3 Chunk Plan")
         info = "\n".join(rows)
 
         return {"ui": {"h3char": [info]},
@@ -680,7 +791,8 @@ class H3Script:
                            out["soundscape"], out["music"],
                            out["dialogue_lines"], out["dialogue_actions"],
                            out["speaker_map"],
-                           json.dumps(doc, indent=2), info)}
+                           json.dumps(doc, indent=2), info,
+                           ",".join(str(c) for c in cuts), total)}
 
 
 NODE_CLASS_MAPPINGS = {"H3Script": H3Script}
