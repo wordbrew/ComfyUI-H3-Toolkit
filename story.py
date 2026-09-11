@@ -116,6 +116,17 @@ class H3Shotlist:
       It does not write your prompt. The `beats` output is a SCAFFOLD -- one
       line per chunk, prefilled with that chunk's shot so the count is right and
       the framing is in front of you. The words are yours.
+
+    WHEN TO USE H3 SCRIPT INSTEAD
+      If you are writing a TAKE -- cast, shots, dialogue -- H3 Script supersedes
+      this node. It carries a length per shot, turns those into the same cuts,
+      and emits the plan itself, so nothing has to be kept in step by hand. This
+      node stays for the case it was built for: shot arithmetic on its own,
+      without a cast or dialogue, which several workflows use.
+
+      They are not wired together on purpose. Feeding both into one graph means
+      two sources for the same cuts, which is the disagreement the compiler
+      exists to remove.
     """
 
     @classmethod

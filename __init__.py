@@ -205,6 +205,8 @@ def _register_routes():
                 "text": serialize(doc),
                 "index": out["index"],
                 "counts": out["counts"],
+                # the text that actually reaches the model. A tool built to stop
+                # five nodes disagreeing should let you read what it produced.
                 "fields": {k: v for k, v in out.items()
                            if isinstance(v, (str, int, float))},
                 "lint": lint(doc, out),

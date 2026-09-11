@@ -112,6 +112,28 @@ check("no lines", t["lines"], [])
 check("one chunk, so no pin and no complaint about one",
       any("carried handles cost" in p for p in t["problems"]), False)
 
+print("the SERVER owns 17n+5 — a shot off the grid is snapped, and says so")
+off = hs.parse("@a = x\nshot 150 | one\n  say @a hi\nshot 141 | two\n")
+t_off = hs.timing(off, chunk_frames=141, context=39)
+# 150 sits 9 above 141 and 8 below 158, so it goes UP — the nearest legal run,
+# not the one below. Worth pinning: an earlier expectation here assumed "snap
+# down" and was simply wrong about which was closer.
+check("150 goes to the nearer run, which is 158", t_off["shots"][0]["frames"], 158)
+check("and what was asked for is reported", t_off["shots"][0]["requested"], 150)
+check("a legal length is left alone", t_off["shots"][1]["frames"], 141)
+check("146 goes down to 141", hs.snap_shot(146), 141)
+check("160 goes down to 158", hs.snap_shot(160), 158)
+check("a legal run is untouched", hs.snap_shot(141), 141)
+check("below the minimum clamps to 5", hs.snap_shot(1), 5)
+
+print("times are given to a tenth, not a hundredth")
+tt = hs.timing(take("I told you I would come back."), total_frames=345,
+               chunk_frames=141, context=39)
+ok("a line's start has at most one decimal",
+   all(round(l["start"], 1) == l["start"] for l in tt["lines"] if l["start"] is not None))
+ok("and so does its duration",
+   all(round(l["seconds"], 1) == l["seconds"] for l in tt["lines"]))
+
 print("shot lengths drive the cuts, and a cut opens an unpinned chunk")
 doc = hs.parse("@ada = a woman\nshot 141 | one\n  say @ada hi\n"
                "shot 243 | two\n  say @ada there\n")
