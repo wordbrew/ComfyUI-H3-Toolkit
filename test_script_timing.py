@@ -61,7 +61,8 @@ def take(*lines):
 
 
 def two_shots(placed_at):
-    """Two shots, the second holding one line placed by hand at `placed_at`."""
+    """Two shots; the second's line pinned to `placed_at` seconds of the FINISHED
+    clip. Joined time, not shot-relative -- the same number the ruler shows."""
     return hs.parse("@ada = a woman\nshot 141 | one\n  say @ada hi\n"
                     f"shot 243 | two\n  say @ada @{placed_at} asks Do you want to play?\n")
 
@@ -145,17 +146,41 @@ ok("a chunk is filed under the shot its KEPT region belongs to",
    t["chunks"][0]["shot"] == 0 and t["chunks"][1]["shot"] == 1)
 
 print("a line placed by hand CAN land in a carried handle — the silent failure")
-l = [x for x in hs.timing(two_shots("0"), chunk_frames=141, context=39)["lines"]
+# chunk 2 begins at 5.875s joined and holds 1.625s back — a line pinned there is
+# inside the handle
+l = [x for x in hs.timing(two_shots("5.9"), chunk_frames=141, context=39)["lines"]
      if x["placed"]][0]
-ok("placed at the very start of a pinned chunk is caught",
+ok("pinned into a carried handle is caught",
    "carried handle" in (l["problem"] or ""))
-l = [x for x in hs.timing(two_shots("1.0"), chunk_frames=141, context=39)["lines"]
+# chunk 2 is speakable from 5.95s to 9.53s joined; a ~1.2s line pinned at 9.0
+# would run to 10.16 and be cut off, so 7.0 is the one that actually fits
+l = [x for x in hs.timing(two_shots("7.0"), chunk_frames=141, context=39)["lines"]
      if x["placed"]][0]
-check("clear of the handle is fine", l["problem"], None)
-l = [x for x in hs.timing(two_shots("9.9"), chunk_frames=141, context=39)["lines"]
+check("clear of the handle, and inside the ceiling, is fine", l["problem"], None)
+check("and it is heard exactly where it was pinned", l["start"], 7.0)
+l = [x for x in hs.timing(two_shots("10.0"), chunk_frames=141, context=39)["lines"]
      if x["placed"]][0]
-ok("past the chunk's end is cut off, and says so",
+ok("too near a chunk's end is cut off, and says so",
    "cut off" in (l["problem"] or ""))
+
+print("the board and H3 Dialogue agree, because they share one packer")
+import importlib
+_st = sys.modules["h3tpk.story"]
+_doc = hs.parse("@a = x\nshot 243 | one\n"
+                "  say @a the first line of a short exchange\n"
+                "  say @a and the second one answering it\n")
+_plan = hs.plan_payload(_doc, chunk_frames=141, context=39)
+_out = hs.emit(_doc)
+_res = _st.H3Dialogue().go(lines=_out["dialogue_lines"], chunk_plan=_plan,
+                           actions=_out["dialogue_actions"],
+                           speaker_map=_out["speaker_map"])
+_beats, _timeline, _lint = _res["result"] if isinstance(_res, dict) else _res
+_board = [l["start"] for l in hs.timing(_doc, chunk_frames=141, context=39)["lines"]]
+import re as _re
+_heard = [round(float(x), 1) for x in
+          _re.findall(r"^\s*([0-9.]+)-", _timeline, _re.M)]
+check("the times the board shows are the times that get rendered",
+      _board, _heard)
 
 print("a FLOWED line is never accused of starting in a handle")
 t = hs.timing(take("one", "two", "three"), total_frames=345,

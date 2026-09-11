@@ -68,9 +68,10 @@ GRAMMAR
     shot | <description>
       note <text>                       adds to the description
       say  @name [@seconds] [verb] <line>
-                                        dialogue. `@2.5` places it that many
-                                        seconds into its shot; without one it
-                                        flows after the line before.
+                                        dialogue. `@2.5` pins it to 2.5s on the
+                                        FINISHED clip -- what the ruler shows.
+                                        Without one it flows after the line
+                                        before, as H3 Dialogue has always done.
       say  @name | how they say it | <line>
                                         the same, when "how" is a PHRASE --
                                         "says quietly, half-turning away". The
@@ -312,10 +313,13 @@ def parse(text):
             if who not in by_name:
                 raise _err(lineno, f"@{who} is not declared", line)
             after = rest[m.end():].strip()
-            # PLACED BY HAND: `@2.5` is seconds from the shot's own start. A cast
-            # name can never begin with a digit (see NAME), so this cannot collide
-            # with one. Without it a line simply flows after the one before, which
-            # is what H3Dialogue does on its own.
+            # PLACED BY HAND: `@2.5` is seconds on the FINISHED clip -- the same
+            # number the timeline's ruler shows and the same one H3 Dialogue
+            # reports, so nothing has to convert between coordinate systems. It
+            # was briefly shot-relative, which meant the panel, the document and
+            # the emitted line each meant a different thing by the same number.
+            # A cast name can never begin with a digit (see NAME), so `@2.5`
+            # cannot collide with one.
             at = None
             if after.startswith("@"):
                 tok, _, tail = after.partition(" ")
@@ -669,84 +673,55 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
             bounds.append((at, at + n))
             at += n
 
-    # A CHUNK'S KEPT REGION IS keep_from..end, NOT start..end. Chunks overlap by
-    # the carried handle -- chunk 1 of a 141-frame shot starts at 102, 39 frames
-    # back inside chunk 0 -- so mapping by `start` files a chunk under the
-    # previous shot and puts its lines in the wrong place.
-    def kept(i):
-        c = chunks[i]
-        return int(c["keep_from"]), int(c["end"])
+    problems = []
 
-    def shot_windows(si):
-        if si >= len(bounds):
-            return list(enumerate(windows))
-        lo, hi = bounds[si]
-        out = [(i, w) for i, w in enumerate(windows)
-               if kept(i)[0] < hi and kept(i)[1] > lo]
-        return out or [(min(range(len(windows)),
-                            key=lambda i: abs(kept(i)[0] - lo)), windows[0])][:1]
+    # ONE PACKER. This used to be its own loop here, which packed from each
+    # chunk's floor and knew nothing about `pacing` -- and "spread" is the
+    # DEFAULT, so the board showed one schedule and H3 Dialogue produced another
+    # the moment a chunk held two lines. Both now call story.place_lines.
+    from .story import place_lines
 
-    out_lines, problems = [], []
+    queue, meta = [], []
     for si, shot in enumerate(doc.get("shots", [])):
-        mine = shot_windows(si)
-        if not mine:
-            continue
-        base = bounds[si][0] if si < len(bounds) else 0
-        wi, cursor = 0, None
         for ch in shot.get("chunks", []):
             for line in ch.get("lines", []):
                 text = line.get("line", "")
                 dur = syllables(text) / max(0.1, float(syllables_per_second))
-                rec = {"shot": si, "who": line.get("who", ""), "line": text,
-                       # a TENTH. story.stamp() made this call already: the
-                       # number comes from a syllable estimate, so two decimals
-                       # claim a precision that is not there.
-                       "seconds": round(dur, 1), "placed": "at" in line,
-                       "problem": None, "chunk": None, "start": None}
-
+                # IDENTITY BY INDEX, not by text. Twelve identical lines are a
+                # perfectly ordinary take, and keying on the words collapsed
+                # them to one.
+                item = {"dur": dur, "text": text, "who": line.get("who", ""),
+                        "shot": si, "i": len(queue)}
                 if "at" in line:
-                    # seconds from the SHOT's start; find the chunk covering it
-                    abs_f = base + float(line["at"]) * 24.0
-                    hit = next((iw for iw in mine
-                                if kept(iw[0])[0] <= abs_f < kept(iw[0])[1]),
-                               mine[-1])
-                    ci, w = hit
-                    local = abs_f / 24.0 - chunks[ci]["start"] / 24.0
-                    if local < w["lo"] - 1e-6:
-                        rec["problem"] = (
-                            f"starts inside the {w['pin_s']:.2f}s carried handle "
-                            f"— those frames are stamped back from the chunk "
-                            f"before, so it is never said")
-                    elif local + dur > w["hi"]:
-                        rec["problem"] = "runs past the end of its chunk — cut off mid-word"
-                    rec["chunk"] = ci
-                    rec["start"] = round(w["offset"] + local, 1)
-                    rec["local"] = round(local, 1)
-                else:
-                    if wi >= len(mine):
-                        rec["problem"] = "no room left in this shot"
-                    else:
-                        ci, w = mine[wi]
-                        if cursor is None:
-                            cursor = w["lo"]
-                        if cursor + dur > w["hi"]:
-                            wi += 1
-                            if wi < len(mine):
-                                ci, w = mine[wi]
-                                cursor = w["lo"]
-                                if cursor + dur > w["hi"]:
-                                    rec["problem"] = ("longer than a whole chunk "
-                                                      "— it will be cut off")
-                            else:
-                                rec["problem"] = "no room left in this shot"
-                        if rec["problem"] != "no room left in this shot":
-                            rec["chunk"] = ci
-                            rec["start"] = round(w["offset"] + cursor, 1)
-                            rec["local"] = round(cursor, 1)
-                            cursor = cursor + dur + float(gap)
-                if rec["problem"]:
-                    problems.append(f"{rec['problem']}: \u201c{text}\u201d")
-                out_lines.append(rec)
+                    item["at_joined"] = float(line["at"])   # already joined
+                queue.append(item)
+                meta.append(item)
+
+    placed, place_notes = place_lines(queue, chunks, windows, gap=float(gap))
+    problems.extend(n for n in place_notes)
+
+    by_index = {}
+    for ci, items in enumerate(placed):
+        for it in items:
+            by_index[it["i"]] = {
+                "shot": it["shot"], "who": it["who"], "line": it["text"],
+                "seconds": round(it["dur"], 1), "placed": bool(it.get("pinned")),
+                "chunk": ci, "local": round(it["at"], 1),
+                "start": round(windows[ci]["offset"] + it["at"], 1),
+                "problem": it.get("problem"),
+            }
+    # the packer stops at the first line that will not fit, so everything after
+    # it is unplaced too -- each one is reported rather than silently missing
+    out_lines = []
+    for it in meta:
+        out_lines.append(by_index.get(it["i"], {
+            "shot": it["shot"], "who": it["who"], "line": it["text"],
+            "seconds": round(it["dur"], 1), "placed": "at_joined" in it,
+            "chunk": None, "local": None, "start": None,
+            "problem": "no room left in the take"}))
+    for rec in out_lines:
+        if rec["problem"]:
+            problems.append(f"{rec['problem']}: \u201c{rec['line']}\u201d")
 
     problems.extend(audio_clock_notes(doc, chunk_frames))
 
@@ -884,13 +859,19 @@ def emit(doc):
             for ln in ch["lines"]:
                 sid = speakers.setdefault(
                     ln["who"], f"S{len(speakers) + 1}")
-                lines.append(f"{sid} | {ln['verb']} | {ln['line']}")
+                # a hand-placed time rides on the speaker tag: S1@5.9
+                tag = sid if ln.get("at") is None else f"{sid}@{float(ln['at']):g}"
+                lines.append(f"{tag} | {ln['verb']} | {ln['line']}")
             act = " ".join(a.rstrip(".") + "." for a in ch["actions"])
             actions.append(act)
             lines.append("")
     while lines and not lines[-1]:
         lines.pop()
 
+    # PLACED TIMES HAVE TO SURVIVE INTO THE LINE FORMAT, or dragging a line on
+    # the timeline changes the picture and nothing else. `S1@5.9` is joined time
+    # on the finished clip -- the same number the board shows -- and H3 Dialogue
+    # honours it instead of packing that line.
     smap = "; ".join(f"{sid}=<Subject {idx[nm]['subject']}>"
                      for nm, sid in speakers.items())
 
@@ -918,8 +899,25 @@ def emit(doc):
         + "\n\n"
         "non_diegetic_music: " + (doc.get("music") or "N/A"))
 
+    # THE TAIL HAS TO KNOW HOW MANY SHOTS THERE ARE. H3 38 carried the default
+    # "a single continuous take ... runs unbroken" over a two-shot script, so the
+    # prompt argued with itself about whether it cuts. Prompts NAME the failure
+    # they cause -- "no cuts" produces cuts -- so a multi-shot take states the
+    # cuts positively rather than denying continuity.
+    n_shots = len(doc.get("shots", []))
+    if n_shots > 1:
+        tail = (f"{n_shots} shots in sequence. The camera cuts cleanly between "
+                f"them; each shot holds its own framing from its first frame to "
+                f"its last, and the subject stays the same person across the "
+                f"cuts.")
+    else:
+        tail = ("A single continuous take from one camera position; the framing "
+                "holds and the take runs unbroken from the first frame to the "
+                "last.")
+
     return {
         "prompt": prompt,
+        "tail": tail,
         "head": head,
         "subject_defs": defs_s,
         "retention": rets_s,
@@ -1002,12 +1000,13 @@ class H3Script:
     # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
     # drew are the cuts it plans.
     RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT",
-                                     "H3_CHUNK_PLAN", "STRING", "STRING") + \
+                                     "H3_CHUNK_PLAN", "STRING", "STRING",
+                                     "STRING") + \
                    ("IMAGE",) * MAX_PICTURES + ("AUDIO",) * MAX_VOICES
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
                     "document", "info", "cut_frames", "total_frames", "plan",
-                    "lora_schedule", "prompt") + \
+                    "lora_schedule", "prompt", "tail") + \
                    tuple(f"picture_{i + 1}" for i in range(MAX_PICTURES)) + \
                    tuple(f"voice_{i + 1}" for i in range(MAX_VOICES))
     FUNCTION = "go"
@@ -1082,7 +1081,7 @@ class H3Script:
                            out["speaker_map"],
                            json.dumps(doc, indent=2), info,
                            ",".join(str(c) for c in cuts), total, payload,
-                           sched, out["prompt"],
+                           sched, out["prompt"], out["tail"],
                            *(list(pics) + [None] * MAX_PICTURES)[:MAX_PICTURES],
                            *(list(voices) + [None] * MAX_VOICES)[:MAX_VOICES])}
 
