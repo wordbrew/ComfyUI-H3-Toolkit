@@ -170,7 +170,9 @@
         "Node name for S&R": "H3AudioPrompt"
       },
       "widgets_values": [
+        "custom (use fields below)",
         "speech",
+        false,
         29.25,
         "A sparse, slow, sultry acoustic ballad around 68 BPM, minor key",
         "One softly fingerpicked nylon-string guitar and nothing else",
@@ -180,7 +182,7 @@
         "English",
         "S1",
         true,
-        false,
+        "none",
         ""
       ]
     },

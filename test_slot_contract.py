@@ -42,6 +42,23 @@ fails = []
 
 # name -> (module, class, inputs in declared order, outputs in declared order)
 CONTRACT = {
+    # Added 2026-09-11 after both were found to have had widgets INSERTED rather
+    # than appended: H3ScenePrompt's saved graphs held the canvas width on
+    # `soundscape`, and H3AudioPrompt gained `preset` and `auto_fit_duration` at
+    # the FRONT, which shifted every value in H3 01 by two.
+    "H3ScenePrompt": (
+        "prompt_scene",
+        ["task_type", "seconds", "style", "shots", "soundscape",
+         "non_diegetic_music", "language", "subject_def_1", "pictures_1",
+         "retention_1", "subject_def_2", "pictures_2", "retention_2",
+         "subject_def_3", "pictures_3", "retention_3", "extra_direction"],
+        ["prompt", "length", "lint", "plan"]),
+    "H3AudioPrompt": (
+        "audio",
+        ["preset", "mode", "auto_fit_duration", "seconds", "style",
+         "instrumentation", "voice", "room", "script", "language", "speaker",
+         "use_timed_shots", "voices_from_audio", "extra_direction"],
+        ["prompt", "length", "plan"]),
     "H3ContextWindows": (
         "windowing",
         ["model", "window_frames", "overlap_frames", "schedule", "fuse_method",
