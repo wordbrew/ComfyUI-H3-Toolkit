@@ -125,7 +125,10 @@ import subprocess                                               # noqa: E402
 SUBCLASSES = {"H3WindowingState": "WindowingState",
               "H3ContextHandler": "IndexListContextHandler"}
 # deliberately new; core has no equivalent to check against
-NEW_METHODS = {"_get_modality_dims", "__post_init__"}
+# methods that are OURS and override nothing. Listed one by one on purpose: an
+# "ignore anything private" rule would have hidden _widen_for_margin sitting on
+# the wrong class, which is the exact mistake this check exists to catch.
+NEW_METHODS = {"_get_modality_dims", "__post_init__", "_widen_for_margin"}
 # module-level function -> the core function it mirrors
 MIRRORED_FUNCS = {"_h3_sampler_sample_wrapper": "_sampler_sample_wrapper"}
 
@@ -268,6 +271,48 @@ check("the last window ends exactly at the clip",
       map_modalities(list(range(75, 102)), _shapes, 2)[1][-1] + 1, 567)
 check("3 frames is 5 ticks", audio_ticks_for_frames(3), 5)
 check("141 frames is a whole 235 ticks", audio_ticks_for_frames(141), 235)
+
+# --- margin windows --------------------------------------------------------- #
+# Evaluate wider than you fuse. A window's edge tokens only ever saw context on
+# one side, and that is where neighbouring windows disagree most -- blending
+# cannot fix a disagreement about CONTENT, which is where the August work
+# stopped. The margin throws those tokens away instead of averaging them.
+#
+# Two invariants have to hold or the model sees a clip shape it was not trained
+# on: every widened window is still 5j+2 tokens starting on a 5-token boundary,
+# and the inner spans still tile the clip exactly once.
+def _widen(windows, total, m):
+    out = []
+    for idx in windows:
+        s, L = idx[0], len(idx)
+        lo, hi = max(0, s - m), min(total, s + L + m)
+        out.append((list(range(lo, hi)), s - lo, L))
+    return out
+
+
+print("a margin widens the evaluation without breaking the token phase")
+_TOTAL, _W, _S, _M = 102, 27, 15, 5          # 345f clip, 90f window, 51f stride
+_starts = list(range(0, _TOTAL - _W + 1, _S))
+if _starts[-1] != _TOTAL - _W:
+    _starts.append(_TOTAL - _W)
+_inner = [list(range(s, s + _W)) for s in _starts]
+_wide = _widen(_inner, _TOTAL, _M)
+check("every widened window starts on a 5-token boundary",
+      [w[0][0] % 5 for w in _wide], [0] * len(_wide))
+check("and is still a legal 5j+2 length",
+      [len(w[0]) % 5 for w in _wide], [2] * len(_wide))
+check("the inner span is the original window",
+      [w[2] for w in _wide], [_W] * len(_wide))
+_cov = {}
+for _idx, _off, _n in _wide:
+    for _k in _idx[_off:_off + _n]:
+        _cov[_k] = _cov.get(_k, 0) + 1
+check("no frame is left unfused",
+      [k for k in range(_TOTAL) if k not in _cov], [])
+ok("the clip's first and last windows take a one-sided margin",
+   len(_wide[0][0]) < len(_wide[1][0]) and len(_wide[-1][0]) < len(_wide[1][0]))
+check("a margin of 0 changes nothing",
+      [len(w[0]) for w in _widen(_inner, _TOTAL, 0)], [_W] * len(_inner))
 
 if fails:
     print("FAIL")

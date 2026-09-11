@@ -353,10 +353,36 @@ def _context_window_classes():
                     per_modality_indices[mod_idx], dim=mod_dim,
                     total_frames=modality_total_frames,
                     context_overlap=modality_overlap)
-            return IndexListContextWindow(
+            out = IndexListContextWindow(
                 window.index_list, dim=self.dim, total_frames=x.shape[self.dim],
                 modality_windows=modality_windows,
                 context_overlap=primary_overlap)
+
+            # ADDED, not core's: carry the margin's inner span onto every
+            # modality. The window the MODEL sees is the wide one; the span that
+            # gets FUSED is the inner one, and each modality needs that span in
+            # its own index units. Audio's comes from mapping the inner video
+            # indices through the same function the wide window used, so the two
+            # can never disagree about where the inner span sits.
+            inner = getattr(window, "h3_inner", None)
+            if inner is not None:
+                off, n = inner
+                out.h3_inner = (off, n)
+                inner_idx = list(window.index_list)[off:off + n]
+                inner_per_mod = model.map_context_window_to_modalities(
+                    inner_idx, map_shapes, self.dim)
+                for mod_idx, mod_window in modality_windows.items():
+                    want = inner_per_mod[mod_idx]
+                    if not want:
+                        continue
+                    whole = list(mod_window.index_list)
+                    try:
+                        m_off = whole.index(want[0])
+                    except ValueError:
+                        continue
+                    mod_window.h3_inner = (m_off, min(len(want),
+                                                      len(whole) - m_off))
+            return out
 
         def strip_guide_frames(self, out_per_modality, guide_frame_counts,
                                window):
@@ -478,6 +504,48 @@ def _context_window_classes():
                 model, st.latent_shapes, len(st.latents))
             return H3WindowingState(**fields)
 
+        def _widen_for_margin(self, windows, total):
+            """Each window grows by `margin_tokens` each side; only the middle fuses.
+
+            THE NULL THIS ATTACKS
+              Overlap blending cannot fix a seam, because neighbouring windows
+              GENERATE different content for the same frames -- a locked-off
+              background drifts and no crossfade curve resolves a disagreement
+              about content (measured, August). The tokens that disagree most are
+              the ones at a window's edge, which only ever saw context on one
+              side.
+
+              So evaluate wider than you fuse: the model sees `margin` extra
+              tokens each side, taken from the shared latent at the CURRENT noise
+              level -- nothing coarse is injected, which is what separates this
+              from the halo experiment that failed on 2026-09-11 -- and the edge
+              tokens are then thrown away instead of blended.
+
+              Phase survives because the margin is whole 5-token cycles: a window
+              is 5j+2 tokens and stays 5j+2 after adding 2m.
+
+              Idea from DrakenZA/Comfyui-H3-DrakenNodes. UNTESTED on weights.
+            """
+            m = int(getattr(self, "margin_tokens", 0) or 0)
+            if m <= 0:
+                return windows
+            out = []
+            for w in windows:
+                idx = list(w.index_list)
+                s, L = idx[0], len(idx)
+                lo = max(0, s - m)
+                hi = min(int(total), s + L + m)
+                wide = IndexListContextWindow(
+                    list(range(lo, hi)), dim=w.dim, total_frames=w.total_frames,
+                    context_overlap=w.context_overlap)
+                wide.h3_inner = (s - lo, L)
+                out.append(wide)
+            return out
+
+        def get_context_windows(self, model, x_in, model_options):
+            windows = super().get_context_windows(model, x_in, model_options)
+            return self._widen_for_margin(windows, x_in.shape[self.dim])
+
         def execute(self, calc_cond_batch, model, conds, x_in, timestep,
                     model_options):
             """MIRRORS comfy.context_windows.IndexListContextHandler.execute.
@@ -586,6 +654,22 @@ def _context_window_classes():
             already knows.
             """
             dim = window.dim
+
+            # ADDED, ahead of core's body: with a margin, the model was run over
+            # a WIDER span than we mean to keep. Narrow both the window and the
+            # predictions to the inner span here, and everything below is core's
+            # arithmetic on a window that happens to be smaller -- no edit to the
+            # copied body, and the weights are built for the span being fused.
+            inner = getattr(window, "h3_inner", None)
+            if inner is not None:
+                off, n = int(inner[0]), int(inner[1])
+                if n > 0 and (off or n != len(window.index_list)):
+                    window = IndexListContextWindow(
+                        list(window.index_list)[off:off + n], dim=dim,
+                        total_frames=window.total_frames,
+                        context_overlap=window.context_overlap)
+                    sub_conds_out = [t.narrow(dim, off, n) for t in sub_conds_out]
+
             if self.fuse_method.name == ContextFuseMethods.RELATIVE:
                 for pos, idx in enumerate(window.index_list):
                     # bias is the influence of a specific index in relation to
@@ -935,6 +1019,19 @@ class H3ContextWindows:
                                                   "the width of the overlap — "
                                                   "good for an evolving shot, "
                                                   "bad for dialogue."}),
+            "margin_frames": ("INT", {"default": 0, "min": 0, "max": 510,
+                              "step": 17,
+                              "tooltip": "EXPERIMENTAL, untested on weights. "
+                                         "Evaluate each window this many frames "
+                                         "wider on BOTH sides and fuse only the "
+                                         "middle. A window's edge tokens only "
+                                         "ever saw context on one side, and that "
+                                         "is where neighbouring windows disagree "
+                                         "most — blending cannot fix a "
+                                         "disagreement about CONTENT, so throw "
+                                         "those tokens away instead. 0 is off; "
+                                         "try 17 or 34. Costs compute per "
+                                         "window, changes no seam positions."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")
@@ -945,7 +1042,8 @@ class H3ContextWindows:
     DESCRIPTION = ("Context windows sized in frames, snapped to H3's VAE chunk "
                    "boundary, on the correct temporal axis.")
 
-    def go(self, model, window_frames, overlap_frames, schedule="standard_static",
+    def go(self, model, window_frames, overlap_frames, margin_frames=0,
+           schedule="standard_static",
            fuse_method="pyramid", freenoise=False, causal_window_fix=True,
            absolute_window_positions=False, split_conds_to_windows=False):
         from .timing import snap_run, video_latent_t
@@ -1048,6 +1146,9 @@ class H3ContextWindows:
             split_conds_to_windows=bool(split_conds_to_windows),
             latent_retain_index_list=[],
             causal_window_fix=bool(causal_window_fix))
+        # whole 5-token cycles, so a 5j+2 window stays 5j+2 once widened
+        patched.model_options["context_handler"].margin_tokens = (
+            int(margin_frames) // 17 * 5)
         # makes the VRAM estimate budget one window rather than the whole clip
         create_prepare_sampling_wrapper(patched)
         if freenoise:
