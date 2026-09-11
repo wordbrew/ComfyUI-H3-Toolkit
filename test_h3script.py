@@ -198,6 +198,12 @@ ok("an empty chunk break is called out",
 print("node contract")
 check("returns", hs.H3Script.RETURN_NAMES,
       ("head", "subject_defs", "retention", "soundscape", "music",
+       "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info",
+       # APPENDED, per the slot contract — these two carry the shot lengths into
+       # H3 Chunk Plan, which is what makes a drawn cut an actual cut.
+       "cut_frames", "total_frames"))
+check("the original ten keep their positions", hs.H3Script.RETURN_NAMES[:10],
+      ("head", "subject_defs", "retention", "soundscape", "music",
        "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info"))
 check("one per type", len(hs.H3Script.RETURN_TYPES),
       len(hs.H3Script.RETURN_NAMES))

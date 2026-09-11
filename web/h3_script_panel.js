@@ -112,6 +112,19 @@ function openPanel(node) {
   const castBox = el("div");
   const shotBox = el("div");
 
+  const placed = new Map();
+
+  // THE BOARD. Shots on a real clock, the chunks the planner will make drawn
+  // underneath them, and every line at the second it is actually spoken. The
+  // point is not tidiness: a carried handle and a chunk boundary are properties
+  // of the PLAN, so where a line lands is not guessable while writing it.
+  const board = el("div", { style:
+    "border:1px solid #3a4148;border-radius:6px;background:#1b1f23;padding:8px 10px 10px;" +
+    "margin-bottom:4px;overflow-x:auto;" });
+  const boardInner = el("div", { style: "min-width:620px;position:relative;" });
+  board.append(boardInner);
+  let selShot = 0;
+
   // ---- cast -------------------------------------------------------------- //
   function castRow(entry) {
     const wrap = el("div", { style: CARD });
@@ -191,6 +204,14 @@ function openPanel(node) {
     const wrap = el("div", { style: CARD });
     const what = input(shot?.description, "what this shot is — framing, who is in it", "flex:1;");
     what.onchange = refresh;
+    // 17n+5, because a shot IS a cut and the planner will trim anything else --
+    // the number you designed to would not be the number rendered.
+    const frames = input(shot?.frames ?? 141, "frames", "width:78px;");
+    frames.className = "h3-frames";
+    frames.onchange = () => {
+      const n = Math.max(5, Math.round((Number(frames.value) - 5) / 17) * 17 + 5);
+      frames.value = n; wrap._frames = n; refresh();
+    };
     const del = el("button", { textContent: "Remove shot", style: BTN });
     const beats = el("div", { style: "margin:8px 0 6px;" });
 
@@ -210,14 +231,16 @@ function openPanel(node) {
     del.onclick = () => { wrap.remove(); refresh(); };
 
     wrap.append(row([el("span", { textContent: "shot", style: "color:#888;width:56px;font-size:11px;" }),
-                     what, del]));
+                     what, frames, del]));
     wrap.append(beats);
     wrap.append(row([add("Someone speaks", "say"), add("Something happens", "do"),
                      add("A detail to hold", "note"), add("Split here", "split")],
                     "margin-bottom:0;"));
 
+    wrap._frames = Number(shot?.frames ?? 141);
     wrap._read = () => {
       const out = { description: what.value, notes: [],
+                    frames: Number(wrap._frames) || 141,
                     chunks: [{ lines: [], actions: [] }], loras: shot?.loras || [] };
       for (const b of beats.children) {
         const v = b._read?.();
@@ -228,7 +251,12 @@ function openPanel(node) {
           const cur = out.chunks[out.chunks.length - 1];
           if (v.type === "do" && v.text) cur.actions.push(v.text);
           if (v.type === "say" && v.line) {
-            cur.lines.push({ who: v.who, verb: v.verb, line: v.line });
+            const l = { who: v.who, verb: v.verb, line: v.line };
+            // the form rebuilds the document from the DOM every refresh, so a
+            // time placed by dragging has to be reattached or the drag undoes
+            // itself on the next keystroke
+            if (placed.has(v.line)) l.at = placed.get(v.line);
+            cur.lines.push(l);
           }
         }
       }
@@ -307,9 +335,172 @@ function openPanel(node) {
     });
   }
 
+  const LANE = "position:relative;height:%h;background:#15181b;border:1px solid " +
+               "#2c3238;border-radius:4px;margin-bottom:5px;";
+  const laneLabel = (s) => el("div", { textContent: s, style:
+    "font-size:9.5px;letter-spacing:.9px;text-transform:uppercase;color:#69727b;" +
+    "margin:5px 0 3px;font-family:ui-monospace,monospace;" });
+  const SHOT_COLOURS = ["#3f5a6b", "#4a5b45", "#63504a", "#53496b"];
+
+  function drawBoard(t, d) {
+    const total = t.total_frames || 1;
+    const pc = (f) => `${Math.max(0, f / total * 100)}%`;
+    boardInner.innerHTML = "";
+
+    // ruler
+    const ruler = el("div", { style: "position:relative;height:15px;margin-bottom:2px;" });
+    for (let s = 0; s <= Math.floor(total / 24); s += 2) {
+      const tick = el("div", { textContent: `${s}s`, style:
+        "position:absolute;top:0;border-left:1px solid #2c3238;padding-left:3px;" +
+        "font-size:9px;color:#69727b;font-family:ui-monospace,monospace;" });
+      tick.style.left = pc(s * 24);
+      ruler.append(tick);
+    }
+    boardInner.append(ruler);
+
+    // shots — click to select, drag an edge to resize
+    boardInner.append(laneLabel("shots — drag an edge to resize"));
+    const shotLane = el("div", { style: LANE.replace("%h", "34px") });
+    (t.shots || []).forEach((s, i) => {
+      const blk = el("div", { style:
+        "position:absolute;top:3px;bottom:3px;border-radius:3px;display:flex;" +
+        "align-items:center;gap:6px;padding:0 7px;overflow:hidden;cursor:pointer;" +
+        `background:${SHOT_COLOURS[i % 4]};border:1px solid ${i === selShot ? "#7fa0c0" : "rgba(255,255,255,.14)"};` });
+      blk.style.left = pc(s.start); blk.style.width = pc(s.frames);
+      const shot = d.shots[i] || {};
+      blk.append(el("span", { textContent: shot.description || "untitled shot",
+        style: "font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;" }));
+      blk.append(el("span", { textContent: `${s.frames}f`, style:
+        "font-size:9.5px;color:rgba(255,255,255,.6);font-family:ui-monospace,monospace;" }));
+      for (const side of ["left", "right"]) {
+        const g = el("div", { style:
+          `position:absolute;top:0;bottom:0;width:7px;${side}:0;cursor:ew-resize;` });
+        g.onmousedown = (e) => resizeShot(e, i, side === "right");
+        blk.append(g);
+      }
+      blk.onclick = () => { selShot = i; refresh(); };
+      shotLane.append(blk);
+    });
+    boardInner.append(shotLane);
+
+    // chunks, with the carried handle hatched — the part that cannot be spoken in
+    boardInner.append(laneLabel("chunks the planner will make"));
+    const chunkLane = el("div", { style: LANE.replace("%h", "22px") });
+    (t.chunks || []).forEach((c) => {
+      const blk = el("div", { style:
+        "position:absolute;top:0;height:100%;border-right:1px solid #3a4148;" +
+        "display:flex;align-items:center;justify-content:center;font-size:9px;" +
+        "color:#69727b;font-family:ui-monospace,monospace;" });
+      blk.style.left = pc(c.start); blk.style.width = pc(c.frames);
+      blk.textContent = String(c.index);
+      if (c.pin) {
+        const hatch = el("div", { style:
+          "position:absolute;left:0;top:0;height:100%;opacity:.5;background:" +
+          "repeating-linear-gradient(-45deg,#6b5530 0 4px,transparent 4px 8px);" });
+        hatch.style.width = `${Math.min(100, c.pin / c.frames * 100)}%`;
+        blk.append(hatch);
+      }
+      chunkLane.append(blk);
+    });
+    boardInner.append(chunkLane);
+
+    // lines, at the second they are spoken
+    boardInner.append(laneLabel("what is said, and when"));
+    const beatLane = el("div", { style: LANE.replace("%h", "46px") });
+    (t.lines || []).forEach((l, i) => {
+      const bad = !!l.problem;
+      const blk = el("div", { style:
+        "position:absolute;height:14px;border-radius:2px;padding:0 4px;font-size:9px;" +
+        "font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;" +
+        "cursor:grab;border:1px solid " +
+        (bad ? "#7a4444" : l.placed ? "#7fa0c0" : "rgba(255,255,255,.12)") + ";" +
+        `background:${bad ? "#4d2f2f" : "#34474f"};color:${bad ? "#e7b8b8" : "#bcd6de"};` });
+      blk.style.top = `${3 + (i % 3) * 15}px`;
+      blk.style.left = l.start === null ? "4px" : pc(l.start * 24);
+      blk.style.maxWidth = pc(Math.max(30, (l.seconds || 1) * 24 * 1.6));
+      blk.textContent = `${l.placed ? "\u21e5 " : ""}${l.who}: ${l.line}`;
+      blk.title = (l.problem || "drag to place this line; double-click to let it flow");
+      blk.onmousedown = (e) => placeLine(e, l);
+      blk.ondblclick = () => { releaseLine(l); };
+      beatLane.append(blk);
+    });
+    boardInner.append(beatLane);
+  }
+
+  // ---- dragging ---------------------------------------------------------- //
+  function docLine(rec) {
+    const shot = (build().shots || [])[rec.shot];
+    if (!shot) return null;
+    for (const ch of shot.chunks || []) {
+      for (const l of ch.lines || []) if (l.line === rec.line && l.who === rec.who) return l;
+    }
+    return null;
+  }
+
+  function resizeShot(e, i, right) {
+    e.stopPropagation(); e.preventDefault();
+    const rect = boardInner.getBoundingClientRect();
+    const cards = [...shotBox.children];
+    const per = (lastTiming?.total_frames || 345) / rect.width;
+    const x0 = e.clientX;
+    const start = Number(cards[i]?._frames || 141);
+    const move = (ev) => {
+      const want = start + (right ? 1 : -1) * (ev.clientX - x0) * per;
+      // 17n+5 — the only lengths the model accepts, so the number you draw to is
+      // the number that renders
+      const snapped = Math.max(5, Math.round((want - 5) / 17) * 17 + 5);
+      cards[i]._frames = snapped;
+      const f = cards[i]?.querySelector(".h3-frames");
+      if (f) f.value = snapped;
+      refresh();
+    };
+    const up = () => { document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up); refresh(); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  function placeLine(e, rec) {
+    e.preventDefault();
+    const rect = boardInner.getBoundingClientRect();
+    const total = lastTiming?.total_frames || 345;
+    const shotStart = (lastTiming?.shots?.[rec.shot]?.start) || 0;
+    const move = (ev) => {
+      const frames = Math.max(0, (ev.clientX - rect.left) / rect.width * total);
+      const secs = Math.max(0, (frames - shotStart) / 24);
+      const l = docLine(rec);
+      if (l) { l.at = Math.round(secs * 10) / 10; writeBack(); refresh(); }
+    };
+    const up = () => { document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  function releaseLine(rec) {
+    const l = docLine(rec);
+    if (l) { delete l.at; writeBack(); refresh(); }
+  }
+
+  // placed times live in the DOCUMENT, and the form rebuilds the document from
+  // the DOM every refresh -- so they are stashed where the form can see them
+  // again, keyed by the line's own text.
+  function writeBack() {
+    placed.clear();
+    for (const s of build().shots || []) {
+      for (const ch of s.chunks || []) {
+        for (const l of ch.lines || []) if (l.at !== undefined) placed.set(l.line, l.at);
+      }
+    }
+  }
+
+  let lastTiming = null;
+
   async function drawTiming(d) {
     const t = await post("/script/timing", { document: d, ...planFromGraph() });
     if (!t.ok) { timing.textContent = t.error; return; }
+    lastTiming = t;
+    drawBoard(t, d);
     const bar = t.chunks.map((c, i) =>
       `chunk ${i}: ${c.pin_s ? `${c.pin_s}s pinned, ` : ""}` +
       `speakable ${c.speech_from}\u2013${c.speech_to}s`).join("    ");
@@ -337,7 +528,8 @@ function openPanel(node) {
   const addShot = el("button", { textContent: "Add a shot", style: BTN });
   addShot.onclick = () => { shotBox.append(shotCard()); refresh(); };
 
-  body.append(heading("PEOPLE AND PLACES"), castBox, row([addPerson, addPlace]),
+  body.append(board,
+              heading("PEOPLE AND PLACES"), castBox, row([addPerson, addPlace]),
               heading("SHOTS"), shotBox, row([addShot]));
 
   const save = el("button", { textContent: "Save", style: BTN + "background:#2d5a2d;" });
@@ -367,6 +559,11 @@ function openPanel(node) {
     const r = await post("/script/parse", { text: widget.value || "" });
     if (r.ok) doc = r.document;
     else status.textContent = r.error;   // show it, keep the panel usable
+    for (const shot of doc?.shots || []) {
+      for (const ch of shot.chunks || []) {
+        for (const l of ch.lines || []) if (l.at !== undefined) placed.set(l.line, l.at);
+      }
+    }
     for (const entry of doc?.cast || []) castBox.append(castRow(entry));
     for (const shot of doc?.shots || []) shotBox.append(shotCard(shot));
     refresh();
