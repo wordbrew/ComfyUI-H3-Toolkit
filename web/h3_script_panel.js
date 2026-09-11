@@ -114,15 +114,45 @@ function openPanel(node) {
 
   const placed = new Map();
 
+  // The two numbers that shape every chunk, on the board rather than buried in a
+  // node's widgets — trying a different chunk size is the main thing you would
+  // want to DO with a plan you can see. They write back to the node, so the plan
+  // it emits is the plan you were looking at.
+  const nodeNum = (name, fallback) => {
+    const w = node.widgets?.find((x) => x.name === name);
+    const v = Number(w?.value);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
+  const setNodeNum = (name, v) => {
+    const w = node.widgets?.find((x) => x.name === name);
+    if (w) { w.value = v; w.callback?.(v); }
+  };
+
+  const toolbar = el("div", { style:
+    "display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:7px;" +
+    "font-size:11px;color:#8b949e;" });
+  const chunkSel = select(["90", "141", "192", "243", "294", "345"],
+                          String(nodeNum("chunk_frames", 141)), "width:78px;");
+  const ctxSel = select(["0", "39", "56", "90"],
+                        String(nodeNum("context", 39)), "width:70px;");
+  const totalOut = el("div", { style:
+    "margin-left:auto;font-family:ui-monospace,monospace;font-size:11px;color:#7fa0c0;" });
+  chunkSel.onchange = () => { setNodeNum("chunk_frames", Number(chunkSel.value)); refresh(); };
+  ctxSel.onchange = () => { setNodeNum("context", Number(ctxSel.value)); refresh(); };
+  toolbar.append(el("span", { textContent: "chunk" }), chunkSel,
+                 el("span", { textContent: "carried handle" }), ctxSel, totalOut);
+
   // THE BOARD. Shots on a real clock, the chunks the planner will make drawn
   // underneath them, and every line at the second it is actually spoken. The
   // point is not tidiness: a carried handle and a chunk boundary are properties
   // of the PLAN, so where a line lands is not guessable while writing it.
+  const boardWrap = el("div");
   const board = el("div", { style:
     "border:1px solid #3a4148;border-radius:6px;background:#1b1f23;padding:8px 10px 10px;" +
     "margin-bottom:4px;overflow-x:auto;" });
   const boardInner = el("div", { style: "min-width:620px;position:relative;" });
   board.append(boardInner);
+  boardWrap.append(toolbar, board);
   let selShot = 0;
 
   // ---- cast -------------------------------------------------------------- //
@@ -185,6 +215,16 @@ function openPanel(node) {
       wrap.append(row([el("span", { textContent: "action", style: "color:#888;width:56px;font-size:11px;" }),
                        what, del]));
       read = () => ({ type: "do", text: what.value });
+    } else if (kind === "lora") {
+      // a shot's LoRA is a property of the SHOT, and H3 Chunk Lora schedules it
+      // by time — so it belongs beside the shot rather than in a separate
+      // schedule you keep in step by hand
+      const file = input(data?.name, "lora file, as it appears in the picker", "flex:1;");
+      const str = input(data?.strength ?? "1.0", "0.8 or 0.4 1.0", "width:96px;");
+      file.oninput = refresh; str.oninput = refresh;
+      wrap.append(row([el("span", { textContent: "lora",
+        style: "color:#888;width:56px;font-size:11px;" }), file, str, del]));
+      read = () => ({ type: "lora", name: file.value, strength: str.value });
     } else if (kind === "note") {
       const what = input(data, "a detail to hold — position, framing", "flex:1;");
       what.onchange = refresh;
@@ -217,6 +257,7 @@ function openPanel(node) {
 
     // a loaded take carries notes, actions, lines and splits; show them in order
     for (const n of shot?.notes || []) beats.append(beatRow("note", n));
+    for (const l of shot?.loras || []) beats.append(beatRow("lora", l));
     (shot?.chunks || []).forEach((c, i) => {
       if (i) beats.append(beatRow("split"));
       for (const a of c.actions || []) beats.append(beatRow("do", a));
@@ -238,17 +279,21 @@ function openPanel(node) {
     // thing invited the two to disagree. Splits in a loaded take are still shown
     // and still parsed, so nothing written before this breaks.
     wrap.append(row([add("Someone speaks", "say"), add("Something happens", "do"),
-                     add("A detail to hold", "note")], "margin-bottom:0;"));
+                     add("A detail to hold", "note"), add("A LoRA for this shot", "lora")],
+                    "margin-bottom:0;"));
 
     wrap._frames = Number(shot?.frames ?? 141);
     wrap._read = () => {
       const out = { description: what.value, notes: [],
                     frames: Number(wrap._frames) || 141,
-                    chunks: [{ lines: [], actions: [] }], loras: shot?.loras || [] };
+                    chunks: [{ lines: [], actions: [] }], loras: [] };
       for (const b of beats.children) {
         const v = b._read?.();
         if (!v) continue;
         if (v.type === "note") { if (v.text) out.notes.push(v.text); }
+        else if (v.type === "lora") {
+          if (v.name) out.loras.push({ name: v.name, strength: v.strength || "1.0" });
+        }
         else if (v.type === "split") out.chunks.push({ lines: [], actions: [] });
         else {
           const cur = out.chunks[out.chunks.length - 1];
@@ -436,6 +481,32 @@ function openPanel(node) {
     });
     boardInner.append(actLane);
 
+    // LoRAs, across the span of the shot they belong to. H3 Chunk Lora addresses
+    // them by time on the FINISHED clip, which is not the source time — the join
+    // drops each chunk's handle. Seeing the span is the point.
+    const anyLora = (d.shots || []).some((s) => (s.loras || []).length);
+    if (anyLora) {
+      boardInner.append(laneLabel("loras"));
+      const loraLane = el("div", { style: LANE.replace("%h", "20px") });
+      (d.shots || []).forEach((shot, si) => {
+        const geom = (t.shots || [])[si];
+        if (!geom || !(shot.loras || []).length) return;
+        const label = shot.loras
+          .map((l) => `${(l.name || "").split(/[\\/]/).pop()} ${l.strength}`)
+          .join("  \u00b7  ");
+        const blk = el("div", { textContent: label, style:
+          "position:absolute;top:3px;height:14px;border-radius:2px;padding:0 5px;" +
+          "font-size:9px;font-family:ui-monospace,monospace;white-space:nowrap;" +
+          "overflow:hidden;background:#3a3050;color:#cdc0e0;" +
+          "border:1px solid rgba(255,255,255,.12);" });
+        blk.style.left = pc(geom.start + 4);
+        blk.style.maxWidth = pc(Math.max(30, geom.frames - 8));
+        blk.title = label;
+        loraLane.append(blk);
+      });
+      boardInner.append(loraLane);
+    }
+
     // lines, at the second they are spoken
     boardInner.append(laneLabel("what is said, and when"));
     const beatLane = el("div", { style: LANE.replace("%h", "46px") });
@@ -471,6 +542,7 @@ function openPanel(node) {
 
   function resizeShot(e, i, right) {
     e.stopPropagation(); e.preventDefault();
+    snapshot();
     const rect = boardInner.getBoundingClientRect();
     const cards = [...shotBox.children];
     const per = (lastTiming?.total_frames || 345) / rect.width;
@@ -496,6 +568,7 @@ function openPanel(node) {
   // so a short shot can pass a long one without having to cross its whole width.
   function moveShot(e, i) {
     e.preventDefault();
+    snapshot();
     const rect = boardInner.getBoundingClientRect();
     const total = lastTiming?.total_frames || 345;
     const per = total / rect.width;
@@ -525,16 +598,50 @@ function openPanel(node) {
     document.addEventListener("mouseup", up);
   }
 
+  // the DOM row holding one line, so a line can be moved between shots rather
+  // than only within one
+  function beatNodeFor(rec) {
+    for (const card of shotBox.children) {
+      for (const r of card.querySelectorAll(":scope > div")) {
+        const v = r._read?.();
+        if (v && v.type === "say" && v.line === rec.line && v.who === rec.who) {
+          return { row: r, card };
+        }
+      }
+    }
+    return null;
+  }
+
   function placeLine(e, rec) {
     e.preventDefault();
     const rect = boardInner.getBoundingClientRect();
     const total = lastTiming?.total_frames || 345;
-    const shotStart = (lastTiming?.shots?.[rec.shot]?.start) || 0;
+    snapshot();
     const move = (ev) => {
       const frames = Math.max(0, (ev.clientX - rect.left) / rect.width * total);
-      const secs = Math.max(0, (frames - shotStart) / 24);
+
+      // WHICH SHOT IS IT OVER NOW? Dragging a line past its shot's edge used to
+      // leave it in the old shot with a time beyond that shot's end, which the
+      // timing call then reported as "runs past the end of its chunk" — a
+      // complaint about the tool's own behaviour rather than the take.
+      const shots = lastTiming?.shots || [];
+      let si = shots.findIndex((s) => frames >= s.start && frames < s.start + s.frames);
+      if (si < 0) si = frames < 0 ? 0 : shots.length - 1;
+
+      if (si !== rec.shot) {
+        const found = beatNodeFor(rec);
+        const target = shotBox.children[si];
+        if (found && target && found.card !== target) {
+          const beats = target.querySelector(":scope > div:nth-of-type(2)")
+                        || target;
+          beats.append(found.row);
+          rec.shot = si;
+        }
+      }
+      const secs = Math.max(0, (frames - (shots[si]?.start || 0)) / 24);
       const l = docLine(rec);
-      if (l) { l.at = Math.round(secs * 10) / 10; writeBack(); refresh(); }
+      if (l) { l.at = Math.round(secs * 10) / 10; writeBack(); }
+      refresh();
     };
     const up = () => { document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up); };
@@ -543,6 +650,7 @@ function openPanel(node) {
   }
 
   function releaseLine(rec) {
+    snapshot();
     const l = docLine(rec);
     if (l) { delete l.at; writeBack(); refresh(); }
   }
@@ -561,10 +669,50 @@ function openPanel(node) {
 
   let lastTiming = null;
 
+  // UNDO. Everything on the board is a drag, and a drag has no natural way back
+  // — resize a shot by accident and the plan underneath it changes. The document
+  // is plain data, so a snapshot is a copy and an undo is a reload.
+  const history = [];
+  function snapshot() {
+    try {
+      history.push(JSON.stringify(build()));
+      if (history.length > 50) history.shift();
+    } catch { /* a half-built form is not worth refusing the gesture over */ }
+  }
+  function loadDoc(d) {
+    placed.clear();
+    for (const s of d.shots || []) {
+      for (const ch of s.chunks || []) {
+        for (const l of ch.lines || []) if (l.at !== undefined) placed.set(l.line, l.at);
+      }
+    }
+    castBox.innerHTML = ""; shotBox.innerHTML = "";
+    for (const c of d.cast || []) castBox.append(castRow(c));
+    for (const s of d.shots || []) shotBox.append(shotCard(s));
+    refresh();
+  }
+  function undo() {
+    const prev = history.pop();
+    if (prev) loadDoc(JSON.parse(prev));
+  }
+  back.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault(); e.stopPropagation(); undo();
+    }
+    if (e.key === "Escape") { e.stopPropagation(); back.remove(); }
+  });
+
   async function drawTiming(d) {
-    const t = await post("/script/timing", { document: d, ...planFromGraph() });
+    const t = await post("/script/timing", {
+      document: d,
+      chunk_frames: Number(chunkSel.value),
+      context: Number(ctxSel.value),
+    });
     if (!t.ok) { timing.textContent = t.error; return; }
     lastTiming = t;
+    totalOut.textContent =
+      `${(d.shots || []).length} shots \u00b7 ${t.chunks.length} chunks \u00b7 ` +
+      `${t.total_frames}f \u00b7 ${(t.total_frames / 24).toFixed(2)}s`;
     drawBoard(t, d);
     const bar = t.chunks.map((c, i) =>
       `chunk ${i}: ${c.pin_s ? `${c.pin_s}s pinned, ` : ""}` +
@@ -612,7 +760,7 @@ function openPanel(node) {
   const addShot = el("button", { textContent: "Add a shot", style: BTN });
   addShot.onclick = () => { shotBox.append(shotCard()); refresh(); };
 
-  body.append(board,
+  body.append(boardWrap,
               heading("PEOPLE AND PLACES"), castBox, row([addPerson, addPlace]),
               heading("SHOTS"), shotBox, row([addShot]));
 
