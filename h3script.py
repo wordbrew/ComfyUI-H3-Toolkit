@@ -463,6 +463,26 @@ def build_plan(doc, chunk_frames=141, context=39, mode="fixed",
                  cuts=cuts or None, context=int(context))
 
 
+def plan_payload(doc, chunk_frames=141, context=39, mode="fixed",
+                 total_frames=None):
+    """The plan in the shape H3_CHUNK_PLAN actually travels in.
+
+    H3 Chunk Plan emits `{"chunks": [...], "info": {...}, "total_frames": n}` and
+    every consumer unpacks it that way -- `slice_chunk` does `plan.get("chunks")`.
+    Emitting the bare list looked right, typechecked as H3_CHUNK_PLAN because the
+    socket type is just a label, and died in H3 Chunk Open with
+    "'list' object has no attribute 'get'".
+
+    A named type is not a checked one. The shape is the contract.
+    """
+    chunks, info = build_plan(doc, chunk_frames=chunk_frames, context=context,
+                              mode=mode, total_frames=total_frames)
+    total = sum(int(c["end"]) - int(c["keep_from"]) for c in chunks) if chunks else 0
+    _, from_shots = cuts_from(doc, chunk_frames)
+    return {"chunks": chunks, "info": info,
+            "total_frames": int(total_frames or from_shots or total)}
+
+
 def audio_clock_notes(doc, chunk_frames=141):
     """Shots whose length drifts the two clocks apart.
 
@@ -956,8 +976,8 @@ class H3Script:
             rows.append("  lint:")
             rows += [f"    {n}" for n in notes]
         cuts, total = cuts_from(doc, chunk_frames)
-        chunks, plan_info = build_plan(doc, chunk_frames=chunk_frames,
-                                       context=context)
+        payload = plan_payload(doc, chunk_frames=chunk_frames, context=context)
+        chunks = payload["chunks"]
         rows += [f"  {n}" for n in audio_clock_notes(doc, chunk_frames)]
         groups = lora_schedule(doc, chunks)
         sched = groups[0][0] if groups else ""
@@ -994,7 +1014,7 @@ class H3Script:
                            out["dialogue_lines"], out["dialogue_actions"],
                            out["speaker_map"],
                            json.dumps(doc, indent=2), info,
-                           ",".join(str(c) for c in cuts), total, chunks,
+                           ",".join(str(c) for c in cuts), total, payload,
                            sched, out["prompt"])}
 
 

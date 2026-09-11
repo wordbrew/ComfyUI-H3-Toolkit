@@ -188,8 +188,17 @@ _res = hs.H3Script().go("@ada = character Ada\nshot 141 | one\n"
 check("document output is valid json", _json.loads(_res[8])["version"], 1)
 check("cut_frames names the shot boundary", _res[10], "141")
 check("total_frames is the take", _res[11], 384)
-ok("the plan is a list of chunk dicts",
-   isinstance(_res[12], list) and "keep_from" in _res[12][0])
+# THE SHAPE IS THE CONTRACT. H3_CHUNK_PLAN is a socket LABEL, not a checked
+# type -- emitting a bare list passed every wiring check and died inside
+# H3 Chunk Open with "'list' object has no attribute 'get'".
+ok("the plan is the dict H3 Chunk Plan emits, not a bare list",
+   isinstance(_res[12], dict))
+for key in ("chunks", "info", "total_frames"):
+    ok(f"it carries {key}", key in _res[12])
+ok("and its chunks are chunk dicts",
+   isinstance(_res[12]["chunks"], list) and "keep_from" in _res[12]["chunks"][0])
+ok("a consumer's own access pattern works",
+   (_res[12] or {}).get("chunks") is not None)
 check("lora_schedule output exists", isinstance(_res[13], str), True)
 
 print("per-shot loras become a schedule in slots, on the FINISHED clip")
