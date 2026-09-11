@@ -67,7 +67,10 @@ GRAMMAR
 
     shot | <description>
       note <text>                       adds to the description
-      say  @name [verb] <line>          dialogue, in order
+      say  @name [@seconds] [verb] <line>
+                                        dialogue. `@2.5` places it that many
+                                        seconds into its shot; without one it
+                                        flows after the line before.
       say  @name | how they say it | <line>
                                         the same, when "how" is a PHRASE --
                                         "says quietly, half-turning away". The
@@ -405,6 +408,22 @@ def serialize(doc):
     return "\n".join(out).strip() + "\n"
 
 
+def snap_shot(frames):
+    """A shot's length on the legal grid — the PLANNER's grid, not a copy of it.
+
+    `chunkplan.legal_run` is the only implementation of 17n+5 that matters,
+    because it is the one the planner applies. The panel used to snap a dragged
+    shot in JavaScript, which agreed with this today and had nothing to keep it
+    agreeing tomorrow -- the same shape as every row-order and span bug this
+    session. The server snaps and the board displays the result.
+    """
+    from .chunkplan import legal_run
+    n = max(5, int(frames))
+    down = legal_run(n, "down")
+    up = legal_run(n, "up")
+    return down if (n - down) <= (up - n) else up
+
+
 def cuts_from(doc, chunk_frames=141):
     """Shot lengths -> the cut frames H3 Chunk Plan takes.
 
@@ -417,7 +436,7 @@ def cuts_from(doc, chunk_frames=141):
     for shot in doc.get("shots", []):
         if at:
             cuts.append(at)
-        at += int(shot.get("frames") or chunk_frames)
+        at += snap_shot(shot.get("frames") or chunk_frames)
     return cuts, at
 
 
@@ -571,7 +590,7 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
     bounds, at = [], 0
     if sized:
         for shot in doc.get("shots", []):
-            n = int(shot.get("frames") or chunk_frames)
+            n = snap_shot(shot.get("frames") or chunk_frames)
             bounds.append((at, at + n))
             at += n
 
@@ -604,7 +623,10 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
                 text = line.get("line", "")
                 dur = syllables(text) / max(0.1, float(syllables_per_second))
                 rec = {"shot": si, "who": line.get("who", ""), "line": text,
-                       "seconds": round(dur, 2), "placed": "at" in line,
+                       # a TENTH. story.stamp() made this call already: the
+                       # number comes from a syllable estimate, so two decimals
+                       # claim a precision that is not there.
+                       "seconds": round(dur, 1), "placed": "at" in line,
                        "problem": None, "chunk": None, "start": None}
 
                 if "at" in line:
@@ -623,8 +645,8 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
                     elif local + dur > w["hi"]:
                         rec["problem"] = "runs past the end of its chunk — cut off mid-word"
                     rec["chunk"] = ci
-                    rec["start"] = round(w["offset"] + local, 2)
-                    rec["local"] = round(local, 2)
+                    rec["start"] = round(w["offset"] + local, 1)
+                    rec["local"] = round(local, 1)
                 else:
                     if wi >= len(mine):
                         rec["problem"] = "no room left in this shot"
@@ -644,8 +666,8 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
                                 rec["problem"] = "no room left in this shot"
                         if rec["problem"] != "no room left in this shot":
                             rec["chunk"] = ci
-                            rec["start"] = round(w["offset"] + cursor, 2)
-                            rec["local"] = round(cursor, 2)
+                            rec["start"] = round(w["offset"] + cursor, 1)
+                            rec["local"] = round(cursor, 1)
                             cursor = cursor + dur + float(gap)
                 if rec["problem"]:
                     problems.append(f"{rec['problem']}: \u201c{text}\u201d")
@@ -670,11 +692,14 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
                     "source_start": c["start"], "run": c["run"],
                     "pin": c.get("pin", 0),
                     "pin_s": round(w["pin_s"], 2), "run_s": round(w["run_s"], 2),
-                    "speech_from": round(w["lo"], 2), "speech_to": round(w["hi"], 2),
-                    "starts_at": round(w["offset"] + w["lo"], 2)}
+                    "speech_from": round(w["lo"], 1), "speech_to": round(w["hi"], 1),
+                    "starts_at": round(w["offset"] + w["lo"], 1)}
                    for i, (c, w) in enumerate(zip(chunks, windows))],
-        "shots": [{"index": i, "start": lo, "frames": hi - lo}
-                  for i, (lo, hi) in enumerate(bounds)],
+        "shots": [{"index": i, "start": lo, "frames": hi - lo,
+                    "requested": int((doc.get("shots") or [{}])[i].get("frames")
+                                     or chunk_frames),
+                    "seconds": round((hi - lo) / 24.0, 1)}
+                   for i, (lo, hi) in enumerate(bounds)],
         "lines": out_lines,
         "problems": problems,
         "sayable_seconds": round(speech, 2),

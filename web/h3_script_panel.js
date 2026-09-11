@@ -249,8 +249,8 @@ function openPanel(node) {
     const frames = input(shot?.frames ?? 141, "frames", "width:78px;");
     frames.className = "h3-frames";
     frames.onchange = () => {
-      const n = Math.max(5, Math.round((Number(frames.value) - 5) / 17) * 17 + 5);
-      frames.value = n; wrap._frames = n; refresh();
+      wrap._frames = Math.max(5, Number(frames.value) || 141);
+      refresh();                       // the server snaps; the board reports back
     };
     const del = el("button", { textContent: "Remove shot", style: BTN });
     const beats = el("div", { style: "margin:8px 0 6px;" });
@@ -421,8 +421,16 @@ function openPanel(node) {
       const shot = d.shots[i] || {};
       blk.append(el("span", { textContent: shot.description || "untitled shot",
         style: "font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;" }));
-      blk.append(el("span", { textContent: `${s.frames}f`, style:
+      const asked = s.requested;
+      const label = asked && asked !== s.frames
+        ? `${s.frames}f \u2190 ${asked}` : `${s.frames}f`;
+      if (asked && asked !== s.frames) {
+        blk.title = `${asked} is not a legal run (17n+5); the planner uses ${s.frames}`;
+      }
+      blk.append(el("span", { textContent: label, style:
         "font-size:9.5px;color:rgba(255,255,255,.6);font-family:ui-monospace,monospace;" }));
+      const f = shotBox.children[i]?.querySelector(".h3-frames");
+      if (f && document.activeElement !== f) f.value = s.frames;
       for (const side of ["left", "right"]) {
         const g = el("div", { style:
           `position:absolute;top:0;bottom:0;width:7px;${side}:0;cursor:ew-resize;` });
@@ -549,13 +557,14 @@ function openPanel(node) {
     const x0 = e.clientX;
     const start = Number(cards[i]?._frames || 141);
     const move = (ev) => {
-      const want = start + (right ? 1 : -1) * (ev.clientX - x0) * per;
-      // 17n+5 — the only lengths the model accepts, so the number you draw to is
-      // the number that renders
-      const snapped = Math.max(5, Math.round((want - 5) / 17) * 17 + 5);
-      cards[i]._frames = snapped;
+      // NO SNAPPING HERE. 17n+5 has exactly one implementation -- chunkplan's --
+      // and a copy in JavaScript would agree today with nothing keeping it
+      // agreeing tomorrow. The raw number goes to the server, which snaps it and
+      // returns what will actually render; drawBoard writes that back.
+      const want = Math.max(5, Math.round(start + (right ? 1 : -1) * (ev.clientX - x0) * per));
+      cards[i]._frames = want;
       const f = cards[i]?.querySelector(".h3-frames");
-      if (f) f.value = snapped;
+      if (f) f.value = want;
       refresh();
     };
     const up = () => { document.removeEventListener("mousemove", move);
@@ -764,6 +773,35 @@ function openPanel(node) {
               heading("PEOPLE AND PLACES"), castBox, row([addPerson, addPlace]),
               heading("SHOTS"), shotBox, row([addShot]));
 
+  const showPrompt = el("button", { textContent: "Show the prompt", style: BTN });
+  showPrompt.onclick = async () => {
+    const r = await post("/script/compile", { document: build() });
+    if (!r.ok) { status.textContent = r.error; return; }
+    const f = r.fields || {};
+    const pane = el("div", { style:
+      "position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10001;display:flex;" +
+      "align-items:center;justify-content:center;" });
+    const box = el("div", { style:
+      "background:#1e1e1e;border:1px solid #555;border-radius:8px;max-width:min(760px,92vw);" +
+      "max-height:84vh;overflow:auto;padding:16px;color:#ddd;" });
+    box.append(el("div", { textContent: "What reaches the model",
+      style: "font-size:14px;font-weight:600;margin-bottom:10px;" }));
+    for (const key of ["head", "subject_defs", "retention", "soundscape",
+                       "music", "dialogue_lines", "dialogue_actions",
+                       "speaker_map"]) {
+      if (!f[key]) continue;
+      box.append(el("div", { textContent: key, style:
+        "font-family:ui-monospace,monospace;font-size:10px;letter-spacing:1px;" +
+        "text-transform:uppercase;color:#69727b;margin:12px 0 3px;" }));
+      box.append(el("pre", { textContent: String(f[key]), style:
+        "margin:0;white-space:pre-wrap;font-family:ui-monospace,monospace;" +
+        "font-size:11.5px;color:#b9c2cb;line-height:1.5;" }));
+    }
+    pane.append(box);
+    pane.onclick = (e) => { if (e.target === pane) pane.remove(); };
+    document.body.append(pane);
+  };
+
   const save = el("button", { textContent: "Save", style: BTN + "background:#2d5a2d;" });
   const cancel = el("button", { textContent: "Cancel", style: BTN });
   cancel.onclick = () => back.remove();
@@ -776,7 +814,7 @@ function openPanel(node) {
     app.graph.setDirtyCanvas(true, true);
     back.remove();
   };
-  foot.append(status, cancel, save);
+  foot.append(status, showPrompt, cancel, save);
   panel.append(head, body, timing, foot);
   back.append(panel);
   back.onclick = (e) => { if (e.target === back) back.remove(); };
