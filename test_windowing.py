@@ -17,7 +17,8 @@ sys.modules.setdefault("torch", types.ModuleType("torch"))
 
 from timing import video_latent_t                        # noqa: E402
 from windowing import (FRAME_PER_TOKEN, audio_ticks_for_frames,      # noqa: E402
-                       frames_for_latent, map_modalities, window_schedule)
+                       crop_guide, frames_for_latent, map_modalities,
+                       window_schedule)
 
 fails = []
 
@@ -313,6 +314,57 @@ ok("the clip's first and last windows take a one-sided margin",
    len(_wide[0][0]) < len(_wide[1][0]) and len(_wide[-1][0]) < len(_wide[1][0]))
 check("a margin of 0 changes nothing",
       [len(w[0]) for w in _widen(_inner, _TOTAL, 0)], [_W] * len(_inner))
+
+# --- guide clips are cropped to the window, not kept or dropped whole -------- #
+# A still is described entirely by its start index, so keep-or-drop was right for
+# one. A multi-frame AddGuide clip is not: one starting inside a window and
+# running past its end used to be kept WHOLE, and one starting before the window
+# and running into it was dropped, losing guidance the window needed.
+class _Z:
+    """Stands in for a [1, 24, T, h, w] guide latent."""
+
+    def __init__(self, t, tag="z"):
+        self.t, self.tag = t, tag
+
+    @property
+    def shape(self):
+        return (1, 24, self.t, 70, 40)
+
+    def dim(self):
+        return 5
+
+    def __getitem__(self, key):
+        sl = key[2]
+        return _Z(sl.stop - sl.start, f"{self.tag}[{sl.start}:{sl.stop}]")
+
+
+print("a guide clip is cropped to the window, on whole token cycles")
+_still = {"resolved_frame_index": 30, "latent": _Z(1)}
+check("a still inside the window is rebased",
+      crop_guide(_still, 17, 107)["resolved_frame_index"], 13)
+check("a still outside it is dropped", crop_guide(_still, 120, 210), None)
+
+# 27 steps = 90 frames
+_clip = {"resolved_frame_index": 0, "latent": _Z(27, "G")}
+_c = crop_guide(_clip, 51, 141)
+ok("a clip running into the window is KEPT, not dropped", _c is not None)
+check("its tail is the part that survives", _c["latent"].t, 12)
+check("cropped to a legal 5j+2 length", _c["latent"].t % 5, 2)
+check("and rebased to window-local frames", _c["resolved_frame_index"], 0)
+_whole = crop_guide(_clip, 0, 90)
+check("a clip the window fully contains is untouched", _whole["latent"].t, 27)
+check("a clip the window never reaches is dropped",
+      crop_guide({"resolved_frame_index": 0, "latent": _Z(12)}, 200, 290), None)
+
+# the crop must never hand back a length the model cannot read
+_bad = []
+for _ws in range(0, 200, 17):
+    _r = crop_guide({"resolved_frame_index": 0, "latent": _Z(52, "L")}, _ws, _ws + 90)
+    if _r is None:
+        continue
+    if _r["latent"].t % 5 != 2 or _r["resolved_frame_index"] < 0:
+        _bad.append((_ws, _r["latent"].t, _r["resolved_frame_index"]))
+check("every crop is a legal clip at a non-negative local frame", _bad, [])
 
 if fails:
     print("FAIL")

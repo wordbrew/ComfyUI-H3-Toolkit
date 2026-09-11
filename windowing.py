@@ -195,6 +195,79 @@ def window_start_pixel(window):
     return _pixel_frame_at(int(min(idxs)))
 
 
+def _guide_steps(kf):
+    """How many latent steps a keyframe's video latent spans. 1 if it has none."""
+    lat = kf.get("latent")
+    if lat is None:
+        return 0
+    try:
+        return int(lat.shape[2]) if lat.dim() == 5 else 1
+    except Exception:
+        return int(kf.get("latent_t", 1) or 1)
+
+
+def crop_guide(kf, win_start, win_end):
+    """A keyframe cropped to a window, or None if it does not reach it.
+
+    WHY CROPPING AND NOT KEEP-OR-DROP
+      A single-frame keyframe is entirely described by its start, so keeping it
+      when `start <= idx < end` is right. A MULTI-FRAME guide clip is not:
+      `MiniMaxH3AddGuide` anchors a whole clip, so one starting inside a window
+      and running past its end used to be kept WHOLE -- rows for frames the
+      window does not contain -- and one starting before the window and running
+      into it was dropped entirely, losing guidance the window needed.
+
+      Caught by DrakenZA/Comfyui-H3-DrakenNodes reading this file. It matters the
+      moment guides and windowing are used together, which is windowed long-form
+      V2V: a guide clip spanning a whole take needs each window to get its slice.
+
+    THE CROP LANDS ON WHOLE TOKEN CYCLES
+      A guide's latent carries its own (1,4,4,4,4) phase from ITS frame 0. Cut it
+      anywhere and the remaining steps claim frame spans they do not have, so the
+      front is trimmed to a multiple of 5 steps and the length kept at 5j+2 --
+      the same shape the model sees for a standalone clip.
+    """
+    idx = int(kf.get("resolved_frame_index", 0))
+    steps = _guide_steps(kf)
+    if steps <= 1:                                   # a still: start says it all
+        return dict(kf, resolved_frame_index=idx - win_start) \
+            if win_start <= idx < win_end else None
+
+    # local steps whose whole frame span sits inside the window
+    keep = [k for k in range(steps)
+            if win_start <= idx + _pixel_frame_at(k)
+            and idx + _pixel_frame_at(k) + FRAME_PER_TOKEN[k % 5] <= win_end]
+    if not keep:
+        return None
+    k0, k1 = keep[0], keep[-1] + 1
+    k0 = ((k0 + 4) // 5) * 5                         # start on a cycle boundary
+    n = k1 - k0
+    n = n - ((n - 2) % 5) if n >= 2 else 0           # keep 5j+2 steps
+    if n < 2 or k0 + n > steps:
+        return None
+
+    out = dict(kf)
+    out["resolved_frame_index"] = idx + _pixel_frame_at(k0) - win_start
+    out["latent"] = kf["latent"][:, :, k0:k0 + n]
+    out.pop("latent_t", None)                        # read off the tensor now
+    aud = kf.get("audio_latent")
+    if aud is not None:
+        # the guide's audio starts where its video does, so crop on the same
+        # frames and let the tick arithmetic be the one used everywhere else
+        a0 = audio_ticks_for_frames(_pixel_frame_at(k0))
+        a1 = a0 + audio_ticks_for_frames(
+            sum(FRAME_PER_TOKEN[k % 5] for k in range(k0, k0 + n)))
+        try:
+            total = int(aud.shape[-1])
+            a0, a1 = max(0, min(a0, total)), max(0, min(a1, total))
+            out["audio_latent"] = aud[..., a0:a1] if a1 > a0 else None
+            if out["audio_latent"] is None:
+                out.pop("audio_latent")
+        except Exception:
+            pass
+    return out
+
+
 def rebase_keyframes(payload, window):
     """Payload with keyframes rebased to this window, or None if unchanged.
 
@@ -224,14 +297,17 @@ def rebase_keyframes(payload, window):
 
     kept = []
     for kf in kfs:
-        idx = int(kf.get("resolved_frame_index", 0))
-        if start <= idx < end:
-            local = dict(kf)
-            local["resolved_frame_index"] = idx - start
-            kept.append(local)
+        cropped = crop_guide(kf, start, end)
+        if cropped is not None:
+            kept.append(cropped)
 
+    # "nothing to do" now means nothing MOVED and nothing was CUT. Comparing the
+    # index alone was enough while guides were kept or dropped whole; a cropped
+    # guide can keep its index and still hold fewer steps, and returning None
+    # there would hand the model the uncropped clip.
     if len(kept) == len(kfs) and all(
             k["resolved_frame_index"] == kf.get("resolved_frame_index")
+            and _guide_steps(k) == _guide_steps(kf)
             for k, kf in zip(kept, kfs)):
         return None                       # window covers the clip; nothing to do
 
