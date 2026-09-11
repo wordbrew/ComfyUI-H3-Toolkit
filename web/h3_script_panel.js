@@ -69,8 +69,12 @@ function select(options, value, style = "") {
 function row(kids, style = "") {
   return el("div", { style: "display:flex;gap:6px;align-items:center;margin-bottom:6px;" + style }, kids);
 }
+// Sentence case, no tracking. A tracked-out ALL-CAPS eyebrow over every section
+// is template chrome -- it appears whatever the subject, so it says nothing about
+// this one.
 function heading(text) {
-  return el("div", { textContent: text, style: "color:#888;font-size:11px;margin:10px 0 4px;letter-spacing:.5px;" });
+  return el("div", { textContent: text, style:
+    "color:#9aa3ac;font-size:12px;font-weight:600;margin:12px 0 5px;" });
 }
 
 // ------------------------------------------------------------------ panel ---
@@ -129,14 +133,14 @@ function openPanel(node) {
   };
 
   const toolbar = el("div", { style:
-    "display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:7px;" +
-    "font-size:11px;color:#8b949e;" });
+    "display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;" +
+    "font-size:11.5px;color:#8b949e;" });
   const chunkSel = select(["90", "141", "192", "243", "294", "345"],
                           String(nodeNum("chunk_frames", 141)), "width:78px;");
   const ctxSel = select(["0", "39", "56", "90"],
                         String(nodeNum("context", 39)), "width:70px;");
   const totalOut = el("div", { style:
-    "margin-left:auto;font-family:ui-monospace,monospace;font-size:11px;color:#7fa0c0;" });
+    "margin-left:auto;font-size:11.5px;color:#93a7ba;" });
   chunkSel.onchange = () => { setNodeNum("chunk_frames", Number(chunkSel.value)); refresh(); };
   ctxSel.onchange = () => { setNodeNum("context", Number(ctxSel.value)); refresh(); };
   toolbar.append(el("span", { textContent: "chunk" }), chunkSel,
@@ -148,9 +152,9 @@ function openPanel(node) {
   // of the PLAN, so where a line lands is not guessable while writing it.
   const boardWrap = el("div");
   const board = el("div", { style:
-    "border:1px solid #3a4148;border-radius:6px;background:#1b1f23;padding:8px 10px 10px;" +
-    "margin-bottom:4px;overflow-x:auto;" });
-  const boardInner = el("div", { style: "min-width:620px;position:relative;" });
+    "background:#1b1f23;border-radius:5px;padding:9px 11px 11px;" +
+    "margin-bottom:6px;overflow-x:auto;" });
+  const boardInner = el("div", { style: "min-width:640px;position:relative;" });
   board.append(boardInner);
   boardWrap.append(toolbar, board);
   let selShot = 0;
@@ -386,32 +390,53 @@ function openPanel(node) {
     });
   }
 
-  const LANE = "position:relative;height:%h;background:#15181b;border:1px solid " +
-               "#2c3238;border-radius:4px;margin-bottom:5px;";
-  const laneLabel = (s) => el("div", { textContent: s, style:
-    "font-size:9.5px;letter-spacing:.9px;text-transform:uppercase;color:#69727b;" +
-    "margin:5px 0 3px;font-family:ui-monospace,monospace;" });
+  // A TRACK SHEET, not a web page. Every editing tool a ComfyUI user already
+  // knows -- Premiere, Resolve, Avid -- puts the track name in a gutter beside
+  // its lane, in sentence case, and saves monospace for timecode. Stacking
+  // uppercase labels above each lane was my habit, not the subject's idiom.
+  const GUTTER = 104;
   const SHOT_COLOURS = ["#3f5a6b", "#4a5b45", "#63504a", "#53496b"];
+
+  // Borders are spent on hierarchy: the shots lane is the thing you manipulate,
+  // so it has an edge. The lanes below are DERIVED from it and read as quieter
+  // beds — one radius and one border on everything flattens that distinction.
+  const BED_OWNED  = "position:relative;height:%h;background:#202428;" +
+                     "border:1px solid #333a41;border-radius:3px;";
+  const BED_DERIVED = "position:relative;height:%h;background:#1a1d21;" +
+                      "border-radius:2px;";
+
+  function lane(name, height, owned) {
+    const rowEl = el("div", { style:
+      "display:grid;grid-template-columns:" + GUTTER + "px 1fr;gap:8px;" +
+      "align-items:start;margin-bottom:4px;" });
+    rowEl.append(el("div", { textContent: name, style:
+      "font-size:11px;color:#7d868f;text-align:right;padding-top:3px;" +
+      "line-height:1.25;" }));
+    const bed = el("div", { style: (owned ? BED_OWNED : BED_DERIVED)
+                                      .replace("%h", height) });
+    rowEl.append(bed);
+    boardInner.append(rowEl);
+    return bed;
+  }
 
   function drawBoard(t, d) {
     const total = t.total_frames || 1;
     const pc = (f) => `${Math.max(0, f / total * 100)}%`;
     boardInner.innerHTML = "";
 
-    // ruler
-    const ruler = el("div", { style: "position:relative;height:15px;margin-bottom:2px;" });
+    // ruler, aligned to the lane column rather than the whole board
+    const ruler = lane("", "15px", false);
+    ruler.style.background = "transparent";
     for (let s = 0; s <= Math.floor(total / 24); s += 2) {
       const tick = el("div", { textContent: `${s}s`, style:
-        "position:absolute;top:0;border-left:1px solid #2c3238;padding-left:3px;" +
-        "font-size:9px;color:#69727b;font-family:ui-monospace,monospace;" });
+        "position:absolute;top:0;border-left:1px solid #2a3036;padding-left:3px;" +
+        "font-size:9.5px;color:#6d767f;font-family:ui-monospace,monospace;" +
+        "font-variant-numeric:tabular-nums;" });
       tick.style.left = pc(s * 24);
       ruler.append(tick);
     }
-    boardInner.append(ruler);
 
-    // shots — click to select, drag an edge to resize
-    boardInner.append(laneLabel("shots — drag an edge to resize"));
-    const shotLane = el("div", { style: LANE.replace("%h", "34px") });
+    const shotLane = lane("Shots", "34px", true);
     (t.shots || []).forEach((s, i) => {
       const blk = el("div", { style:
         "position:absolute;top:3px;bottom:3px;border-radius:3px;display:flex;" +
@@ -419,8 +444,9 @@ function openPanel(node) {
         `background:${SHOT_COLOURS[i % 4]};border:1px solid ${i === selShot ? "#7fa0c0" : "rgba(255,255,255,.14)"};` });
       blk.style.left = pc(s.start); blk.style.width = pc(s.frames);
       const shot = d.shots[i] || {};
-      blk.append(el("span", { textContent: shot.description || "untitled shot",
-        style: "font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;" }));
+      blk.append(el("span", { textContent: shot.description || "Untitled shot",
+        style: "font-size:11.5px;white-space:nowrap;overflow:hidden;" +
+               "text-overflow:ellipsis;flex:1;" }));
       const asked = s.requested;
       const label = asked && asked !== s.frames
         ? `${s.frames}f \u2190 ${asked}` : `${s.frames}f`;
@@ -428,7 +454,8 @@ function openPanel(node) {
         blk.title = `${asked} is not a legal run (17n+5); the planner uses ${s.frames}`;
       }
       blk.append(el("span", { textContent: label, style:
-        "font-size:9.5px;color:rgba(255,255,255,.6);font-family:ui-monospace,monospace;" }));
+        "font-size:10px;color:rgba(255,255,255,.62);font-family:ui-monospace,monospace;" +
+        "font-variant-numeric:tabular-nums;" }));
       const f = shotBox.children[i]?.querySelector(".h3-frames");
       if (f && document.activeElement !== f) f.value = s.frames;
       for (const side of ["left", "right"]) {
@@ -444,11 +471,9 @@ function openPanel(node) {
       };
       shotLane.append(blk);
     });
-    boardInner.append(shotLane);
 
     // chunks, with the carried handle hatched — the part that cannot be spoken in
-    boardInner.append(laneLabel("chunks the planner will make"));
-    const chunkLane = el("div", { style: LANE.replace("%h", "22px") });
+    const chunkLane = lane("Chunks", "22px", false);
     (t.chunks || []).forEach((c) => {
       const blk = el("div", { style:
         "position:absolute;top:0;height:100%;border-right:1px solid #3a4148;" +
@@ -465,13 +490,11 @@ function openPanel(node) {
       }
       chunkLane.append(blk);
     });
-    boardInner.append(chunkLane);
 
     // actions, under the shot they belong to. They have no time of their own --
     // H3Dialogue attaches one per chunk clause -- so they are drawn as the span
     // of their shot rather than pretending to a moment.
-    boardInner.append(laneLabel("what happens"));
-    const actLane = el("div", { style: LANE.replace("%h", "20px") });
+    const actLane = lane("Action", "20px", false);
     (d.shots || []).forEach((shot, si) => {
       const geom = (t.shots || [])[si];
       if (!geom) return;
@@ -494,8 +517,7 @@ function openPanel(node) {
     // drops each chunk's handle. Seeing the span is the point.
     const anyLora = (d.shots || []).some((s) => (s.loras || []).length);
     if (anyLora) {
-      boardInner.append(laneLabel("loras"));
-      const loraLane = el("div", { style: LANE.replace("%h", "20px") });
+      const loraLane = lane("LoRAs", "20px", false);
       (d.shots || []).forEach((shot, si) => {
         const geom = (t.shots || [])[si];
         if (!geom || !(shot.loras || []).length) return;
@@ -512,12 +534,10 @@ function openPanel(node) {
         blk.title = label;
         loraLane.append(blk);
       });
-      boardInner.append(loraLane);
     }
 
     // lines, at the second they are spoken
-    boardInner.append(laneLabel("what is said, and when"));
-    const beatLane = el("div", { style: LANE.replace("%h", "46px") });
+    const beatLane = lane("Dialogue", "46px", false);
     (t.lines || []).forEach((l, i) => {
       const bad = !!l.problem;
       const blk = el("div", { style:
@@ -535,7 +555,6 @@ function openPanel(node) {
       blk.ondblclick = () => { releaseLine(l); };
       beatLane.append(blk);
     });
-    boardInner.append(beatLane);
   }
 
   // ---- dragging ---------------------------------------------------------- //
@@ -719,13 +738,15 @@ function openPanel(node) {
     });
     if (!t.ok) { timing.textContent = t.error; return; }
     lastTiming = t;
+    // 'A · B · C' reads as template chrome. Say it.
+    const nShots = (d.shots || []).length;
     totalOut.textContent =
-      `${(d.shots || []).length} shots \u00b7 ${t.chunks.length} chunks \u00b7 ` +
-      `${t.total_frames}f \u00b7 ${(t.total_frames / 24).toFixed(2)}s`;
+      `${nShots} shot${nShots === 1 ? "" : "s"} in ${t.chunks.length} chunks, ` +
+      `${(t.total_frames / 24).toFixed(1)}s`;
     drawBoard(t, d);
     const bar = t.chunks.map((c, i) =>
-      `chunk ${i}: ${c.pin_s ? `${c.pin_s}s pinned, ` : ""}` +
-      `speakable ${c.speech_from}\u2013${c.speech_to}s`).join("    ");
+      `${i}  ${c.pin_s ? `${c.pin_s}s held` : "free"}  ` +
+      `speak ${c.speech_from}\u2013${c.speech_to}s`).join("     ");
     const lines = t.lines.map((l) => {
       const when = l.start === null ? "  —  " : `${String(l.start).padStart(5)}s`;
       return `${when}  ${l.who}: ${l.line}` + (l.problem ? `   \u2190 ${l.problem}` : "");
@@ -770,8 +791,8 @@ function openPanel(node) {
   addShot.onclick = () => { shotBox.append(shotCard()); refresh(); };
 
   body.append(boardWrap,
-              heading("PEOPLE AND PLACES"), castBox, row([addPerson, addPlace]),
-              heading("SHOTS"), shotBox, row([addShot]));
+              heading("People and places"), castBox, row([addPerson, addPlace]),
+              heading("Shots"), shotBox, row([addShot]));
 
   const showPrompt = el("button", { textContent: "Show the prompt", style: BTN });
   showPrompt.onclick = async () => {
@@ -785,14 +806,20 @@ function openPanel(node) {
       "background:#1e1e1e;border:1px solid #555;border-radius:8px;max-width:min(760px,92vw);" +
       "max-height:84vh;overflow:auto;padding:16px;color:#ddd;" });
     box.append(el("div", { textContent: "What reaches the model",
-      style: "font-size:14px;font-weight:600;margin-bottom:10px;" }));
+      style: "font-size:15px;font-weight:600;margin-bottom:4px;" }));
+    box.append(el("div", { textContent:
+      "Each block below is one output on the node.", style:
+      "font-size:11.5px;color:#7d868f;margin-bottom:6px;" }));
     for (const key of ["head", "subject_defs", "retention", "soundscape",
                        "music", "dialogue_lines", "dialogue_actions",
                        "speaker_map"]) {
       if (!f[key]) continue;
+      // these are the node's OUTPUT NAMES, so they are shown exactly as the
+      // sockets spell them — uppercasing `subject_defs` would stop it matching
+      // the thing you are meant to find on the node
       box.append(el("div", { textContent: key, style:
-        "font-family:ui-monospace,monospace;font-size:10px;letter-spacing:1px;" +
-        "text-transform:uppercase;color:#69727b;margin:12px 0 3px;" }));
+        "font-family:ui-monospace,monospace;font-size:11px;color:#7d868f;" +
+        "margin:13px 0 3px;" }));
       box.append(el("pre", { textContent: String(f[key]), style:
         "margin:0;white-space:pre-wrap;font-family:ui-monospace,monospace;" +
         "font-size:11.5px;color:#b9c2cb;line-height:1.5;" }));
