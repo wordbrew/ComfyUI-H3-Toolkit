@@ -824,10 +824,30 @@ def emit(doc):
         for l in s["loras"]:
             loras.append(f"# {l['name']} {l['strength']} — add a time span")
 
+    head = "\n".join(body)
+    defs_s = "\n".join(defs) if defs else "N/A"
+    rets_s = "\n".join(rets) if rets else "N/A"
+    # THE ASSEMBLED PROMPT, in the block order prompt_scene.py uses. Every
+    # consumer -- the reference nodes, H3 Long-Form Links -- wants one string;
+    # the separate fields exist so a UI can show them apart, not because anything
+    # downstream takes them apart. Without this a workflow has to concatenate
+    # them by hand, in the right order, which is the bookkeeping this node exists
+    # to remove.
+    summary = head.split("\n")[0] if head else "N/A"
+    prompt = (
+        "subject_definitions:\n" + defs_s + "\n\n"
+        "summary:\n" + summary + "\n\n"
+        "retention_analysis:\n" + rets_s + "\n\n"
+        "detailed_description:\n" + head + "\n\n"
+        "overall_soundscape: " + (_sub(doc.get("soundscape", ""), idx).strip() or "N/A")
+        + "\n\n"
+        "non_diegetic_music: " + (doc.get("music") or "N/A"))
+
     return {
-        "head": "\n".join(body),
-        "subject_defs": "\n".join(defs),
-        "retention": "\n".join(rets),
+        "prompt": prompt,
+        "head": head,
+        "subject_defs": defs_s,
+        "retention": rets_s,
         "soundscape": _sub(doc.get("soundscape", ""), idx),
         "music": doc.get("music", "N/A"),
         "dialogue_lines": "\n".join(lines),
@@ -907,11 +927,11 @@ class H3Script:
     # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
     # drew are the cuts it plans.
     RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT",
-                                     "H3_CHUNK_PLAN", "STRING")
+                                     "H3_CHUNK_PLAN", "STRING", "STRING")
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
                     "document", "info", "cut_frames", "total_frames", "plan",
-                    "lora_schedule")
+                    "lora_schedule", "prompt")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Compile a take written in @names into H3's prompt fields. "
@@ -975,7 +995,7 @@ class H3Script:
                            out["speaker_map"],
                            json.dumps(doc, indent=2), info,
                            ",".join(str(c) for c in cuts), total, chunks,
-                           sched)}
+                           sched, out["prompt"])}
 
 
 NODE_CLASS_MAPPINGS = {"H3Script": H3Script}
