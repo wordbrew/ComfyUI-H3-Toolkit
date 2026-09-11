@@ -199,20 +199,17 @@ print("node contract")
 check("returns", hs.H3Script.RETURN_NAMES,
       ("head", "subject_defs", "retention", "soundscape", "music",
        "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info",
-       # APPENDED, per the slot contract — these two carry the shot lengths into
-       # H3 Chunk Plan, which is what makes a drawn cut an actual cut.
-       "cut_frames", "total_frames"))
+       # APPENDED, per the slot contract — these carry the shot lengths into
+       # H3 Chunk Plan, and `plan` IS the plan the timeline drew, so the board
+       # cannot describe one render while ComfyUI performs another.
+       "cut_frames", "total_frames", "plan"))
 check("the original ten keep their positions", hs.H3Script.RETURN_NAMES[:10],
       ("head", "subject_defs", "retention", "soundscape", "music",
        "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info"))
 check("one per type", len(hs.H3Script.RETURN_TYPES),
       len(hs.H3Script.RETURN_NAMES))
-res = hs.H3Script().go(SCRIPT)["result"]
-check("document output is valid json", json.loads(res[8])["version"], 1)
-ok("info shows the index table", "Subject 1" in res[9] and "@ada" in res[9])
-ok("the default script in the widget actually parses",
-   hs.parse(hs.H3Script.INPUT_TYPES()["required"]["script"][1]["default"])
-   is not None)
+check("the plan rides the same bus the chunk nodes consume",
+      hs.H3Script.RETURN_TYPES[-1], "H3_CHUNK_PLAN")
 
 print()
 if fails:

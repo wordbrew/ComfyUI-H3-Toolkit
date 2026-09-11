@@ -421,6 +421,50 @@ def cuts_from(doc, chunk_frames=141):
     return cuts, at
 
 
+def build_plan(doc, chunk_frames=141, context=39, mode="fixed",
+               total_frames=None):
+    """The chunk plan a take implies -> (chunks, info), H3 Chunk Plan's own shape.
+
+    WHY THIS LIVES HERE
+      The board draws the plan the shot lengths imply. The render used whatever
+      H3 Chunk Plan had in its widgets. Nothing checked that those agreed, so the
+      timeline could show one thing and ComfyUI render another -- a tool that
+      lies is worse than no tool.
+
+      Emitting the plan makes the two the same object rather than two things that
+      ought to match. It calls `chunkplan.plan`, the same function H3 Chunk Plan
+      calls, so this is not a second planner.
+
+      H3 Chunk Plan stays: plenty of takes have no script.
+    """
+    from .chunkplan import plan as _plan
+    cuts, from_shots = cuts_from(doc, chunk_frames)
+    total = int(total_frames or from_shots or chunk_frames)
+    return _plan(total, chunk_frames=int(chunk_frames), mode=mode,
+                 cuts=cuts or None, context=int(context))
+
+
+def audio_clock_notes(doc, chunk_frames=141):
+    """Shots whose length drifts the two clocks apart.
+
+    24 fps video and 40 Hz audio only line up when the frame count divides by 3.
+    Off-clock costs SYNC DRIFT that compounds down a chain -- not artifacts, which
+    is why it is easy to miss. 39, 90, 141, 192, 243, 294, 345 and 396 sit on both.
+    """
+    notes = []
+    for i, shot in enumerate(doc.get("shots", [])):
+        n = int(shot.get("frames") or chunk_frames)
+        if n % 17 != 5:
+            notes.append(f"shot {i + 1} is {n} frames, not a legal run (17n+5) — "
+                         f"the planner will trim it, so the length you designed "
+                         f"to is not the length rendered")
+        elif n % 3:
+            notes.append(f"shot {i + 1} is {n} frames, which is not on the audio "
+                         f"clock — the 24 fps and 40 Hz grids drift apart. It "
+                         f"costs sync, not artifacts, so it is easy to miss.")
+    return notes
+
+
 def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
            syllables_per_second=4.3, gap=0.4, tail_margin=0.6, lead_in=0.075):
     """Where every line lands, which chunk holds it, and what will be lost.
@@ -441,13 +485,12 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
     (`chunkplan.plan`, `story.chunk_windows`), so this is what will happen rather
     than a second opinion about it.
     """
-    from .chunkplan import plan as _plan
     from .story import chunk_windows, syllables
 
     cuts, from_shots = cuts_from(doc, chunk_frames)
     total = int(total_frames or from_shots or chunk_frames)
-    chunks, _info = _plan(total, chunk_frames=int(chunk_frames), mode=mode,
-                          cuts=cuts or None, context=int(context))
+    chunks, _info = build_plan(doc, chunk_frames=chunk_frames, context=context,
+                               mode=mode, total_frames=total)
     windows = chunk_windows(chunks, lead_in=lead_in, tail_margin=tail_margin)
 
     # which chunks belong to which shot, by frame range.
@@ -539,6 +582,8 @@ def timing(doc, total_frames=None, chunk_frames=141, context=39, mode="fixed",
                 if rec["problem"]:
                     problems.append(f"{rec['problem']}: \u201c{text}\u201d")
                 out_lines.append(rec)
+
+    problems.extend(audio_clock_notes(doc, chunk_frames))
 
     lost = sum(w["pin_s"] for w in windows)
     speech = sum(max(0.0, w["hi"] - w["lo"]) for w in windows)
@@ -747,23 +792,39 @@ class H3Script:
                        "  note @ada is on her back, nearer camera\n"
                        "  say  @ada moans Oh god, yes.\n"
                        "  do   his hips work in a steady rhythm\n"}),
+        }, "optional": {
+            # APPENDED. These two make the emitted `plan` the SAME plan the
+            # timeline drew — the board cannot describe one render while ComfyUI
+            # performs another, because both come from this call.
+            "chunk_frames": ("INT", {"default": 141, "min": 5, "max": 3600,
+                             "step": 17,
+                             "tooltip": "How long a chunk runs, for shots that "
+                                        "declare no length of their own. Sizes "
+                                        "the plan this node emits."}),
+            "context": ("INT", {"default": 39, "min": 0, "max": 4096,
+                        "tooltip": "The handle carried from the previous chunk. "
+                                   "Those frames are reproduced under a denoise "
+                                   "mask of 0, so nothing can be SAID in them — "
+                                   "39 is the smallest count landing on both the "
+                                   "24 fps and 40 Hz grids."}),
         }}
 
     # APPENDED, per the slot contract: cut_frames and total_frames go last so
     # every saved graph keeps its wiring. They are what makes a shot's length
     # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
     # drew are the cuts it plans.
-    RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT")
+    RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT",
+                                     "H3_CHUNK_PLAN")
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
-                    "document", "info", "cut_frames", "total_frames")
+                    "document", "info", "cut_frames", "total_frames", "plan")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Compile a take written in @names into H3's prompt fields. "
                    "Feeds H3 Long-Form Links and H3 Dialogue; the numbering is "
                    "worked out for you.")
 
-    def go(self, script):
+    def go(self, script, chunk_frames=141, context=39):
         doc = parse(script)
         out = emit(doc)
         notes = lint(doc, out)
@@ -780,7 +841,10 @@ class H3Script:
         if notes:
             rows.append("  lint:")
             rows += [f"    {n}" for n in notes]
-        cuts, total = cuts_from(doc)
+        cuts, total = cuts_from(doc, chunk_frames)
+        chunks, plan_info = build_plan(doc, chunk_frames=chunk_frames,
+                                       context=context)
+        rows += [f"  {n}" for n in audio_clock_notes(doc, chunk_frames)]
         if cuts:
             rows.append(f"  cuts at {', '.join(str(c) for c in cuts)} "
                         f"of {total} frames — wire cut_frames into H3 Chunk Plan")
@@ -792,7 +856,7 @@ class H3Script:
                            out["dialogue_lines"], out["dialogue_actions"],
                            out["speaker_map"],
                            json.dumps(doc, indent=2), info,
-                           ",".join(str(c) for c in cuts), total)}
+                           ",".join(str(c) for c in cuts), total, chunks)}
 
 
 NODE_CLASS_MAPPINGS = {"H3Script": H3Script}

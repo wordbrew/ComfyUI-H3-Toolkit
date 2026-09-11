@@ -233,9 +233,12 @@ function openPanel(node) {
     wrap.append(row([el("span", { textContent: "shot", style: "color:#888;width:56px;font-size:11px;" }),
                      what, frames, del]));
     wrap.append(beats);
+    // NO "Split here" any more. A shot's LENGTH decides where the planner cuts,
+    // and the board draws the result -- offering a second way to say the same
+    // thing invited the two to disagree. Splits in a loaded take are still shown
+    // and still parsed, so nothing written before this breaks.
     wrap.append(row([add("Someone speaks", "say"), add("Something happens", "do"),
-                     add("A detail to hold", "note"), add("Split here", "split")],
-                    "margin-bottom:0;"));
+                     add("A detail to hold", "note")], "margin-bottom:0;"));
 
     wrap._frames = Number(shot?.frames ?? 141);
     wrap._read = () => {
@@ -275,7 +278,10 @@ function openPanel(node) {
       const v = Number(w?.value);
       return Number.isFinite(v) && v > 0 ? v : fallback;
     };
+    const cf = n?.widgets?.find((x) => x.name === "cut_frames");
     return {
+      found: !!n,
+      cut_frames: (cf?.value ?? "").toString().trim(),
       total_frames: get("total_frames", 345),
       chunk_frames: get("chunk_frames", 141),
       context: get("context", 39),
@@ -379,6 +385,10 @@ function openPanel(node) {
         blk.append(g);
       }
       blk.onclick = () => { selShot = i; refresh(); };
+      blk.onmousedown = (e) => {
+        if (e.target !== blk) return;           // the grips own the edges
+        moveShot(e, i);
+      };
       shotLane.append(blk);
     });
     boardInner.append(shotLane);
@@ -403,6 +413,28 @@ function openPanel(node) {
       chunkLane.append(blk);
     });
     boardInner.append(chunkLane);
+
+    // actions, under the shot they belong to. They have no time of their own --
+    // H3Dialogue attaches one per chunk clause -- so they are drawn as the span
+    // of their shot rather than pretending to a moment.
+    boardInner.append(laneLabel("what happens"));
+    const actLane = el("div", { style: LANE.replace("%h", "20px") });
+    (d.shots || []).forEach((shot, si) => {
+      const geom = (t.shots || [])[si];
+      if (!geom) return;
+      const acts = (shot.chunks || []).flatMap((c) => c.actions || []);
+      if (!acts.length) return;
+      const blk = el("div", { textContent: `\u25b8 ${acts.join("  \u00b7  ")}`,
+        style: "position:absolute;top:3px;height:14px;border-radius:2px;" +
+               "padding:0 5px;font-size:9px;font-family:ui-monospace,monospace;" +
+               "white-space:nowrap;overflow:hidden;background:#3d3a2c;color:#d6cfae;" +
+               "border:1px solid rgba(255,255,255,.12);" });
+      blk.style.left = pc(geom.start + 4);
+      blk.style.maxWidth = pc(Math.max(30, geom.frames - 8));
+      blk.title = acts.join("\n");
+      actLane.append(blk);
+    });
+    boardInner.append(actLane);
 
     // lines, at the second they are spoken
     boardInner.append(laneLabel("what is said, and when"));
@@ -456,6 +488,39 @@ function openPanel(node) {
     };
     const up = () => { document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up); refresh(); };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  // REORDER BY WHERE THE MIDDLE ENDS UP, not by how far the pointer travelled,
+  // so a short shot can pass a long one without having to cross its whole width.
+  function moveShot(e, i) {
+    e.preventDefault();
+    const rect = boardInner.getBoundingClientRect();
+    const total = lastTiming?.total_frames || 345;
+    const per = total / rect.width;
+    const x0 = e.clientX;
+    let moved = false;
+    const move = (ev) => {
+      const cards = [...shotBox.children];
+      const lens = cards.map((c) => Number(c._frames) || 141);
+      const before = lens.slice(0, i).reduce((a, b) => a + b, 0);
+      const mid = before + (ev.clientX - x0) * per + lens[i] / 2;
+      let acc = 0, to = i;
+      for (let k = 0; k < lens.length; k++) {
+        if (k === i) { acc += lens[k]; continue; }
+        if (mid < acc + lens[k] / 2) { to = k > i ? k - 1 : k; break; }
+        acc += lens[k]; to = k;
+      }
+      if (to !== i && to >= 0 && to < cards.length) {
+        const node = cards[i];
+        shotBox.removeChild(node);
+        shotBox.insertBefore(node, shotBox.children[to] || null);
+        i = to; moved = true; selShot = to; refresh();
+      }
+    };
+    const up = () => { document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up); if (moved) refresh(); };
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
   }
@@ -516,6 +581,25 @@ function openPanel(node) {
     }
     for (const p of t.problems) {
       timing.append(el("div", { textContent: p, style: "color:#dc8;margin-top:5px;" }));
+    }
+
+    // THE BOARD MUST NOT LIE. It plans from the shot lengths drawn here; the
+    // render plans from whatever H3 Chunk Plan holds. Wire this node's `plan`
+    // output (or cut_frames/total_frames) into the chain and they are the same
+    // object. Until then, say plainly that they might not be.
+    const g = planFromGraph();
+    const mismatch = [];
+    if (g.found) {
+      if (g.total_frames !== t.total_frames)
+        mismatch.push(`length: this take is ${t.total_frames}f, H3 Chunk Plan says ${g.total_frames}f`);
+      if ((g.cut_frames || "") !== (t.cuts || []).join(","))
+        mismatch.push(`cuts: this take cuts at ${(t.cuts || []).join(", ") || "none"}, ` +
+                      `H3 Chunk Plan has ${g.cut_frames || "none"}`);
+    }
+    if (mismatch.length) {
+      timing.append(el("div", { style: "color:#d97a7a;margin-top:7px;",
+        textContent: "the board and the render disagree — " + mismatch.join("; ") +
+          ". Wire this node's plan output into the chain, or copy the numbers across." }));
     }
     markShots(t);
   }

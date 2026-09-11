@@ -141,6 +141,38 @@ t = hs.timing(take("one", "two", "three"), total_frames=345,
 ok("no flowed line claims a handle problem",
    not any("carried handle" in (l["problem"] or "") for l in t["lines"]))
 
+# these need the package loader above, because build_plan imports .chunkplan
+print("the emitted plan is the one the board drew")
+doc = hs.parse("@ada = a woman\nshot 141 | one\n  say @ada hi\n"
+               "shot 243 | two\n  say @ada there\n")
+chunks, _ = hs.build_plan(doc, chunk_frames=141, context=39)
+t_ = hs.timing(doc, chunk_frames=141, context=39)
+check("same number of chunks either way", len(chunks), len(t_["chunks"]))
+check("and the same kept regions",
+      [c["keep_from"] for c in chunks], [c["start"] for c in t_["chunks"]])
+
+print("a length off the audio clock is called out, a legal one is not")
+ok("141 is clean", not hs.audio_clock_notes(hs.parse(
+    "@ada = a woman\nshot 141 | one\n")))
+ok("142 is not a legal run", any("legal run" in n for n in hs.audio_clock_notes(
+    hs.parse("@ada = a woman\nshot 142 | one\n"))))
+ok("124 is legal but off the audio clock",
+   any("audio clock" in n for n in hs.audio_clock_notes(
+       hs.parse("@ada = a woman\nshot 124 | one\n"))))
+print("the node runs end to end and emits a usable plan")
+import json as _json
+_res = hs.H3Script().go("@ada = character Ada\nshot 141 | one\n"
+                        "  say @ada hi\nshot 243 | two\n  say @ada there\n")["result"]
+check("document output is valid json", _json.loads(_res[8])["version"], 1)
+check("cut_frames names the shot boundary", _res[10], "141")
+check("total_frames is the take", _res[11], 384)
+ok("the plan is a list of chunk dicts",
+   isinstance(_res[12], list) and "keep_from" in _res[12][0])
+ok("the default script in the widget actually parses",
+   hs.parse(hs.H3Script.INPUT_TYPES()["required"]["script"][1]["default"])
+   is not None)
+
+
 print()
 print(f"{len(fails)} failure(s)" if fails else "script timing: all checks pass")
 sys.exit(1 if fails else 0)
