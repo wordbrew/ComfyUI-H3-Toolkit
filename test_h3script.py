@@ -234,7 +234,7 @@ print("h3 script: all checks pass")
 # to degrade silently when there is no store at all, which is the case here and
 # in any test run outside ComfyUI.
 print("the character store supplies pictures, voice and description")
-n, v, desc, ret = hs.store_card("almost-certainly-not-a-character")
+n, v, desc, ret, akind = hs.store_card("almost-certainly-not-a-character")
 check("an unknown character reads as nothing", (n, v, desc, ret), (0, 0, "", ""))
 d = hs.parse("@x = character Nobody\nshot | @x\n")
 c = d["cast"][0]
