@@ -167,16 +167,16 @@ function openPanel(node) {
   // ---- cast -------------------------------------------------------------- //
   function castRow(entry) {
     const wrap = el("div", { style: CARD });
-    const name = input(entry.name, "name, e.g. Ada", "width:130px;");
+    const name = input(entry.name, "label, e.g. skye", "width:130px;");
     const kind = select([
-      { value: "character", label: "Saved character" },
+      { value: "character", label: "Saved asset" },
       { value: "subject", label: "Described person" },
-      { value: "setting", label: "Place" },
-    ], entry.kind, "width:150px;");
+      { value: "setting", label: "Described place" },
+    ], entry.kind, "width:158px;");
     const picked = select(characters.length ? characters : ["(none saved)"],
                           entry.character, "flex:1;");
-    const described = input(entry.description, "what they look like, or the place",
-                            "flex:1;");
+    const described = input(entry.description,
+                            "describe them, or the place", "flex:1;");
     const del = el("button", { textContent: "Remove", style: BTN });
 
     function sync() {
@@ -184,9 +184,10 @@ function openPanel(node) {
       picked.style.display = isChar ? "" : "none";
       described.style.display = isChar ? "none" : "";
     }
-    kind.onchange = sync; sync();
+    sync();
     del.onclick = () => { wrap.remove(); refresh(); };
-    for (const n of [name, kind, picked, described]) n.onchange = refresh;
+    for (const n of [name, picked, described]) n.onchange = refresh;
+    kind.onchange = () => { sync(); refresh(); };   // BOTH, not one or the other
 
     wrap.append(row([name, kind, picked, described, del]));
     wrap._read = () => {
@@ -541,8 +542,22 @@ function openPanel(node) {
       });
     }
 
-    // lines, at the second they are spoken
-    const beatLane = lane("Dialogue", "46px", false);
+    // lines, at the second they are spoken. THREE ROWS is a floor, not a
+    // ceiling: a fixed height stacked a busy take's lines on top of one another,
+    // hiding exactly the collisions this lane is for. Lines that overlap in TIME
+    // get their own row, so the height follows the take.
+    const spoken = (t.lines || []).filter((l) => l.start !== null);
+    const rowOf = new Map();
+    const rowEnds = [];
+    for (const l of [...spoken].sort((a, b) => a.start - b.start)) {
+      const w = Math.max(0.4, l.seconds || 1);
+      let r = rowEnds.findIndex((end) => end <= l.start + 1e-6);
+      if (r < 0) { r = rowEnds.length; rowEnds.push(0); }
+      rowEnds[r] = l.start + w;
+      rowOf.set(l, r);
+    }
+    const rows = Math.max(3, rowEnds.length);
+    const beatLane = lane("Dialogue", `${6 + rows * 16}px`, false);
     (t.lines || []).forEach((l, i) => {
       const bad = !!l.problem;
       const blk = el("div", { style:
@@ -551,7 +566,7 @@ function openPanel(node) {
         "cursor:grab;border:1px solid " +
         (bad ? "#7a4444" : l.placed ? "#7fa0c0" : "rgba(255,255,255,.12)") + ";" +
         `background:${bad ? "#4d2f2f" : "#34474f"};color:${bad ? "#e7b8b8" : "#bcd6de"};` });
-      blk.style.top = `${3 + (i % 3) * 15}px`;
+      blk.style.top = `${3 + (rowOf.get(l) ?? (i % rows)) * 16}px`;
       blk.style.left = l.start === null ? "4px" : pc(l.start * 24);
       blk.style.maxWidth = pc(Math.max(30, (l.seconds || 1) * 24 * 1.6));
       blk.textContent = `${l.placed ? "\u21e5 " : ""}${l.who}: ${l.line}`;
@@ -791,15 +806,24 @@ function openPanel(node) {
   }
 
   // ---- wiring ------------------------------------------------------------ //
-  const addPerson = el("button", { textContent: "Add a person", style: BTN });
-  addPerson.onclick = () => { castBox.append(castRow({ kind: "character" })); refresh(); };
-  const addPlace = el("button", { textContent: "Add a place", style: BTN });
-  addPlace.onclick = () => { castBox.append(castRow({ kind: "setting" })); refresh(); };
+  const addRef = el("button", { textContent: "Add a reference", style: BTN });
+  addRef.onclick = () => { castBox.append(castRow({ kind: "character" })); refresh(); };
   const addShot = el("button", { textContent: "Add a shot", style: BTN });
   addShot.onclick = () => { shotBox.append(shotCard()); refresh(); };
 
   boardWrap.style.cssText = "padding:10px 16px 0;flex:0 0 auto;";
-  body.append(heading("People and places"), castBox, row([addPerson, addPlace]),
+  // WHY A DESCRIBED PERSON HAS NO IMAGE SLOT. <Picture n> numbering is assigned
+  // from the character store, so pictures belong to a SAVED asset — an ad-hoc
+  // subject has nothing for the prompt to cite. Describe-and-attach means saving
+  // one, which is H3 Character Save's job, and the note says so rather than
+  // leaving the absence to be discovered.
+  const refHint = el("div", { style: "font-size:11px;color:#6d767f;margin:2px 0 6px;" ,
+    textContent: "A described person carries words only. To give someone pictures "
+               + "or a voice, save them once with H3 Character Save — then they "
+               + "appear here as a saved asset, and their anchors become "
+               + "<Picture 1>, <Picture 2> … automatically." });
+
+  body.append(heading("References"), castBox, row([addRef]), refHint,
               heading("Shots"), shotBox, row([addShot]));
 
   const showPrompt = el("button", { textContent: "Show the prompt", style: BTN });
