@@ -327,5 +327,9 @@ class H3CharacterSave:
 
 
 NODE_CLASS_MAPPINGS = {"H3Character": H3Character, "H3CharacterSave": H3CharacterSave}
-NODE_DISPLAY_NAME_MAPPINGS = {"H3Character": "H3 Character",
-                              "H3CharacterSave": "H3 Character (save)"}
+# THE IDS DO NOT CHANGE. `H3Character` is what every saved workflow references
+# and `models/h3_characters/` is where the assets live -- renaming either would
+# orphan both. Only the labels move, because the store holds places and props now
+# and "Character" had stopped being true.
+NODE_DISPLAY_NAME_MAPPINGS = {"H3Character": "H3 Reference",
+                              "H3CharacterSave": "H3 Reference (save)"}
