@@ -242,6 +242,16 @@ class H3CharacterSave:
                                       "tooltip": "Used when you are NOT cloning from a "
                                                  "sample. Voice wording outweighs the "
                                                  "words themselves."}),
+                # WHAT IS THIS THING? The store held people and nothing else,
+                # so a saved lamp came back with "preserve facial identity, hair,
+                # eye colour and build". The wording that keeps a reference
+                # consistent is not the same wording for a person, a place and an
+                # object, and only the thing itself knows which it is.
+                "kind": (["person", "place", "thing"], {"default": "person",
+                         "tooltip": "Decides how the prompt asks for it to be "
+                                    "preserved. A person keeps identity and "
+                                    "build; a place keeps layout and light; a "
+                                    "thing keeps shape, colour and markings."}),
                 "retention": (["fully_preserved", "partially_preserved",
                                "attribute_transfer", "weak_reference"],
                               {"default": "fully_preserved"}),
@@ -263,7 +273,7 @@ class H3CharacterSave:
                    "appear in the H3 Character dropdown.")
 
     def save(self, name, description, voice_description, retention, overwrite,
-             voice=None, **images):
+             kind="person", voice=None, **images):
         safe = "".join(c for c in name.strip() if c.isalnum() or c in "-_ ").strip()
         if not safe:
             raise ValueError("character name is empty after sanitising")
@@ -306,7 +316,8 @@ class H3CharacterSave:
                       f"A long reference competes with the target for audio tokens.")
 
         with open(os.path.join(d, "card.json"), "w", encoding="utf-8") as f:
-            json.dump({"name": safe, "description": description.strip(),
+            json.dump({"name": safe, "kind": kind,
+                       "description": description.strip(),
                        "voice": voice_description.strip(), "retention": retention,
                        "anchors": n}, f, indent=2)
 

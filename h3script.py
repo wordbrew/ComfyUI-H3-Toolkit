@@ -95,7 +95,7 @@ NAME = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def store_card(name):
-    """(anchor count, voice count, description, retention) from the store.
+    """(anchor count, voice count, description, retention, kind) from the store.
 
     Reads the same `models/h3_characters/<name>/` layout H3 Character writes,
     so a character saved once is usable by name here with nothing re-typed.
@@ -108,23 +108,39 @@ def store_card(name):
         from .character import characters_dir
         d = os.path.join(characters_dir(), name)
         if not os.path.isdir(d):
-            return 0, 0, "", ""
+            return 0, 0, "", "", "person"
         img = os.path.join(d, "images")
         n = len([f for f in sorted(os.listdir(img))
                  if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
                 ) if os.path.isdir(img) else 0
         voice = 1 if os.path.exists(os.path.join(d, "voice.wav")) else 0
-        desc, ret = "", ""
+        desc, ret, kind = "", "", "person"
         card = os.path.join(d, "card.json")
         if os.path.exists(card):
             with open(card, encoding="utf-8") as fh:
                 data = json.load(fh)
             desc = (data.get("description") or "").strip()
             ret = (data.get("retention") or "").strip()
-        return n, voice, desc, ret
+            # cards written before kinds existed are people, which is what they
+            # were
+            kind = (data.get("kind") or "person").strip()
+        return n, voice, desc, ret, kind
     except Exception:
-        return 0, 0, "", ""
+        return 0, 0, "", "", "person"
 
+
+# WHAT "KEEP IT THE SAME" MEANS DEPENDS ON WHAT IT IS. A saved lamp used to come
+# back as "preserve facial identity, hair, eye colour and build", because the
+# store held people and nothing else. These are the defaults; `@name.preserve`
+# still overrides any of them.
+PRESERVE_BY_KIND = {
+    "person":  "facial identity, hair, eye colour and build",
+    "place":   "the layout, the architecture, the materials and the quality of "
+               "the light",
+    "setting": "the layout, the architecture, the materials and the quality of "
+               "the light",
+    "thing":   "its shape, proportions, colour, material and markings",
+}
 
 MAX_PICTURES = 4       # the reference node's ref_image slots
 MAX_VOICES = 2
@@ -246,7 +262,8 @@ def parse(text):
                     entry["retention"] = "fully_preserved"
                     # from the store, so nothing already established when the
                     # character was saved has to be typed again here
-                    npic, naud, desc, ret = store_card(entry["character"])
+                    npic, naud, desc, ret, akind = store_card(entry["character"])
+                    entry["asset_kind"] = akind
                     entry["pictures"] = npic
                     entry["audio"] = naud
                     if desc:
@@ -256,6 +273,7 @@ def parse(text):
                     entry["from_store"] = bool(npic or desc)
                 elif rest.startswith("setting."):
                     entry["kind"] = "setting"
+                    entry["asset_kind"] = "place"
                     entry["description"] = rest[len("setting."):].strip()
                 doc["cast"].append(entry)
                 by_name[nm] = entry
@@ -798,7 +816,12 @@ def emit(doc):
         tok = f"<Subject {got['subject']}>"
         if c["kind"] == "character":
             who = c.get("character") or c["name"]
-            desc = f"{tok} is {who}"
+            # a saved asset's own description beats its bare name: "is skye" tells
+            # the model nothing, "is a woman with curly copper-red hair" does
+            body_text = (c.get("store_description") or "").strip()
+            lead = {"place": "the setting: ", "thing": ""}.get(
+                c.get("asset_kind"), "")
+            desc = f"{tok} is {lead}{body_text or who}"
             if got["pictures"]:
                 desc += f", shown in {_pictures(got['pictures'])}"
             if got["audio"]:
@@ -827,8 +850,10 @@ def emit(doc):
             # no possessive prepended: the author's own text supplies one
             # ("her face"), and adding "their" in front produced "preserve
             # their her face"
-            what = c.get("preserve") or ("facial identity, hair, eye colour "
-                                         "and build")
+            what = c.get("preserve") or PRESERVE_BY_KIND.get(
+                c.get("asset_kind") or ("setting" if c["kind"] == "setting"
+                                        else "person"),
+                PRESERVE_BY_KIND["person"])
             note = f"preserve {what}"
             if got["pictures"]:
                 note += f" as shown in {_pictures(got['pictures'])}"
