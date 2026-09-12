@@ -103,22 +103,33 @@ def map_modalities(primary_indices, latent_shapes, dim):
       trained on.
 
       Spotted by DrakenZA/Comfyui-H3-DrakenNodes while reading this file.
+
+    ORDER MATTERS NOW. A looped window's list is [90 ... 101, 0 ... 14], so
+    sorting it would report the window as starting at index 0 and the audio
+    would be fetched from the wrong end of the clip. The count is order-free --
+    it is a sum -- but the START comes off the first element, and the tick list
+    wraps exactly where the video list does.
     """
     result = [list(primary_indices)]
     if not latent_shapes or len(latent_shapes) < 2:
         return result
     audio_total = int(latent_shapes[1][AUDIO_TIME_DIM])
-    idx = sorted(int(v) for v in primary_indices)
-    if not idx or audio_total <= 0:
+    seq = [int(v) for v in primary_indices]
+    if not seq or audio_total <= 0:
         result.append([0])
         return result
 
-    frames = sum(FRAME_PER_TOKEN[v % 5] for v in idx)
+    frames = sum(FRAME_PER_TOKEN[v % 5] for v in seq)
     ticks = max(1, min(audio_ticks_for_frames(frames), audio_total))
+    start = audio_ticks_for_frames(_pixel_frame_at(seq[0]))
+
+    if window_is_wrapped(seq):
+        result.append([(start + k) % audio_total for k in range(ticks)])
+        return result
 
     # Clamped at the end so the final window takes the clip's last ticks rather
     # than running off it -- the same rule the video side already follows.
-    start = audio_ticks_for_frames(_pixel_frame_at(idx[0]))
+    # A wrapped window is never clamped: running off the end IS the point.
     start = max(0, min(start, audio_total - ticks))
     result.append(list(range(start, start + ticks)))
     return result
@@ -176,6 +187,57 @@ def window_schedule(latent_len, w_lat, o_lat):
     return out or [(0, w_lat)]
 
 
+def looped_window_indices(latent_len, w_lat, o_lat):
+    """Window index lists for a LOOP: the tail wraps onto the head. -> [[idx]]
+
+    WHY NOT CORE'S `looped_uniform`
+      Core ships a looped schedule and it is unusable here. It belongs to the
+      UNIFORM family, which re-derives every window's position on every step
+      from `ordered_halving(step)` -- measured actively harmful on H3, where the
+      windows have to stay put -- and it builds STRIDED index lists (every 2nd,
+      4th frame), which means nothing against a (1,4,4,4,4) frame grid. This is
+      the STATIC schedule with the end clamp removed and a modulo in its place.
+
+    WHAT THE WRAP BUYS
+      In the linear schedule the last window is pulled BACK to fit, so index 0
+      and index latent_len-1 are each covered once while the middle is covered
+      twice. Those two frames are the ones a loop joins, and they are the two
+      the linear schedule conditions least. Wrapping covers the join like any
+      other moment: no window boundary lands there, so the model generates
+      frame 0 and the final frame as ordinary neighbours in one window.
+
+    THE PHASE COST, WHICH IS REAL AND SMALL
+      A legal run is 5n+2 latent steps and FRAME_PER_TOKEN is (1,4,4,4,4), so
+      the latent is NOT cyclic: its first step covers one pixel frame where
+      every other covers four, and 5n+2 is never a multiple of 5. A wrapped
+      window therefore cannot keep the phase cycle across the seam.
+
+      What that costs is smaller than it sounds. The layout assigns time by
+      position WITHIN the window, so a window starting at step 90 tells its
+      wrapped part "you come after the tail" -- which is exactly the loop
+      semantics we want, and the absolute continuity is right. The error is
+      duration only: the step at the wrap is told it spans 4 pixel frames where
+      the real step 0 spans 1. One <=3-frame timing error, once, at the wrap,
+      on steps that are also being blended.
+
+      Every start is a multiple of 5 and so sits at phase 0, because `delta` is
+      w_lat - o_lat and both are legal runs. `range` never emits a start past
+      the end, so the wrap only ever happens inside a window, never at one.
+    """
+    total, w = int(latent_len), int(w_lat)
+    if total <= w:
+        return [list(range(total))]
+    delta = max(1, w - int(o_lat))
+    return [[(start + k) % total for k in range(w)]
+            for start in range(0, total, delta)]
+
+
+def window_is_wrapped(idx):
+    """True if this index list runs off the end and continues at 0."""
+    seq = list(idx or ())
+    return len(seq) > 1 and any(b < a for a, b in zip(seq, seq[1:]))
+
+
 def core_takes_window_start():
     """Always True: this pack applies the offset, not core.
 
@@ -188,11 +250,18 @@ def core_takes_window_start():
 
 
 def window_start_pixel(window):
-    """Clip PIXEL frame where this window begins, honouring (1,4,4,4,4)."""
+    """Clip PIXEL frame where this window begins, honouring (1,4,4,4,4).
+
+    THE FIRST INDEX, NOT THE SMALLEST. They are the same number for every
+    linear window, and `min` read fine for a year. A LOOPED window's list runs
+    [90 ... 101, 0 ... 14], where the smallest is 0 -- so `min` would place a
+    window that starts near the end of the clip at the clip's origin, which is
+    precisely the bug absolute positioning exists to prevent.
+    """
     idxs = getattr(window, "index_list", None)
     if not idxs:
         return 0
-    return _pixel_frame_at(int(min(idxs)))
+    return _pixel_frame_at(int(idxs[0]))
 
 
 def _guide_steps(kf):
@@ -608,6 +677,16 @@ def _context_window_classes():
             out = []
             for w in windows:
                 idx = list(w.index_list)
+                if window_is_wrapped(idx):
+                    # `range(lo, hi)` cannot express a wrapped span, and silently
+                    # widening one would unwrap it -- a window that jumped from
+                    # the clip's end to its start, rendered as though it were a
+                    # single run through the middle. Leave it alone and say so.
+                    logging.warning("H3 windowing: margin_frames is ignored on "
+                                    "looped windows; the margin widener only "
+                                    "understands contiguous spans.")
+                    out.append(w)
+                    continue
                 s, L = idx[0], len(idx)
                 lo = max(0, s - m)
                 hi = min(int(total), s + L + m)
@@ -619,8 +698,24 @@ def _context_window_classes():
             return out
 
         def get_context_windows(self, model, x_in, model_options):
-            windows = super().get_context_windows(model, x_in, model_options)
-            return self._widen_for_margin(windows, x_in.shape[self.dim])
+            total = int(x_in.shape[self.dim])
+            if getattr(self, "loop_windows", False):
+                windows = [
+                    IndexListContextWindow(idx, dim=self.dim, total_frames=total,
+                                           context_overlap=self.context_overlap)
+                    for idx in looped_window_indices(total, self.context_length,
+                                                     self.context_overlap)]
+                for w in windows:
+                    # `center_ratio` is (min+max)/2, which for a wrapped list is
+                    # the middle of the CLIP rather than of the window -- every
+                    # wrapped window would claim the same middle region. Place it
+                    # circularly instead, so per-window prompts land where the
+                    # window actually sits.
+                    w.center_ratio = (((w.index_list[0] + len(w.index_list) / 2.0)
+                                       % total) / total) if total else 0.0
+            else:
+                windows = super().get_context_windows(model, x_in, model_options)
+            return self._widen_for_margin(windows, total)
 
         def _report_layout_builds(self, context_windows):
             """One line per RUN: what the layouts were told vs what we asked.
@@ -1164,6 +1259,25 @@ class H3ContextWindows:
                                          "2x the work per window, 3x at 34. "
                                          "Multiply by windows x steps. Leave it "
                                          "at 0 unless you are running the A/B."}),
+            # APPENDED. A LOOP is not a post-process, it is a window schedule:
+            # the linear one pulls its last window BACK to fit, so the two frames
+            # a loop has to join are the two it conditions least. Wrapping covers
+            # the join like any other moment and no window boundary lands there.
+            "loop": ("BOOLEAN", {"default": False,
+                     "tooltip": "Make the clip LOOP. Windows wrap past the end "
+                                "and continue at frame 0, so the last frame and "
+                                "the first are generated as neighbours inside "
+                                "one window rather than joined afterwards — "
+                                "there is no seam to hide because no window "
+                                "boundary sits there.\n\n"
+                                "The latent is not truly cyclic: a legal run is "
+                                "5n+2 steps and the first covers 1 pixel frame "
+                                "where the rest cover 4, so the step at the wrap "
+                                "is told it lasts 4 frames when it lasts 1. One "
+                                "≤3-frame timing error, once, on blended steps.\n\n"
+                                "Needs absolute_window_positions ON — a wrapped "
+                                "window's whole point is that it sits past the "
+                                "end of the clip. Ignores margin_frames."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")
@@ -1177,7 +1291,8 @@ class H3ContextWindows:
     def go(self, model, window_frames, overlap_frames, margin_frames=0,
            schedule="standard_static",
            fuse_method="pyramid", freenoise=False, causal_window_fix=True,
-           absolute_window_positions=False, split_conds_to_windows=False):
+           absolute_window_positions=False, split_conds_to_windows=False,
+           loop=False):
         from .timing import snap_run, video_latent_t
 
         notes = []
@@ -1197,6 +1312,23 @@ class H3ContextWindows:
                          f"no frame is rendered by a window in a consistent "
                          f"place. Set schedule to standard_static unless you are "
                          f"deliberately testing this.")
+
+        loop = bool(loop)
+        if loop and schedule != "standard_static":
+            notes.append("loop is ON but the schedule is not standard_static. "
+                         "The wrap replaces the schedule entirely, so the "
+                         "schedule widget does nothing while loop is on.")
+        if loop and not absolute_window_positions:
+            # A wrapped window's tokens sit PAST the end of the clip -- that is
+            # the whole mechanism. With origin positioning every window is told
+            # it starts at frame 0, so the wrapped part is placed before the
+            # material it is supposed to follow and the loop is worse than no
+            # loop at all. Turn it on rather than render something misleading.
+            absolute_window_positions = True
+            notes.append("loop forced absolute_window_positions ON. A wrapped "
+                         "window is positioned past the end of the clip; with "
+                         "origin positioning its wrapped half would be placed "
+                         "BEFORE the frames it continues from.")
 
         absolute = bool(absolute_window_positions)
         if absolute and not core_takes_window_start():
@@ -1281,6 +1413,7 @@ class H3ContextWindows:
         # whole 5-token cycles, so a 5j+2 window stays 5j+2 once widened
         patched.model_options["context_handler"].margin_tokens = (
             int(margin_frames) // 17 * 5)
+        patched.model_options["context_handler"].loop_windows = loop
         # makes the VRAM estimate budget one window rather than the whole clip
         create_prepare_sampling_wrapper(patched)
         if freenoise:
@@ -1309,17 +1442,22 @@ class H3ContextWindows:
         logging.info("H3 context windows: %s frames (%s latent), overlap %s (%s), "
                      "stride %s | schedule %s | fuse %s | freenoise %s | "
                      "causal_fix %s | absolute positions %s | split conds %s | "
-                     "margin %s",
-                     wf, w_lat, of, o_lat, wf - of, schedule, fuse_method,
+                     "margin %s | loop %s",
+                     wf, w_lat, of, o_lat, wf - of,
+                     "LOOPED static (wrapped)" if loop else schedule, fuse_method,
                      freenoise, causal_window_fix, absolute,
-                     split_conds_to_windows, margin_note)
+                     split_conds_to_windows, margin_note, "ON" if loop else "off")
 
         text = "\n".join([
             f"H3 context windows: {wf} frames ({w_lat} latent), overlap {of} "
             f"({o_lat} latent)",
             f"  stride {wf - of} frames ({stride} latent)",
-            f"  both are legal runs (17n+5), so every window — including the "
-            f"clamped last one — starts on a VAE chunk boundary",
+            (f"  LOOP — windows wrap past the end and continue at frame 0, so "
+             f"the last frame and the first are generated as neighbours inside "
+             f"one window. No window boundary sits at the join."
+             if loop else
+             f"  both are legal runs (17n+5), so every window — including the "
+             f"clamped last one — starts on a VAE chunk boundary"),
             f"  dim {VIDEO_TIME_DIM} (H3's video temporal axis; core defaults to 0)",
             f"  schedule {schedule}, fuse {fuse_method}"
             + ("" if schedule == "standard_static" else "   <-- NOT static"),
@@ -1384,6 +1522,12 @@ class H3WindowPlan:
                              "tooltip": "For `length -> windows`."}),
             "windows": ("INT", {"default": 3, "min": 1, "max": 64,
                         "tooltip": "For `windows -> length`."}),
+            # APPENDED 2026-09-11, to match H3ContextWindows' own `loop`.
+            "loop": ("BOOLEAN", {"default": False,
+                     "tooltip": "Show the LOOPED schedule: windows wrap past "
+                                "the end instead of the last one clamping back. "
+                                "Costs one extra window — the one that carries "
+                                "the join."}),
         }}
 
     RETURN_TYPES = ("INT", "INT", "STRING")
@@ -1394,7 +1538,7 @@ class H3WindowPlan:
                    "or check the schedule a length will actually produce.")
 
     def go(self, window_frames, overlap_frames, mode, total_frames=345,
-           windows=3):
+           windows=3, loop=False):
         from .timing import snap_run, video_latent_t
 
         notes = []
@@ -1431,22 +1575,38 @@ class H3WindowPlan:
                              f"run — using {length}")
 
         lat = video_latent_t(length)
-        sched = window_schedule(lat, w_lat, o_lat)
         rows, clamped = [], 0
-        for i, (a, b) in enumerate(sched):
-            px_a, px_b = _pixel_frame_at(a), _pixel_frame_at(b - 1) + 1
-            share = ""
-            if i:
-                prev_end = sched[i - 1][1]
-                ov = max(0, prev_end - a)
-                share = f"  overlap {ov} latent"
-                if ov != o_lat:
-                    share += f" (asked {o_lat} — clamped)"
-                    clamped += 1
-            rows.append(f"  {i + 1:02d}  latent {a:4d}-{b - 1:<4d}  frames "
-                        f"{px_a:5d}-{px_b:<5d}{share}")
+        if loop:
+            # No clamp and no "past the end" -- the wrap IS past the end. Report
+            # each window by where it starts and how far it runs, and mark the
+            # one that carries the join, because that is the window the whole
+            # schedule exists for.
+            sched = [(w[0], w[0] + len(w)) for w in
+                     looped_window_indices(lat, w_lat, o_lat)]
+            for i, w in enumerate(looped_window_indices(lat, w_lat, o_lat)):
+                a = w[0]
+                px_a = _pixel_frame_at(a)
+                tail = "  <-- carries the join" if window_is_wrapped(w) else ""
+                rows.append(f"  {i + 1:02d}  latent {a:4d}-{a + len(w) - 1:<4d} "
+                            f"(mod {lat})  frames {px_a:5d}-"
+                            f"{px_a + wf:<5d}{tail}")
+        else:
+            sched = window_schedule(lat, w_lat, o_lat)
+            for i, (a, b) in enumerate(sched):
+                px_a, px_b = _pixel_frame_at(a), _pixel_frame_at(b - 1) + 1
+                share = ""
+                if i:
+                    prev_end = sched[i - 1][1]
+                    ov = max(0, prev_end - a)
+                    share = f"  overlap {ov} latent"
+                    if ov != o_lat:
+                        share += f" (asked {o_lat} — clamped)"
+                        clamped += 1
+                rows.append(f"  {i + 1:02d}  latent {a:4d}-{b - 1:<4d}  frames "
+                            f"{px_a:5d}-{px_b:<5d}{share}")
 
-        head = [f"{len(sched)} window(s) over {length} frames ({lat} latent)",
+        head = [f"{len(sched)} window(s) over {length} frames ({lat} latent)"
+                + (" — LOOPED" if loop else ""),
                 f"  window {wf}f ({w_lat} latent), overlap {of}f ({o_lat}), "
                 f"stride {stride}f ({delta} latent)"
                 f"{'' if stride % 3 else '  — on both clocks'}",

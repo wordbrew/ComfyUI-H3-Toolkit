@@ -67,11 +67,14 @@ CONTRACT = {
          # appended 2026-09-11. It went in at the FRONT of the optional dict
          # first, which would have shifted every saved graph's widget values by
          # one -- caught here, which is what this file is for.
-         "margin_frames"],
+         "margin_frames",
+         # appended 2026-09-11: the looped window schedule
+         "loop"],
         ["model", "info"]),
     "H3WindowPlan": (
         "windowing",
-        ["window_frames", "overlap_frames", "mode", "total_frames", "windows"],
+        ["window_frames", "overlap_frames", "mode", "total_frames", "windows",
+         "loop"],
         ["length", "window_count", "info"]),
     "H3ChunkPlan": (
         "longform",

@@ -17,8 +17,8 @@ sys.modules.setdefault("torch", types.ModuleType("torch"))
 
 from timing import video_latent_t                        # noqa: E402
 from windowing import (FRAME_PER_TOKEN, audio_ticks_for_frames,      # noqa: E402
-                       crop_guide, frames_for_latent, map_modalities,
-                       window_schedule)
+                       crop_guide, frames_for_latent, looped_window_indices,
+                       map_modalities, window_is_wrapped, window_schedule)
 
 fails = []
 
@@ -315,6 +315,59 @@ ok("the clip's first and last windows take a one-sided margin",
    len(_wide[0][0]) < len(_wide[1][0]) and len(_wide[-1][0]) < len(_wide[1][0]))
 check("a margin of 0 changes nothing",
       [len(w[0]) for w in _widen(_inner, _TOTAL, 0)], [_W] * len(_inner))
+
+# --- looped windows ---------------------------------------------------------- #
+# A loop is a window SCHEDULE, not a post-process. The linear schedule pulls its
+# last window back to fit, so index 0 and index total-1 -- the two a loop has to
+# join -- are the two it covers least. Wrapping covers the join like any other
+# moment, and no window boundary lands there.
+print("looped windows wrap the join instead of leaving it at the edges")
+_LT, _LW, _LO = 102, 27, 12                 # 345f clip, 90f window, 39f overlap
+_loop = looped_window_indices(_LT, _LW, _LO)
+check("every window is the full length", {len(w) for w in _loop}, {_LW})
+check("every start is on a 5-token boundary",
+      [w[0] % 5 for w in _loop], [0] * len(_loop))
+check("starts run to the end of the clip",
+      [w[0] for w in _loop], list(range(0, _LT, _LW - _LO)))
+ok("the last window wraps", window_is_wrapped(_loop[-1]))
+ok("the first window does not", not window_is_wrapped(_loop[0]))
+check("no window repeats an index, so the += fuse is safe",
+      [w for w in _loop if len(set(w)) != len(w)], [])
+_lcov = {}
+for _w in _loop:
+    for _k in _w:
+        _lcov[_k] = _lcov.get(_k, 0) + 1
+check("every index is covered", [k for k in range(_LT) if k not in _lcov], [])
+# THE POINT OF THE WHOLE EXERCISE. Linearly, index 0 and index 101 are covered
+# once each while the middle is covered twice; those two are the join.
+ok("the join is covered as well as the middle",
+   min(_lcov[0], _lcov[_LT - 1]) >= max(_lcov.values()) - 1)
+check("a clip shorter than one window is a single window",
+      looped_window_indices(20, 27, 12), [list(range(20))])
+
+# window_start_pixel must read the FIRST index, not the smallest: a wrapped list
+# starts at 90 and contains 0, so `min` would place it at the clip origin --
+# exactly the bug absolute positioning exists to prevent.
+from windowing import window_start_pixel                          # noqa: E402
+
+
+class _W:
+    def __init__(self, idx):
+        self.index_list = idx
+
+
+check("a wrapped window is positioned by where it STARTS",
+      window_start_pixel(_W(_loop[-1])), 18 * 17)
+check("and a linear one is unchanged", window_start_pixel(_W(_loop[0])), 0)
+
+# audio has to wrap exactly where the video does, or the two fuse from
+# different places in the clip.
+_lshapes = [[1, 24, _LT, 70, 40], [1, 32, 2, 567]]
+_la = map_modalities(_loop[-1], _lshapes, 2)[1]
+check("a wrapped window's audio is still the right length", len(_la), 150)
+ok("and it wraps too", window_is_wrapped(_la))
+check("it starts where the video does", _la[0], audio_ticks_for_frames(18 * 17))
+check("no tick is repeated", len(set(_la)), len(_la))
 
 # --- guide clips are cropped to the window, not kept or dropped whole -------- #
 # A still is described entirely by its start index, so keep-or-drop was right for
