@@ -622,6 +622,56 @@ def _context_window_classes():
             windows = super().get_context_windows(model, x_in, model_options)
             return self._widen_for_margin(windows, x_in.shape[self.dim])
 
+        def _report_layout_builds(self, context_windows):
+            """One line per RUN: what the layouts were told vs what we asked.
+
+            WHY THIS IS NOT A DEBUG PRINT
+              Absolute positioning is the thing that makes windowing work at all
+              -- without it every window's target sits at the clip origin, so
+              each renders the opening of the shot and the overlaps crossfade
+              between two openings. It reaches the model through a consume-once
+              module global picked up inside `PackedLayout.__init__`, a hand-off
+              with three ways to fail silently: the patch not installed, the flag
+              off, or a build consuming a cursor nobody set.
+
+              None of those raise. The only symptom is a render that looks like
+              the bug the offset exists to remove, which is indistinguishable by
+              eye from windowing's OWN measured limit on a still background. So
+              the mechanism has to be able to say for itself whether it ran.
+
+              Logged once and then only when it CHANGES, so a 20-step run costs
+              one line, not 280.
+            """
+            try:
+                from .video import drain_layout_builds
+            except Exception:
+                return
+            builds = drain_layout_builds()
+            if not builds:
+                return
+            want = sorted({window_start_pixel(w) for w in context_windows})
+            got = sorted({s for _, s in builds})
+            absolute = bool(getattr(self._model, ABSOLUTE_FLAG, False))
+            key = (absolute, tuple(want), tuple(got), len(builds))
+            if key == getattr(self, "_last_build_report", None):
+                return
+            self._last_build_report = key
+            if not absolute:
+                logging.info("H3 windowing: absolute positions OFF — %d layout "
+                             "build(s) at the clip origin", len(builds))
+                return
+            if got == want:
+                logging.info("H3 windowing: absolute positions applied — %d "
+                             "layout build(s) over window starts %s",
+                             len(builds), want)
+            else:
+                logging.warning(
+                    "H3 windowing: absolute positions are ON but the layouts "
+                    "were told %s where the windows start at %s (%d build(s)). "
+                    "Every window whose start arrived as 0 renders the opening "
+                    "of the shot, which is the flicker this offset removes.",
+                    got, want, len(builds))
+
         def execute(self, calc_cond_batch, model, conds, x_in, timestep,
                     model_options):
             """MIRRORS comfy.context_windows.IndexListContextHandler.execute.
@@ -682,6 +732,8 @@ def _context_window_classes():
                             result.sub_conds, modality_window,
                             result.window_idx, total_windows, timestep,
                             accum[mod_idx], counts[mod_idx], biases[mod_idx])
+
+            self._report_layout_builds(context_windows)
 
             # fuse accumulated results into final conds
             try:
