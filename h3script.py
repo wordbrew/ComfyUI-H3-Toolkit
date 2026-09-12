@@ -135,11 +135,9 @@ def store_card(name):
 # still overrides any of them.
 PRESERVE_BY_KIND = {
     "person":  "facial identity, hair, eye colour and build",
-    "place":   "the layout, the architecture, the materials and the quality of "
-               "the light",
-    "setting": "the layout, the architecture, the materials and the quality of "
-               "the light",
-    "thing":   "its shape, proportions, colour, material and markings",
+    "place":   "layout, architecture, materials and quality of light",
+    "setting": "layout, architecture, materials and quality of light",
+    "thing":   "shape, proportions, colour, material and markings",
 }
 
 MAX_PICTURES = 4       # the reference node's ref_image slots
@@ -810,6 +808,17 @@ def emit(doc):
     """The document -> the fields H3 Long-Form Links and H3 Dialogue take."""
     idx, npic, naud = index(doc)
 
+    # which shots each name actually appears in, for the retention scope
+    shots_using = {}
+    for i, s in enumerate(doc["shots"], 1):
+        text = " ".join([s["description"]] + list(s["notes"]))
+        for ch in s["chunks"]:
+            text += " " + " ".join(ch["actions"])
+            text += " " + " ".join(l["who"] for l in ch["lines"])
+        for nm in set(NAME.findall(text)) | {l["who"] for ch in s["chunks"]
+                                             for l in ch["lines"]}:
+            shots_using.setdefault(nm, []).append(i)
+
     defs, rets = [], []
     for c in doc["cast"]:
         got = idx[c["name"]]
@@ -822,11 +831,22 @@ def emit(doc):
             lead = {"place": "the setting: ", "thing": ""}.get(
                 c.get("asset_kind"), "")
             desc = f"{tok} is {lead}{body_text or who}"
+            tail_note = ""
             if got["pictures"]:
                 desc += f", shown in {_pictures(got['pictures'])}"
+                # SAY WHAT THE REFERENCE IS NOT FOR. The worked example does this
+                # in every definition -- "The daylight park background of
+                # <Picture 2> is not present in the target video." Without it the
+                # model has a photograph and no instruction that only the subject
+                # is wanted, which is one plausible reading of a reference turning
+                # up as a shot of its own.
+                if c.get("asset_kind") != "place":
+                    tail_note = (f" The background and setting of "
+                                 f"{_pictures(got['pictures'])} are not present "
+                                 f"in the target video.")
             if got["audio"]:
                 desc += f", whose voice is <Audio {got['audio'][0]}>"
-            desc += "."
+            desc += "." + tail_note
         elif c["kind"] == "setting":
             desc = f"{tok} is the setting: {_sub(c['description'], idx)}"
         else:
@@ -862,13 +882,41 @@ def emit(doc):
         elif r == "free":
             note = "no constraint."
         else:
-            what = c.get("preserve") or "their appearance"
-            note = f"keep {what} consistent from shot to shot."
-        rets.append(f"{tok}: {r} - {note}")
+            # "keep their appearance consistent" said the same vague thing about a
+            # person, a room and a lamp. The guide's own examples are concrete and
+            # cite the pictures: "retain the same face, white swept-back hair ...".
+            what = c.get("preserve") or PRESERVE_BY_KIND.get(
+                c.get("asset_kind") or ("setting" if c["kind"] == "setting"
+                                        else "person"),
+                PRESERVE_BY_KIND["person"])
+            note = f"retain the same {what}"
+            if got["pictures"]:
+                note += f" as shown in {_pictures(got['pictures'])}"
+            note += "."
+        # WHICH SHOTS. The guide's form is `<Subject 1> (appears in [Shot 1] and
+        # [Shot 2]): marker - ...`, and a marker with no scope leaves the model to
+        # guess whether it applies to the whole take.
+        where = shots_using.get(c["name"], [])
+        scope = ""
+        if where and len(where) < len(doc["shots"]):
+            names = [f"[Shot {i}]" for i in where]
+            scope = (" (appears in " + (" and ".join(names) if len(names) < 3
+                     else ", ".join(names[:-1]) + " and " + names[-1]) + ")")
+        rets.append(f"{tok}{scope}: {r} - {note}")
 
-    body = []
+    # `[Shot 1]` opens untimed; every later cut carries `At MM:SS.mmm`. That is a
+    # sentence in the guide, not an example, so it binds. The clock is the take's
+    # own -- cumulative shot lengths -- which is what the author is describing;
+    # the finished clip differs by the handles the join drops, and no prompt has
+    # ever been given that number.
+    body, at_f = [], 0
     for n, s in enumerate(doc["shots"], 1):
-        part = f"[Shot {n}] {_sub(s['description'], idx)}"
+        head_ = f"[Shot {n}]"
+        if n > 1 and s.get("frames"):
+            secs = at_f / 24.0
+            head_ += f" At {int(secs // 60):02d}:{secs % 60:06.3f},"
+        at_f += int(s.get("frames") or 0)
+        part = f"{head_} {_sub(s['description'], idx)}"
         if not part.rstrip().endswith((".", "!", "?")):
             part += "."
         for note in s["notes"]:
@@ -914,7 +962,18 @@ def emit(doc):
     # downstream takes them apart. Without this a workflow has to concatenate
     # them by hand, in the right order, which is the bookkeeping this node exists
     # to remove.
-    summary = head.split("\n")[0] if head else "N/A"
+    # THE TASK-TYPE PREFIX IS A RULE, not decoration. The guide names six, and
+    # the wrong one changes behaviour -- `[video editing]` on an extension makes
+    # the model re-render the same action instead of continuing it. Our own
+    # assembled prompt was emitting the head's first line with no prefix at all.
+    n_sh = len(doc.get("shots", []))
+    who = ", ".join(f"<Subject {idx[c['name']]['subject']}>"
+                    for c in doc["cast"] if c["kind"] != "setting")
+    summary = (f"[{doc.get('task', 'reference generation')}] "
+               f"{'A single shot' if n_sh <= 1 else f'{n_sh} shots'}"
+               + (f" with {who}" if who else "")
+               + f", using the listed references for identity"
+               + (" and voice." if naud else "."))
     prompt = (
         "subject_definitions:\n" + defs_s + "\n\n"
         "summary:\n" + summary + "\n\n"
