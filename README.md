@@ -24,7 +24,7 @@ swirling colour artifacts in the generated region, and no setting avoids it.
 
 **`MiniMax H3/mask`** — `H3MatchSource`, `H3MaskInpaint`, `H3MaskStabilize`,
 `H3SubjectCrop`, `H3SubjectUncrop`, `H3ApplyCrop`, `H3PreviewMaskCrop`,
-`H3LatentPin`
+`H3LatentPin`, `H3LatentBracket`, `H3LatentInsert`
 
 Replace a masked region of an existing video while pinning everything outside it.
 
@@ -58,6 +58,20 @@ model actually receives it**, which is coarser than the one you drew.
 in a wide frame occupies few latent cells, so cut it out, render the cut at the
 budget the whole frame had, and paste it back. Same model, same cost, far more of
 it spent on the face. `H3SubjectUncrop` reverses the scale. See workflow 08.
+
+`H3LatentBracket` holds the opening and the ending of a clip and regenerates the
+middle at the same length — the model gets a destination, not just a past.
+`H3LatentInsert` does the other half: cut the clip at a frame and the take gets
+**longer**, with everything before the cut staying at the head and everything
+after it sliding down by the number of frames you inserted. Cut at 0 to extend
+the front, past the end to extend the back, anywhere between for an interior
+insert; `blend_before` / `blend_after` widen the generated span into the source
+so the new material has a run-up written for it. Both widgets step by 17 frames
+because that is one VAE chunk — coverage is positional, so the tail has to move
+by whole chunks or every latent step lands on a frame span it was not encoded
+for. Set the source encoder's `extra_frames` to the same number as
+`insert_frames`; if the two disagree the node says so before anything samples.
+See workflows 42 and 43.
 
 For a refinement pass, drop the **sigma shift**. Shift 12 is tuned for generating a
 scene from nothing and compresses the schedule toward sigma 1, so even denoise 0.10
