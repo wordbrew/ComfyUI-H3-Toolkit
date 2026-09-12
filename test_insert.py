@@ -1,0 +1,179 @@
+"""H3LatentInsert cuts a clip and generates NEW frames into the gap.
+
+WHAT THIS FILE IS DEFENDING
+
+  The node moves content. Everything else in this pack that moves content in
+  latent space has been wrong at least once, because coverage is POSITIONAL:
+  `FRAME_PER_TOKEN = (1,4,4,4,4)`, so latent step k covers 1 pixel frame when
+  k%5==0 and 4 otherwise. Slide the tail by a number of steps that is not a
+  multiple of 5 and every step lands on a coverage it was not encoded for --
+  which renders as a clip that is subtly out of time rather than as an error.
+
+  So the load-bearing check here is not "the mask holds the right region", it is
+  "source step s came out at target step s + 5m, for every single step". The
+  source is built with its own step index written into every cell, and the
+  assertion reads the target back and demands the whole tail by value.
+
+  The rest is the guards: a target canvas that is not source + insert, a hole
+  with nothing in it, and the `x[..., -0:]` trap that made a zero-length tail
+  hold the entire clip.
+
+    python3 test_insert.py
+"""
+import sys
+
+from _avstub import T, install, latent_t
+
+mask = install()
+from h3b.timing import audio_t  # noqa: E402
+
+fails = []
+
+
+def check(label, got, want):
+    if got != want:
+        fails.append(f"{label}: got {got!r}, want {want!r}")
+        print(f"  FAIL {label}: got {got!r}, want {want!r}")
+
+
+def ok(label, cond):
+    if not cond:
+        fails.append(label)
+        print(f"  FAIL {label}")
+
+
+def stamped(t_v, h=4, w=4):
+    """A video tensor whose every cell carries its own latent step index."""
+    data = []
+    for _ in range(24):
+        for k in range(t_v):
+            data.extend([float(k)] * (h * w))
+    return T((1, 24, t_v, h, w), data=data)
+
+
+def run(source_frames, insert, split, before=0, after=0, feather=0, strength=1.0,
+        target_frames=None):
+    target_frames = source_frames + insert if target_frames is None else target_frames
+    s_v, t_v = latent_t(source_frames), latent_t(target_frames)
+    s_a, t_a = audio_t(source_frames), audio_t(target_frames)
+    src = [stamped(s_v), T((1, 32, 2, s_a), 9.0)]
+    tgt = [T((1, 24, t_v, 4, 4), -1.0), T((1, 32, 2, t_a), 0.0)]
+    node = mask.NODE_CLASS_MAPPINGS["H3LatentInsert"]()
+    out = node.go({"samples": tgt}, {"samples": src}, split, insert, before, after,
+                  strength, audio_feather_ticks=feather)
+    lat, gen, total, info = out["result"]
+    return lat["samples"], lat["noise_mask"], gen, total, info, (s_v, t_v, s_a, t_a)
+
+
+SRC = 345                  # 17*20+5 -> 102 video steps, 575 audio ticks
+INS = 68                   # 4 VAE chunks -> 20 video steps
+
+print("an interior insert moves the tail by whole groups, and by value")
+(sv, sa), (mv, ma), gen, total, info, (s_v, t_v, s_a, t_a) = run(SRC, INS, 170)
+check("the source is 102 steps and the target 122", (s_v, t_v), (102, 122))
+check("the take is 68 frames longer", total, SRC + INS)
+check("split 170 is 10 chunks, so 50 steps stay at the head",
+      [mv.at(k, axis=2)[0] for k in (0, 49, 50)], [0.0, 0.0, 1.0])
+check("the head is the source's own steps, unmoved",
+      [sv.at(k, axis=2)[0] for k in (0, 49)], [0.0, 49.0])
+# THE CHECK THIS FILE EXISTS FOR. 20 inserted steps, so source step s has to
+# reappear at target step s+20 -- every one of them, not just the boundary.
+moved = [(k, sv.at(k, axis=2)[0]) for k in range(70, t_v)]
+check("every tail step lands exactly 20 steps later",
+      [k - v for k, v in moved], [20] * len(moved))
+check("the tail reaches the very last step", sv.at(t_v - 1, axis=2)[0], float(s_v - 1))
+check("and the whole tail is held",
+      [mv.at(k, axis=2)[0] for k in (69, 70, t_v - 1)], [1.0, 0.0, 0.0])
+check("the gap is untouched target", sv.at(60, axis=2)[0], -1.0)
+check("generated_frames is the inserted span", gen, INS)
+
+print("audio is anchored at both ends, so no rounding accumulates")
+check("the head holds audio_t(170) ticks",
+      [ma.at(k)[0] for k in (0, audio_t(170) - 1, audio_t(170))], [0.0, 0.0, 1.0])
+check("the tail holds the rest, ending at the end",
+      [ma.at(k)[0] for k in (t_a - (s_a - audio_t(170)) - 1,
+                             t_a - (s_a - audio_t(170)), t_a - 1)], [1.0, 0.0, 0.0])
+check("the generated gap is exactly the insert's duration",
+      t_a - s_a, (t_a - (s_a - audio_t(170))) - audio_t(170))
+check("held audio carries the source", sa.at(0)[0], 9.0)
+
+print("split 0 puts the new frames in front, split at the end puts them after")
+(svh, _), (mvh, _), genh, _, _, (_, t_vh, _, _) = run(SRC, INS, 0)
+check("nothing is held at the head", mvh.at(0, axis=2)[0], 1.0)
+check("the whole source sits at the end, shifted 20",
+      [svh.at(k, axis=2)[0] for k in (20, t_vh - 1)], [0.0, float(s_v - 1)])
+check("the first 20 steps are the new ones", mvh.at(19, axis=2)[0], 1.0)
+check("and step 20 begins the held source", mvh.at(20, axis=2)[0], 0.0)
+check("a prepend generates the insert", genh, INS)
+
+(svt, _), (mvt, _), gent, _, _, (_, t_vt, _, _) = run(SRC, INS, SRC)
+check("the whole source stays where it was",
+      [svt.at(k, axis=2)[0] for k in (0, s_v - 1)], [0.0, float(s_v - 1)])
+check("everything past it is generated",
+      [mvt.at(k, axis=2)[0] for k in (s_v - 1, s_v, t_vt - 1)], [0.0, 1.0, 1.0])
+check("an append generates the insert", gent, INS)
+# a split past the last frame is an append, not an error -- the last group is 5
+# frames, so 340 and 345 both mean "the end"
+check("a split inside the final 5-frame group still appends",
+      run(SRC, INS, 344)[1][0].at(s_v, axis=2)[0], 1.0)
+
+print("blend_before / blend_after widen the hole into the source")
+(svb, _), (mvb, _), genb, _, _, (_, t_vb, _, _) = run(SRC, INS, 170, before=34, after=51)
+check("the head now stops at 136 frames = 40 steps",
+      [mvb.at(k, axis=2)[0] for k in (39, 40)], [0.0, 1.0])
+check("the tail now starts at source frame 221 -> 65 steps, +20",
+      mvb.at(85, axis=2)[0], 0.0)
+check("the step before it is generated", mvb.at(84, axis=2)[0], 1.0)
+check("the tail is still phase-correct", svb.at(85, axis=2)[0], 65.0)
+check("generated_frames counts the run-up and run-out too", genb, INS + 34 + 51)
+# asked for 18 frames of run-out, got 34 -- one whole chunk, never less. The tail
+# therefore starts at source step 60, which is target step 80.
+check("blend_after snaps UP, so you never get less than you asked for",
+      [run(SRC, INS, 170, after=18)[1][0].at(k, axis=2)[0] for k in (79, 80)],
+      [1.0, 0.0])
+
+print("insert_frames 0 is the bracket: a hole, same length")
+(_, _), (mv0, _), gen0, total0, _, (_, t_v0, _, _) = run(SRC, 0, 170, before=34, after=34)
+check("the take is not longer", total0, SRC)
+check("and a hole is open in the middle",
+      [mv0.at(k, axis=2)[0] for k in (39, 40, 59, 60)], [0.0, 1.0, 1.0, 0.0])
+check("generated_frames is just the blend", gen0, 68)
+
+print("the audio feather runs the right way at each end")
+(_, _), (_, maf), _, _, _, (_, _, _, t_af) = run(SRC, INS, 170, feather=8)
+h = audio_t(170)
+ok("the head ramp rises into the gap",
+   maf.at(h - 8)[0] < maf.at(h - 4)[0] < maf.at(h - 1)[0] < 1.0)
+ok("the tail ramp falls into the held tail",
+   maf.at(t_af - 292)[0] > maf.at(t_af - 292 + 4)[0] > maf.at(t_af - 292 + 7)[0])
+check("deep inside the head is still fully held", maf.at(0)[0], 0.0)
+check("deep inside the tail is still fully held", maf.at(t_af - 1)[0], 0.0)
+
+print("it refuses a canvas that is not source + insert")
+# THE REFUSAL THAT MATTERS. A target built to the source's own length would put
+# the tail somewhere plausible and wrong, and the render would come back merely
+# odd rather than broken.
+for label, kwargs in (
+        ("a target that was never lengthened", dict(target_frames=SRC)),
+        ("a target lengthened by the wrong amount", dict(target_frames=SRC + 34)),
+        ("a hole with nothing in it", dict(insert=0, split=170))):
+    args = dict(source_frames=SRC, insert=INS, split=170)
+    args.update(kwargs)
+    try:
+        run(**args)
+        fails.append(f"{label}: no error raised")
+        print(f"  FAIL {label}: no error raised")
+    except ValueError:
+        pass
+
+print("the info says where the new frames went")
+ok("an interior insert names the frame", "at frame 170" in info)
+ok("it reports both lengths", "345 -> 413" in info)
+ok("a prepend says so", "in front of the clip" in run(SRC, INS, 0)[4])
+ok("an append says so", "after the clip" in run(SRC, INS, SRC)[4])
+
+print()
+if fails:
+    print(f"FAIL — {len(fails)} check(s)")
+    sys.exit(1)
+print("insert: the tail moves by whole groups, by value, and the canvas is checked")

@@ -17,177 +17,11 @@ WHAT THIS FILE IS DEFENDING
 
     python3 test_bracket.py
 """
-import math
 import sys
-import types
 
-# --- a torch stub, because this is index arithmetic and needs no kernels ----- #
-# Only what the node touches: clone, ones_like, linspace, cos, and slice
-# assignment. The stub RECORDS writes, which is what the assertions read.
+from _avstub import T, install, latent_t
 
-
-class T:
-    """A dense float array with numpy-ish slicing on the last two axes."""
-
-    def __init__(self, shape, fill=0.0, data=None):
-        self.shape = tuple(shape)
-        n = 1
-        for s in self.shape:
-            n *= s
-        self.data = list(data) if data is not None else [float(fill)] * n
-        self.device = "cpu"
-        self.dtype = "float32"
-
-    # the node only ever indexes [:, :, a:b] on video and [..., a:b] on audio,
-    # so the last axis (audio) and axis 2 (video) are the only ones that move.
-    def _axis(self, key):
-        if key is Ellipsis:
-            return len(self.shape) - 1, slice(None)
-        if isinstance(key, tuple):
-            for i, k in enumerate(key):
-                if isinstance(k, slice) and k != slice(None):
-                    return (len(self.shape) - 1 if key[0] is Ellipsis else i), k
-            return len(self.shape) - 1, slice(None)
-        return 0, key
-
-    def _span(self, key):
-        ax, sl = self._axis(key)
-        return ax, range(*sl.indices(self.shape[ax]))
-
-    def __setitem__(self, key, value):
-        ax, span = self._span(key)
-        vals = value.data if isinstance(value, T) else None
-        stride = 1
-        for s in self.shape[ax + 1:]:
-            stride *= s
-        outer = 1
-        for s in self.shape[:ax]:
-            outer *= s
-        w = 0
-        for o in range(outer):
-            for j, i in enumerate(span):
-                base = (o * self.shape[ax] + i) * stride
-                for k in range(stride):
-                    if vals is None:
-                        self.data[base + k] = float(value)
-                    else:
-                        self.data[base + k] = vals[w % len(vals)]
-                        w += 1
-
-    def __getitem__(self, key):
-        ax, span = self._span(key)
-        shape = list(self.shape)
-        shape[ax] = len(span)
-        stride = 1
-        for s in self.shape[ax + 1:]:
-            stride *= s
-        outer = 1
-        for s in self.shape[:ax]:
-            outer *= s
-        out = []
-        for o in range(outer):
-            for i in span:
-                base = (o * self.shape[ax] + i) * stride
-                out.extend(self.data[base:base + stride])
-        return T(shape, data=out)
-
-    # elementwise scalar arithmetic, which is all the feather ramp needs
-    def _map(self, f):
-        return T(self.shape, data=[f(v) for v in self.data])
-
-    def __mul__(self, k):
-        return self._map(lambda v: v * k)
-
-    __rmul__ = __mul__
-
-    def __add__(self, k):
-        return self._map(lambda v: v + k)
-
-    __radd__ = __add__
-
-    def __sub__(self, k):
-        return self._map(lambda v: v - k)
-
-    def __rsub__(self, k):
-        return self._map(lambda v: k - v)
-
-    def clone(self):
-        return T(self.shape, data=self.data)
-
-    def to(self, *a, **k):
-        return self
-
-    def at(self, axis_index, axis=None):
-        """Every value lying at one index of the moving axis."""
-        axis = len(self.shape) - 1 if axis is None else axis
-        stride = 1
-        for s in self.shape[axis + 1:]:
-            stride *= s
-        outer = 1
-        for s in self.shape[:axis]:
-            outer *= s
-        out = []
-        for o in range(outer):
-            base = (o * self.shape[axis] + axis_index) * stride
-            out.extend(self.data[base:base + stride])
-        return out
-
-
-_t = types.ModuleType("torch")
-_t.Tensor = T
-_t.ones_like = lambda x: T(x.shape, 1.0)
-_t.cos = lambda x: T(x.shape, data=[math.cos(v) for v in x.data])
-
-
-def _linspace(a, b, n, device=None, dtype=None):
-    if n == 1:
-        return T((1,), data=[float(a)])
-    step = (b - a) / (n - 1)
-    return T((n,), data=[a + step * i for i in range(n)])
-
-
-_t.linspace = _linspace
-_fn = types.ModuleType("torch.nn.functional")
-_nn = types.ModuleType("torch.nn")
-_nn.functional = _fn
-_t.nn = _nn
-sys.modules.update({"torch": _t, "torch.nn": _nn, "torch.nn.functional": _fn})
-
-_nested = types.ModuleType("comfy.nested_tensor")
-_nested.NestedTensor = lambda pair: list(pair)
-_comfy = types.ModuleType("comfy")
-_comfy.nested_tensor = _nested
-sys.modules.update({"comfy": _comfy, "comfy.nested_tensor": _nested})
-
-import importlib.util  # noqa: E402
-import pathlib  # noqa: E402
-
-_root = pathlib.Path(__file__).resolve().parent
-_pkg = types.ModuleType("h3b")
-_pkg.__path__ = [str(_root)]
-sys.modules["h3b"] = _pkg
-
-
-def _load(name):
-    spec = importlib.util.spec_from_file_location(f"h3b.{name}", _root / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[f"h3b.{name}"] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-# avlatent.av unpacks the nested pair; stub it to match the stub NestedTensor.
-_av = types.ModuleType("h3b.avlatent")
-_av.av = lambda s: (s[0], s[1])
-sys.modules["h3b.avlatent"] = _av
-_geom = types.ModuleType("h3b.geometry")
-_geom.cover_crop = _geom.crop_to_multiple = lambda *a, **k: None
-sys.modules["h3b.geometry"] = _geom
-_cp = types.ModuleType("h3b.chunkplan")
-_cp.snap_context = lambda n: int(n)
-sys.modules["h3b.chunkplan"] = _cp
-_load("timing")
-mask = _load("mask")
+mask = install()
 from h3b.timing import audio_t, frame_groups  # noqa: E402
 
 fails = []
@@ -206,7 +40,7 @@ def ok(label, cond):
 
 
 def run(total_frames, head, tail, feather=0, strength=1.0):
-    t_v = 2 if total_frames <= 5 else (total_frames - 5) // 17 * 5 + 2
+    t_v = latent_t(total_frames)
     t_a = audio_t(total_frames)
     src = [T((1, 24, t_v, 4, 4), 7.0), T((1, 32, 2, t_a), 9.0)]
     tgt = [T((1, 24, t_v, 4, 4), 0.0), T((1, 32, 2, t_a), 0.0)]

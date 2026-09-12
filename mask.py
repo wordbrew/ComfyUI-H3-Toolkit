@@ -727,6 +727,260 @@ class H3LatentBracket:
         return {"ui": {"h3char": [info]}, "result": (out, int(gen_px), info)}
 
 
+def _frames_of(latent_t):
+    """Pixel frames in a clip of `latent_t` video steps. Inverse of core's
+    `video_latent_t`: 17n+5 frames <-> 5n+2 steps."""
+    return max(5, (int(latent_t) - 2) // 5 * 17 + 5)
+
+
+class H3LatentInsert:
+    """Cut an existing clip at a frame and generate NEW frames into the gap.
+
+    THE DIFFERENCE FROM H3 LATENT BRACKET, WHICH IS THE WHOLE POINT
+      The bracket holds both ends and regenerates the middle AT THE SAME LENGTH:
+      whatever sat between the brackets is overwritten and the take is exactly as
+      long as it was. This makes the take LONGER. The source is cut at
+      `split_frame`, everything before it stays at the head, everything after it
+      slides down by `insert_frames`, and the span opened up between them is
+      generated. Nothing of the source is lost unless you ask for it.
+
+      `split_frame = 0` puts the new material in FRONT of the clip; `split_frame`
+      at or past the last frame puts it after; anything between is an interior
+      insert. One node covers head, middle and tail extension.
+
+    WHY THE MOVE IS SAFE HERE AND IS NOT IN A CHAIN
+      [[h3-motion-context]]: `FRAME_PER_TOKEN = (1,4,4,4,4)`, so coverage is
+      POSITIONAL -- latent step k covers 1 pixel frame when k%5==0 and 4
+      otherwise. Slide content by an arbitrary number of steps and every step
+      lands on a different coverage than it was encoded for, which is the
+      measured failure behind "never slice a previous latent".
+
+      Every count here is a multiple of 17 pixel frames = 5 latent steps, so the
+      tail moves by a whole number of GROUPS and every step keeps its k%5. That
+      is not a convention to be polite about the grid; it is the reason this is
+      a copy and not a resample. The widgets step by 17 so you cannot ask for an
+      illegal shift, and a target latent that is not `source + 17m` is refused.
+
+      The tail is written anchored to the END of the target, not by computing the
+      shift -- same result, and it cannot drift by a step if the arithmetic above
+      is ever wrong.
+
+    CHANGING THE SHOT AS WELL AS EXTENDING IT
+      `blend_before` / `blend_after` widen the generated span INTO the source on
+      either side of the cut, so the new material does not have to butt straight
+      against untouched footage. At `insert_frames = 0` they are the bracket:
+      a hole in the middle of a clip of unchanged length. Above 0 you get both --
+      new frames, and a rewritten run-up and run-out to carry into them.
+
+    THE AUDIO GRID
+      Audio is a flat 40 Hz axis, so head audio is anchored at 0 and tail audio
+      at the end and the gap between them is exactly the insert's duration -- no
+      rounding accumulates. 3 frames = 5 ticks, so multiples of 51 frames land on
+      exact ticks; anything else is off by up to one, which the feather covers.
+
+    STILL TWO TEMPORAL EDGES
+      Same honest warning as the bracket: both ends of the generated span are
+      temporal mask edges, and nothing has ever softened one. What this buys is
+      that the model has a fixed destination to arrive at, and that the footage
+      on both sides of it survives.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "latent": ("LATENT", {"tooltip": "The target latent, which must be "
+                        "LONGER than the source by exactly insert_frames. Set H3 "
+                        "Match Source Clip's `extra_frames` to the same number "
+                        "and its `length` output feeds the H3 conditioning node."}),
+            "source_latent": ("LATENT", {"tooltip": "The clip being extended. "
+                               "Prefer a SAMPLER output or a single encode; a "
+                               "decode and re-encode round trip is what climbed "
+                               "contrast down a chain."}),
+            "split_frame": ("INT", {"default": 0, "min": 0, "max": 3600,
+                            "step": 17,
+                            "tooltip": "Where the source is cut, in its OWN "
+                                       "frames. 0 inserts in front of the clip; "
+                                       "at or past the last frame appends after "
+                                       "it; anything between is an interior "
+                                       "insert. Steps by 17 because that is one "
+                                       "VAE chunk — the tail has to move by whole "
+                                       "chunks or every latent step lands on the "
+                                       "wrong frame coverage."}),
+            "insert_frames": ("INT", {"default": 68, "min": 0, "max": 3600,
+                              "step": 17,
+                              "tooltip": "How many NEW frames open up at the cut. "
+                                         "This is how much longer the take gets, "
+                                         "and the target latent has to be longer "
+                                         "by exactly this much. 0 turns the node "
+                                         "into H3 Latent Bracket."}),
+            "blend_before": ("INT", {"default": 0, "min": 0, "max": 3600,
+                             "step": 17,
+                             "tooltip": "Source frames BEFORE the cut that are "
+                                        "regenerated along with the insert, so "
+                                        "the new material has a run-up written "
+                                        "for it instead of butting against "
+                                        "untouched footage."}),
+            "blend_after": ("INT", {"default": 0, "min": 0, "max": 3600,
+                            "step": 17,
+                            "tooltip": "The same on the far side of the cut — "
+                                       "source frames rewritten as the run-out."}),
+            "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0,
+                         "step": 0.05,
+                         "tooltip": "Leave at 1.0. Nine rounds of measurement "
+                                    "found no value between 0 and 1 that "
+                                    "softened a temporal join — it is not a "
+                                    "seam control."}),
+        }, "optional": {
+            "audio_feather_ticks": ("INT", {"default": 8, "min": 0, "max": 256,
+                                    "tooltip": "Half-cosine release out of the "
+                                               "held head and back into the held "
+                                               "tail. Video cuts hard; a hard "
+                                               "audio edge clicks. 8 = 0.2s at "
+                                               "40 Hz.\n\nAbove 0 this is a "
+                                               "FRACTIONAL mask, and ComfyUI 0.35 "
+                                               "scales the model's output by the "
+                                               "mask — that interaction is open. "
+                                               "0 keeps the mask binary."}),
+        }}
+
+    RETURN_TYPES = ("LATENT", "INT", "INT", "STRING")
+    RETURN_NAMES = ("latent", "generated_frames", "total_frames", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    EXPERIMENTAL = True
+    DESCRIPTION = ("Cut a clip at a frame and generate new frames into the gap. "
+                   "The take gets longer; the footage either side survives.")
+
+    def go(self, latent, source_latent, split_frame, insert_frames, blend_before,
+           blend_after, strength, audio_feather_ticks=8):
+        import comfy.nested_tensor
+        video, aud = av(latent["samples"])
+        sv, sa = av(source_latent["samples"])
+
+        t_v, t_a = int(video.shape[2]), int(aud.shape[-1])
+        s_v, s_a = int(sv.shape[2]), int(sa.shape[-1])
+        if tuple(sv.shape[3:]) != tuple(video.shape[3:]):
+            raise ValueError(
+                f"H3 Latent Insert: the source is "
+                f"{int(sv.shape[4]) * 16}x{int(sv.shape[3]) * 16} and the target "
+                f"is {int(video.shape[4]) * 16}x{int(video.shape[3]) * 16}. Held "
+                f"frames are copied cell for cell, so the canvas has to match — "
+                f"wire H3 Match Source Clip's width and height into the "
+                f"conditioning node.")
+
+        s_px, t_px = _frames_of(s_v), _frames_of(t_v)
+        ins = max(0, int(insert_frames) // 17 * 17)
+        # THE CANVAS IS THE CONTRACT. Everything below assumes the tail moves by
+        # exactly `ins` frames; if the target was not built that long, the tail
+        # would land somewhere plausible and wrong, which is the failure mode
+        # this pack keeps paying for. Refuse instead.
+        if t_px != s_px + ins:
+            raise ValueError(
+                f"H3 Latent Insert: the source is {s_px} frame(s) and the target "
+                f"is {t_px}, but inserting {ins} needs a target of {s_px + ins}. "
+                f"Set `extra_frames` to {ins} on whichever node feeds the "
+                f"conditioning node's `length` — H3 Encode AV or H3 Match Source "
+                f"Clip — and leave that wire where it is.")
+
+        # A SOURCE FRAME -> THE STEP IT STARTS. The final group is 5 pixel frames
+        # (2 steps), not 17, so it has no interior boundary to cut at: anything
+        # landing in it means "the end of the clip", and snapping it down like a
+        # normal chunk would silently drop the last 5 frames off an append.
+        def _step_at(frames):
+            return s_v if frames >= s_px - 4 else max(0, frames) // 17 * 5
+
+        def _frames_at(step):
+            return s_px if step >= s_v else step // 5 * 17
+
+        # the cut, and how far the generated span reaches into the source either
+        # side of it. Before the cut we snap DOWN and after it UP, so asking for a
+        # blend always gets at least what you asked for rather than less.
+        cut_step = _step_at(min(max(0, int(split_frame)), s_px))
+        cut = _frames_at(cut_step)
+        hv = _step_at(cut - max(0, int(blend_before)))
+        from_step = s_v if cut_step >= s_v else min(
+            s_v, _step_at(-(-(cut + max(0, int(blend_after))) // 17) * 17))
+        tail_v = s_v - from_step
+
+        keep_to, keep_from = _frames_at(hv), _frames_at(from_step)
+        ha = audio_t(keep_to)
+        tail_a = s_a - audio_t(keep_from)
+
+        gen_v = t_v - hv - tail_v
+        gen_px = t_px - keep_to - (s_px - keep_from)
+        if gen_v <= 0:
+            raise ValueError(
+                f"H3 Latent Insert: holding frames 0-{keep_to} and "
+                f"{keep_from}-{s_px} of the source leaves {gen_v} video step(s) "
+                f"to generate. Insert more frames, or widen blend_before / "
+                f"blend_after.")
+
+        new_v, new_a = video.clone(), aud.clone()
+        hold = 1.0 - float(strength)
+        mask_v = torch.ones_like(video)
+        mask_a = torch.ones_like(aud)
+
+        # NEGATIVE INDEXING WOULD BE A SILENT NO-OP AT 0 — `x[..., -0:]` is the
+        # whole tensor, so a zero-length tail would hold the entire clip and
+        # generate nothing. Explicit bounds, guarded, same as the bracket.
+        if hv:
+            new_v[:, :, :hv] = sv[:, :, :hv].to(new_v.device, new_v.dtype)
+            mask_v[:, :, :hv] = hold
+        if ha:
+            new_a[..., :ha] = sa[..., :ha].to(new_a.device, new_a.dtype)
+            mask_a[..., :ha] = hold
+        if tail_v:
+            new_v[:, :, t_v - tail_v:] = sv[:, :, s_v - tail_v:].to(new_v.device,
+                                                                    new_v.dtype)
+            mask_v[:, :, t_v - tail_v:] = hold
+        if tail_a:
+            new_a[..., t_a - tail_a:] = sa[..., s_a - tail_a:].to(new_a.device,
+                                                                  new_a.dtype)
+            mask_a[..., t_a - tail_a:] = hold
+
+        f = int(audio_feather_ticks)
+        if f and strength > 0:
+            def _smoothstep(n):
+                r = torch.linspace(0.0, 1.0, n + 2, device=mask_a.device,
+                                   dtype=mask_a.dtype)[1:-1]
+                return 0.5 - 0.5 * torch.cos(r * 3.141592653589793)
+
+            n = min(f, ha)
+            if n:
+                mask_a[..., ha - n:ha] = hold + (1.0 - hold) * _smoothstep(n)
+            n = min(f, tail_a)
+            if n:
+                mask_a[..., t_a - tail_a:t_a - tail_a + n] = (
+                    1.0 - (1.0 - hold) * _smoothstep(n))
+
+        out = dict(latent)
+        out["samples"] = comfy.nested_tensor.NestedTensor((new_v, new_a))
+        out["noise_mask"] = comfy.nested_tensor.NestedTensor((mask_v, mask_a))
+
+        where = ("in front of the clip" if cut == 0 else
+                 "after the clip" if cut >= s_px else f"at frame {cut}")
+        info = "\n".join([
+            f"H3 LATENT INSERT: {ins} new frame(s) {where} — {s_px} -> {t_px} "
+            f"({describe(t_px)})",
+            f"  held    source 0-{keep_to} and {keep_from}-{s_px}"
+            + (f", regenerating {cut - keep_to} frame(s) of run-up" if keep_to < cut
+               else "")
+            + (f" and {keep_from - cut} of run-out" if keep_from > cut else ""),
+            f"  video   {hv} + {tail_v} of {t_v} step(s) held, {gen_v} generated",
+            f"  audio   {ha} + {tail_a} of {t_a} tick(s) held"
+            + (f", feathered over {f} tick(s) each side" if f else " (hard edges)"),
+            f"  new span: frames {keep_to}-{keep_to + gen_px} of {t_px}",
+            "  BOTH edges of that span are temporal mask edges and no setting has "
+            "ever softened one. What is new is that the footage either side of it "
+            "survives.",
+        ])
+        logging.info("H3LatentInsert: cut %d, +%d frames (%d->%d), holding "
+                     "%d+%d of %d video step(s)",
+                     cut, ins, s_px, t_px, hv, tail_v, t_v)
+        return {"ui": {"h3char": [info]},
+                "result": (out, int(gen_px), int(t_px), info)}
+
+
 class H3MatchSource:
     """Derive width / height / length from a source clip, so masking lines up.
 
@@ -808,6 +1062,14 @@ class H3MatchSource:
                                            "equivalent and is not: it misses the frame "
                                            "trim, so the mask ends up longer than the "
                                            "clip."}),
+            "extra_frames": ("INT", {"default": 0, "min": 0, "max": 3600, "step": 17,
+                             "tooltip": "Frames to ADD to the `length` output only — "
+                                        "the images are still the source's own length. "
+                                        "For H3 Latent Insert, which needs a target "
+                                        "canvas longer than the source by exactly the "
+                                        "number of frames being inserted. Set it to the "
+                                        "same number as insert_frames and leave `length` "
+                                        "wired where it already is. 0 = off."}),
         }}
 
     # mask_2 sits next to mask, where it reads. That is a deliberate break: slot
@@ -824,7 +1086,8 @@ class H3MatchSource:
                    "conditioning node so an inpaint can never be shape-mismatched.")
 
     def go(self, images, mode="fill", target_width=0, target_height=0,
-           target_megapixels=0.0, av_aligned=False, mask=None, mask_2=None):
+           target_megapixels=0.0, av_aligned=False, mask=None, mask_2=None,
+           extra_frames=0):
         import math
         import torch.nn.functional as Fn
         n, h, w = images.shape[0], images.shape[1], images.shape[2]
@@ -944,6 +1207,17 @@ class H3MatchSource:
         # up longer than the clip and H3 Mask Inpaint rejects it.
         masks = [None if m is None else m[:length] for m in masks]
 
+        # THE IMAGES KEEP THE SOURCE'S LENGTH; only the reported one grows. A
+        # masking node needs the frames and the mask to stay the same length as
+        # each other, and H3 Latent Insert needs a CANVAS longer than the clip
+        # it is inserting into. Those are different numbers, so this only ever
+        # moves the one that feeds the conditioning node.
+        extra = max(0, int(extra_frames)) // 17 * 17
+        length_out = length + extra
+        if extra:
+            notes.append(f"length reports {length_out} — {length} source + {extra} "
+                         f"for an insert; the images are still {length}")
+
         mp = cw * ch / 1e6
         info = f"{cw}x{ch} ({mp:.2f} MP), " + describe(length)
         if notes:
@@ -959,7 +1233,7 @@ class H3MatchSource:
         if masks[1] is not None:
             info += " | 2 masks conformed together"
         return {"ui": {"h3char": [info]},
-                "result": (images, m1, m2, cw, ch, length, info)}
+                "result": (images, m1, m2, cw, ch, length_out, info)}
 
 
 
@@ -1066,6 +1340,7 @@ NODE_CLASS_MAPPINGS = {
     "H3MaskInpaint": H3MaskInpaint,
     "H3LatentPin": H3LatentPin,
     "H3LatentBracket": H3LatentBracket,
+    "H3LatentInsert": H3LatentInsert,
     "H3MatchSource": H3MatchSource,
     "H3MaskStabilize": H3MaskStabilize,
 }
@@ -1073,6 +1348,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "H3MaskInpaint": "H3 Mask Inpaint (region replace)",
     "H3LatentPin": "H3 Latent Pin (cuts — read description)",
     "H3LatentBracket": "H3 Latent Bracket (hold both ends)",
+    "H3LatentInsert": "H3 Latent Insert (extend at a cut)",
     "H3MatchSource": "H3 Match Source Clip",
     "H3MaskStabilize": "H3 Stabilize Mask (temporal)",
 }
