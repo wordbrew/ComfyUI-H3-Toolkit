@@ -47,19 +47,48 @@ INSTRUMENTS = ["guitar", "ukulele", "piano", "bass", "drums", "violin", "cello",
 # else, and was clean at two seeds — one of them the seed that had cut. The
 # working 14-clip one-take never uses the word: scene changes are staged
 # physically, through doors and corridors.
+#
+# THE LIST ONLY HELD THE "no X" FORM, and a prohibition does not need that word.
+# "She does not stand up and the camera does not move" forbids exactly what
+# "no camera movement" forbids, was written straight past this check on
+# 2026-09-11, and named the two failures -- position changing, camera moving --
+# that the render then produced. Negation is the trap, not the spelling of it.
 NAMES_FAILURE = [
     r"\bmust not appear\b", r"\bnot frames of the target\b", r"\bno cuts?\b",
     r"\bno camera movement\b", r"\bno angle change\b", r"\bdo(?:es)? not cut\b",
     r"\bwithout (?:any )?cuts?\b", r"\bavoid cut", r"\bnever cuts?\b",
     r"\bno jump cuts?\b", r"\bmust not (?:be shown|be rendered|appear as)\b",
+    # the same prohibitions in "does not" / "doesn't" / "never" clothing
+    r"\b(?:do(?:es)?n?'?t?\s+not|does not|do not|doesn't|don't|never)\s+"
+    r"(?:move|shift|change|stand up|get up|rise|turn away|leave|pan|tilt|zoom|"
+    r"cut away|reframe)\b",
+    r"\bcamera (?:does not|doesn't|never)\b",
+    r"\bwithout (?:any )?(?:camera )?(?:movement|motion)\b",
+    r"\bno (?:movement|motion|panning|zooming|reframing)\b",
 ]
 
 
 def _section(text, name):
-    """Body of one labelled section, or None."""
+    """Body of one labelled section, or None if the heading is absent."""
     m = re.search(rf"(?im)^\s*{name}\s*:\s*(.*?)(?=^\s*(?:{'|'.join(SECTIONS)})\s*:|\Z)",
                   text, re.S)
     return m.group(1).strip() if m else None
+
+
+def _said(body):
+    """Does this section actually SAY anything?
+
+    A HEADING IS NOT AN ANSWER. The six-section format wants all six headings
+    present, so a section with nothing to put in it carries the literal "N/A" --
+    filled-in and empty at the same time. Which of the two a rule wants depends
+    on the rule: `format/sections` is asking whether this is the six-section
+    format (headings), every content rule is asking whether the model was told
+    anything (this).
+
+    Conflating them let a prompt whose retention_analysis read N/A sail past
+    `refs/no-retention`, which is the single thing that rule exists to catch.
+    """
+    return bool(body) and body.strip().upper() not in ("N/A", "NONE", "-")
 
 
 def lint(prompt, long_form=False):
@@ -88,7 +117,7 @@ def lint(prompt, long_form=False):
                 f"a task-type prefix in summary, and retention_analysis — without them "
                 f"the reference has no declared role and the model improvises.")
         else:
-            if six["subject_definitions"] is None:
+            if not _said(six["subject_definitions"]):
                 err("refs/undefined", "References used but there is no subject_definitions "
                                       "section binding them.")
             else:
@@ -96,7 +125,7 @@ def lint(prompt, long_form=False):
                     if f"<{kind} {n}>" not in six["subject_definitions"]:
                         warn("refs/unbound",
                              f"<{kind} {n}> is used but never bound in subject_definitions.")
-            if six["retention_analysis"] is None:
+            if not _said(six["retention_analysis"]):
                 err("refs/no-retention",
                     "References used but no retention_analysis. Each one needs a marker: "
                     f"visual {'/'.join(VISUAL_MARKERS)}; audio {'/'.join(AUDIO_MARKERS)}.")
@@ -129,6 +158,49 @@ def lint(prompt, long_form=False):
             err("summary/no-task-type",
                 "summary has no task-type prefix. One of: "
                 + ", ".join(f"[{t}]" for t in TASK_TYPES))
+
+    # --- a subject the shot names but nothing defines
+    #
+    # WHY THIS IS ITS OWN RULE
+    #   Every rule above keys off <Picture|Video|Audio N>, so a prompt that
+    #   names <Subject 1> in the action and declares no references at all walks
+    #   past all of them. That prompt renders: there is no error, no missing
+    #   tag, nothing to catch. What the model gets is an actor with no
+    #   description and no instruction to keep them the same, and it re-decides
+    #   who and where they are whenever it has room to -- across a seam, across
+    #   a window, across a long shot.
+    #
+    #   Measured on the engine 2026-09-11: shared conditioning is the strongest
+    #   lever on whether neighbouring windows agree about content (references
+    #   halved window disagreement, 0.358 -> 0.167). subject_definitions and
+    #   retention_analysis are the text half of exactly that, and a graph can
+    #   ship with both reading N/A while looking completely filled in.
+    subjects = sorted({int(n) for n in re.findall(r"<Subject\s+(\d+)>", body or "")})
+    if subjects:
+        sd = six["subject_definitions"]
+        if not _said(sd):
+            err("subject/undefined",
+                f"detailed_description acts out <Subject {subjects[0]}> but "
+                f"subject_definitions is empty. The model is told to render "
+                f"someone it has never been described — so it invents one, and "
+                f"invents again wherever it is free to.")
+        else:
+            for n in subjects:
+                if f"<Subject {n}>" not in sd:
+                    warn("subject/unbound",
+                         f"<Subject {n}> acts in detailed_description but is "
+                         f"never defined in subject_definitions.")
+        if not _said(six["retention_analysis"]):
+            err("subject/no-retention",
+                "There are subjects but retention_analysis is empty. Retention "
+                "is what holds identity and framing ACROSS the take; without it "
+                "nothing in the prompt asks for the same person, the same "
+                "distance or the same framing from one second to the next. On a "
+                "long or windowed render that reads as the shot changing angle "
+                "on its own. Bind it to the SUBJECT: '<Subject 1> (appears in "
+                "[Shot 1]): fully_preserved - preserve her facial identity, "
+                "hairstyle, colouring and body proportions, while allowing "
+                "natural poses, expressions and framing.'")
 
     # --- the documented task-type trap
     if "[video editing]" in low and re.search(r"\b(continu|extend|resum|carries on)", low):

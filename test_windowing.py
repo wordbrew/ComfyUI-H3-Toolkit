@@ -129,7 +129,8 @@ SUBCLASSES = {"H3WindowingState": "WindowingState",
 # methods that are OURS and override nothing. Listed one by one on purpose: an
 # "ignore anything private" rule would have hidden _widen_for_margin sitting on
 # the wrong class, which is the exact mistake this check exists to catch.
-NEW_METHODS = {"_get_modality_dims", "__post_init__", "_widen_for_margin"}
+NEW_METHODS = {"_get_modality_dims", "__post_init__", "_widen_for_margin",
+               "_report_layout_builds"}
 # module-level function -> the core function it mirrors
 MIRRORED_FUNCS = {"_h3_sampler_sample_wrapper": "_sampler_sample_wrapper"}
 
