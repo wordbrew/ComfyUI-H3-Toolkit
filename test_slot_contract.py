@@ -110,6 +110,11 @@ CONTRACT = {
         "chunkrun",
         ["latent", "source_latent", "context_length", "audio_feather_ticks"],
         ["latent", "trim_frames", "info"]),
+    "H3LatentBracket": (
+        "mask",
+        ["latent", "source_latent", "head_frames", "tail_frames", "strength",
+         "audio_feather_ticks"],
+        ["latent", "generated_frames", "info"]),
 }
 
 
