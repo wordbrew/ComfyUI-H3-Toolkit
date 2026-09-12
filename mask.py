@@ -19,8 +19,8 @@ import torch.nn.functional as Fn
 from .avlatent import av
 from .chunkplan import snap_context
 from .geometry import cover_crop, crop_to_multiple
-from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
-                     frame_groups, is_av_aligned, snap_av_aligned)
+from .timing import (FPS, align_frames, audio_t, av_aligned_runs_through,
+                     describe, frame_groups, is_av_aligned, snap_av_aligned)
 
 CATEGORY = "MiniMax H3/mask"
 
@@ -509,6 +509,224 @@ class H3LatentPin:
         return {"ui": {"h3char": [info]}, "result": (out, n, info)}
 
 
+class H3LatentBracket:
+    """Hold BOTH ends of a clip and generate the middle.
+
+    THE QUESTION THIS EXISTS TO ANSWER
+      Every seam we have measured had a pinned PAST and an open future. The
+      failure is always the same shape -- "the model reproduces the handed-over
+      prefix, then makes a fresh decision" -- and it has never been fixed:
+      feathering, partial strength, whole-clip gradients and sigma-release all
+      came back null over nine rounds, and three later attempts at sharing
+      context between neighbours (drift control, the halo, the window margin)
+      failed too.
+
+      Every one of those gave the model MORE context about where it came from.
+      None gave it anywhere to arrive. A held tail does: the last steps are
+      stamped back at every denoise step, so the clip cannot end anywhere except
+      where the source ends. The model is not free to make a fresh decision,
+      because the decision is already made at both ends.
+
+      That is structurally unlike everything in the failed pile, which is the
+      whole reason to try it. It is NOT a prediction that it works.
+
+    WHAT IT IS FOR BESIDES THAT
+      Interior V2V. Feed a clip, keep its opening and its ending, regenerate
+      what happens in between -- a different action, a different line, a
+      different beat, with the shot arriving exactly where the rest of the edit
+      needs it to. Front-and-tail extension is what a chain already does; this
+      is the case chaining structurally cannot reach.
+
+    WHAT IT DOES TO THE LATENT
+      The source's first `head_frames` and last `tail_frames` are copied into
+      the target in both streams and their noise mask set to 0. Nothing is added
+      to the packed sequence -- no extra rows, no token cost. The middle is
+      denoised normally.
+
+    THE GRID, WHICH IS SIMPLER HERE THAN IN A CHAIN
+      `H3LatentPin` needs legal runs (17n+5) because it moves content from the
+      END of one clip to the START of another, and only 5j+2 steps land at the
+      same phase after that move. Nothing MOVES here: head stays at the head,
+      tail stays at the tail, so any count is phase-correct. What is worth
+      having instead is whole VAE chunks, so a held region is a round number of
+      them -- 5 latent steps cover 17 pixel frames wherever they start, so both
+      widgets step by 17.
+
+      Multiples of 51 also land on exact 40 Hz audio ticks (3 frames = 5 ticks).
+      Anything else rounds by up to a tick at the boundary, which the feather
+      covers.
+
+    TWO TEMPORAL EDGES, NOT ONE
+      Be clear-eyed: this has two of the edges that have never been softened.
+      If the middle reads as bracketed by cuts, that is the known failure and
+      not a surprise. The interesting outcome is the CONTENT between them --
+      whether a model with a fixed destination drifts the way an open-ended one
+      does.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "latent": ("LATENT", {"tooltip": "The target latent. Same shape and "
+                        "length as the source — use H3 Match Source Clip."}),
+            "source_latent": ("LATENT", {"tooltip": "The clip being edited. Its "
+                               "head and tail are copied in and held. Prefer a "
+                               "SAMPLER output or a single encode; a decode and "
+                               "re-encode round trip is what climbed contrast "
+                               "down a chain."}),
+            "head_frames": ("INT", {"default": 34, "min": 0, "max": 3600,
+                            "step": 17,
+                            "tooltip": "Pixel frames held at the START. 5 latent "
+                                       "steps cover 17 pixel frames, so this "
+                                       "steps by 17 and a held region is always "
+                                       "whole VAE chunks. Multiples of 51 also "
+                                       "land on exact 40 Hz audio ticks."}),
+            "tail_frames": ("INT", {"default": 34, "min": 0, "max": 3600,
+                            "step": 17,
+                            "tooltip": "Pixel frames held at the END. The half "
+                                       "that has never been tested: every seam "
+                                       "we have measured had a pinned past and "
+                                       "an open future."}),
+            "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0,
+                         "step": 0.05,
+                         "tooltip": "Leave at 1.0. Nine rounds of measurement "
+                                    "found no value between 0 and 1 that "
+                                    "softened a temporal join — it is not a "
+                                    "seam control."}),
+        }, "optional": {
+            "audio_feather_ticks": ("INT", {"default": 8, "min": 0, "max": 256,
+                                    "tooltip": "Half-cosine release out of the "
+                                               "head and back into the tail. "
+                                               "Video cuts hard from held to "
+                                               "generated; a hard audio edge "
+                                               "clicks. 8 = 0.2s at 40 Hz.\n\n"
+                                               "Above 0 this is a FRACTIONAL "
+                                               "mask, and ComfyUI 0.35 scales "
+                                               "the model's output by the mask "
+                                               "— that interaction is open. 0 "
+                                               "keeps the mask binary."}),
+        }}
+
+    RETURN_TYPES = ("LATENT", "INT", "STRING")
+    RETURN_NAMES = ("latent", "generated_frames", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    EXPERIMENTAL = True
+    DESCRIPTION = ("Hold the opening and the ending of a clip, generate the "
+                   "middle. The model gets a destination, not just a past.")
+
+    def go(self, latent, source_latent, head_frames, tail_frames, strength,
+           audio_feather_ticks=8):
+        import comfy.nested_tensor
+        video, aud = av(latent["samples"])
+        sv, sa = av(source_latent["samples"])
+
+        t_v, t_a = int(video.shape[2]), int(aud.shape[-1])
+        if tuple(sv.shape[2:]) != tuple(video.shape[2:]):
+            raise ValueError(
+                f"H3 Latent Bracket: the source is {int(sv.shape[2])} step(s) at "
+                f"{int(sv.shape[4]) * 16}x{int(sv.shape[3]) * 16} and the target "
+                f"is {t_v} at {int(video.shape[4]) * 16}x"
+                f"{int(video.shape[3]) * 16}. Held frames are copied in place, "
+                f"so the two have to be the same clip shape — wire H3 Match "
+                f"Source Clip into the conditioning node.")
+
+        # 5 latent steps cover 17 pixel frames wherever they start, so a whole
+        # number of chunks at either end needs no phase arithmetic at all.
+        hf = max(0, int(head_frames) // 17 * 17)
+        tf = max(0, int(tail_frames) // 17 * 17)
+        hv, tv = hf // 17 * 5, tf // 17 * 5
+        ha, ta = audio_t(hf), audio_t(tf)
+
+        if hv + tv >= t_v:
+            raise ValueError(
+                f"H3 Latent Bracket: holding {hf} + {tf} frames is {hv} + {tv} "
+                f"of {t_v} video step(s), which leaves nothing to generate. "
+                f"Shorten the brackets or lengthen the clip.")
+        if ha + ta >= t_a:
+            raise ValueError(
+                f"H3 Latent Bracket: the audio brackets are {ha} + {ta} of "
+                f"{t_a} tick(s), leaving no middle.")
+        total_px = sum(frame_groups(t_v))
+        new_v, new_a = video.clone(), aud.clone()
+        hold = 1.0 - float(strength)
+        mask_v = torch.ones_like(video)
+        mask_a = torch.ones_like(aud)
+
+        if hv == 0 and tv == 0:
+            # PASS THROUGH WITH A MASK, NOT WITHOUT ONE. An all-ones mask is a
+            # no-op for the sampler and costs nothing, but its ABSENCE is not:
+            # H3ChunkLatentContext shipped a bare passthrough and downstream
+            # nodes that read `noise_mask` refused the latent outright. Same
+            # lesson, so make the same shape either way.
+            out = dict(latent)
+            out["noise_mask"] = comfy.nested_tensor.NestedTensor((mask_v, mask_a))
+            msg = (f"H3 LATENT BRACKET: nothing held — {int(head_frames)} and "
+                   f"{int(tail_frames)} both fall below one VAE chunk (17 "
+                   f"frames), so the whole clip is generated.")
+            return {"ui": {"h3char": [msg]}, "result": (out, int(total_px), msg)}
+
+        if hv:
+            new_v[:, :, :hv] = sv[:, :, :hv].to(new_v.device, new_v.dtype)
+            mask_v[:, :, :hv] = hold
+        if ha:
+            new_a[..., :ha] = sa[..., :ha].to(new_a.device, new_a.dtype)
+            mask_a[..., :ha] = hold
+        # NEGATIVE INDEXING WOULD BE A SILENT NO-OP AT 0. `x[..., -0:]` is the
+        # WHOLE tensor, not an empty slice, so a zero-length tail would hold the
+        # entire clip and generate nothing. Guarded by the `if`, and written with
+        # explicit bounds so the guard is not the only thing standing between
+        # this and a render that ignores the prompt entirely.
+        if tv:
+            new_v[:, :, t_v - tv:] = sv[:, :, t_v - tv:].to(new_v.device,
+                                                            new_v.dtype)
+            mask_v[:, :, t_v - tv:] = hold
+        if ta:
+            new_a[..., t_a - ta:] = sa[..., t_a - ta:].to(new_a.device,
+                                                          new_a.dtype)
+            mask_a[..., t_a - ta:] = hold
+
+        f = int(audio_feather_ticks)
+        if f and strength > 0:
+            def _smoothstep(n):
+                """n points rising 0 -> 1 on a half cosine, endpoints excluded."""
+                r = torch.linspace(0.0, 1.0, n + 2, device=mask_a.device,
+                                   dtype=mask_a.dtype)[1:-1]
+                return 0.5 - 0.5 * torch.cos(r * 3.141592653589793)
+
+            n = min(f, ha)
+            if n:
+                # leaving the head: held -> generated
+                mask_a[..., ha - n:ha] = hold + (1.0 - hold) * _smoothstep(n)
+            n = min(f, ta)
+            if n:
+                # entering the tail: generated -> held, the mirror image
+                mask_a[..., t_a - ta:t_a - ta + n] = (
+                    1.0 - (1.0 - hold) * _smoothstep(n))
+
+        out = dict(latent)
+        out["samples"] = comfy.nested_tensor.NestedTensor((new_v, new_a))
+        out["noise_mask"] = comfy.nested_tensor.NestedTensor((mask_v, mask_a))
+
+        gen_v = t_v - hv - tv
+        gen_px = max(0, total_px - hf - tf)
+        info = "\n".join([
+            f"H3 LATENT BRACKET: holding {hf} frame(s) at the head and {tf} at "
+            f"the tail",
+            f"  video  {hv} + {tv} of {t_v} step(s) held, {gen_v} generated",
+            f"  audio  {ha} + {ta} of {t_a} tick(s) held"
+            + (f", feathered over {min(f, ha or f)} tick(s) each side" if f else
+               " (hard edges)"),
+            f"  generated span: frames {hf}-{hf + gen_px} of {total_px}",
+            "  BOTH edges are temporal mask edges, and no setting has ever "
+            "softened one. What is new is that the model has a destination.",
+        ])
+        logging.info("H3LatentBracket: head %df (%d/%d) tail %df (%d/%d), "
+                     "generating %d video step(s)",
+                     hf, hv, ha, tf, tv, ta, gen_v)
+        return {"ui": {"h3char": [info]}, "result": (out, int(gen_px), info)}
+
+
 class H3MatchSource:
     """Derive width / height / length from a source clip, so masking lines up.
 
@@ -847,12 +1065,14 @@ class H3MaskStabilize:
 NODE_CLASS_MAPPINGS = {
     "H3MaskInpaint": H3MaskInpaint,
     "H3LatentPin": H3LatentPin,
+    "H3LatentBracket": H3LatentBracket,
     "H3MatchSource": H3MatchSource,
     "H3MaskStabilize": H3MaskStabilize,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "H3MaskInpaint": "H3 Mask Inpaint (region replace)",
     "H3LatentPin": "H3 Latent Pin (cuts — read description)",
+    "H3LatentBracket": "H3 Latent Bracket (hold both ends)",
     "H3MatchSource": "H3 Match Source Clip",
     "H3MaskStabilize": "H3 Stabilize Mask (temporal)",
 }
