@@ -254,9 +254,29 @@ setTimeout(() => {
   };
 
   console.log("every control resolves when clicked");
-  for (const label of ["Add a person", "Add a place", "Add a shot"]) {
+  for (const label of ["Add a reference", "Add a shot"]) {
     check(label, () => click(label));
   }
+  check("switching a reference to 'Described person' swaps in a text field", () => {
+    // the handler for this was overwritten by a loop that set refresh on every
+    // control, so the picker never went away and there was nowhere to type
+    let kind = null;
+    const walk = (n) => {
+      if (!kind && n.tagName === "select" &&
+          n.children.some((o) => o.textContent === "Described person")) kind = n;
+      for (const c of n.children) walk(c);
+    };
+    walk(body);
+    if (!kind) throw new Error("no reference-kind control drawn");
+    if (typeof kind.onchange !== "function") throw new Error("kind has no handler");
+    kind.value = "subject";
+    kind.onchange();
+    const rowEl = kind.parentNode;
+    const textField = rowEl.children.find(
+      (c) => c.tagName === "input" && (c.style.cssText || "").indexOf("none") < 0 &&
+             c.placeholder && c.placeholder.indexOf("describe") >= 0);
+    if (!textField) throw new Error("no visible description field after switching");
+  });
   for (const label of ["Someone speaks", "Something happens",
                        "A detail to hold", "A LoRA for this shot"]) {
     check(label, () => click(label));
