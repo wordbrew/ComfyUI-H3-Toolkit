@@ -128,6 +128,22 @@ def take_window_start():
     return v
 
 
+# WHAT EVERY LAYOUT BUILD WAS TOLD, so one render can answer "is the offset
+# reaching the build that is actually used" without reading 280 debug lines.
+#
+# This is the same instrument that settled it in August -- "167 layout builds,
+# one cursor" was counted, not inferred -- and the question came back on
+# 2026-09-11, which is why it is now permanent rather than a temporary print.
+_BUILD_STARTS = []
+
+
+def drain_layout_builds():
+    """[(latent_t, window_start)] since the last drain, and reset."""
+    out = list(_BUILD_STARTS)
+    _BUILD_STARTS.clear()
+    return out
+
+
 def keyframe_span(kf):
     """How many LATENT steps one keyframe occupies in the packed sequence.
 
@@ -239,6 +255,7 @@ def patch_packed_layout():
             # this work on stock ComfyUI with no core edit at all.
             if window_start == 0:
                 window_start = take_window_start()
+            _BUILD_STARTS.append((int(latent_t), int(window_start)))
             # debug, not info: one per layout build is ~120 lines on a 3-window
             # run. Kept because "did the window position reach the build that is
             # actually used" is the question this whole conversion turns on.
