@@ -62,6 +62,10 @@ GRAMMAR
   in the shot -- `note` and `do` -- not here.
 
     task       = reference generation | video editing
+    style      = the look, once: format, lens, grain, lighting, set, camera
+                 behaviour, and what must NOT appear. It opens
+                 detailed_description, which the guide wants at 350-500 words
+                 for a generation task -- without it a take emits about 130.
     soundscape = ...
     music      = ...
 
@@ -206,7 +210,13 @@ def _err(lineno, text, line):
 def parse(text):
     """The DSL -> the document. Pure data; no ComfyUI, no torch."""
     doc = {"version": 1, "cast": [], "shots": [],
-           "task": "reference generation", "soundscape": "", "music": "N/A"}
+           "task": "reference generation", "soundscape": "", "music": "N/A",
+           # THE LOOK, once, at the top of detailed_description. The guide asks
+           # 350-500 words for a generation task and we were emitting 134 --
+           # because the format, the camera, the lighting, the set and the
+           # exclusions had nowhere to live. Every worked example opens with
+           # them.
+           "style": ""}
     by_name = {}
     shot = None
 
@@ -279,7 +289,7 @@ def parse(text):
 
             key, sep, rest = body.partition("=")
             key = key.strip()
-            if sep and key in ("task", "soundscape", "music"):
+            if sep and key in ("task", "soundscape", "music", "style"):
                 doc[key] = rest.strip()
                 continue
             if body.startswith("shot"):
@@ -392,7 +402,8 @@ def parse(text):
     return doc
 
 
-_SETTING_DEFAULTS = {"task": "reference generation", "soundscape": "", "music": "N/A"}
+_SETTING_DEFAULTS = {"task": "reference generation", "soundscape": "",
+                     "music": "N/A", "style": ""}
 # order matters: parse() reads these off `@name.<attr> = ...` lines
 _CAST_ATTRS = ("retention", "pictures", "audio", "preserve", "allow",
                "retention_detail")
@@ -808,6 +819,15 @@ def emit(doc):
     """The document -> the fields H3 Long-Form Links and H3 Dialogue take."""
     idx, npic, naud = index(doc)
 
+    # SPEAKER IDS FIRST. The guide assigns them in order of first vocal event and
+    # every later section reuses them, so they cannot be a by-product of building
+    # the dialogue rows further down.
+    sid_of = {}
+    for s in doc["shots"]:
+        for ch in s["chunks"]:
+            for ln in ch["lines"]:
+                sid_of.setdefault(ln["who"], f"S{len(sid_of) + 1}")
+
     # which shots each name actually appears in, for the retention scope
     shots_using = {}
     for i, s in enumerate(doc["shots"], 1):
@@ -844,9 +864,13 @@ def emit(doc):
                     tail_note = (f" The background and setting of "
                                  f"{_pictures(got['pictures'])} are not present "
                                  f"in the target video.")
-            if got["audio"]:
-                desc += f", whose voice is <Audio {got['audio'][0]}>"
             desc += "." + tail_note
+            if got["audio"]:
+                # the guide's own template line: the audio is bound to the
+                # SPEAKER ID, not merely attached to the subject
+                sid = sid_of.get(c["name"], "S1")
+                desc += (f" <Audio {got['audio'][0]}> is the voice for {tok} "
+                         f"({sid}).")
         elif c["kind"] == "setting":
             desc = f"{tok} is the setting: {_sub(c['description'], idx)}"
         else:
@@ -916,12 +940,20 @@ def emit(doc):
             secs = at_f / 24.0
             head_ += f" At {int(secs // 60):02d}:{secs % 60:06.3f},"
         at_f += int(s.get("frames") or 0)
-        part = f"{head_} {_sub(s['description'], idx)}"
+        # a shot opens a sentence, so it reads like one — "[Shot 1] a close-up"
+        # was the author's lower-case fragment pasted straight after a bracket
+        shot_txt = _sub(s["description"], idx)
+        # capitalise only when the shot header does NOT end in a comma: a timed
+        # cut reads "At 00:05.875, wider." and a capital there is wrong
+        if shot_txt and not head_.rstrip().endswith(","):
+            shot_txt = shot_txt[:1].upper() + shot_txt[1:]
+        part = f"{head_} {shot_txt}"
         if not part.rstrip().endswith((".", "!", "?")):
             part += "."
         for note in s["notes"]:
-            t = _sub(note, idx)
-            part += " " + (t if t.rstrip().endswith((".", "!", "?")) else t + ".")
+            tx = _sub(note, idx)
+            tx = tx[:1].upper() + tx[1:] if tx else tx     # it follows a full stop
+            part += " " + (tx if tx.rstrip().endswith((".", "!", "?")) else tx + ".")
         body.append(part)
 
     # H3Dialogue's own input format: rows of `speaker | verb | line`, blank
@@ -953,7 +985,35 @@ def emit(doc):
         for l in s["loras"]:
             loras.append(f"# {l['name']} {l['strength']} — add a time span")
 
+    # THE WHOLE-TAKE PROMPT CARRIES ITS DIALOGUE. `head` stays clean because the
+    # chunked path builds per-chunk clauses through H3 Dialogue and would double
+    # them up; the single-prompt path had no dialogue at all, which is why a take
+    # rendered silent when H3 Long-Form Links was out of the graph.
+    #
+    # The form is the guide's, verbatim: subject + (Sx) + speech verb + tag.
+    # `(Sx)` goes BEFORE the tag -- trailing it after `</d>` risks the id being
+    # vocalised as a spoken artifact (observed 2026-08-05).
+    spoken = []
+    for n, s in enumerate(doc["shots"], 1):
+        bits = []
+        for ch in s["chunks"]:
+            for ln in ch["lines"]:
+                sid = sid_of[ln["who"]]
+                subj = f"<Subject {idx[ln['who']]['subject']}>"
+                bits.append(f"{subj} ({sid}) {ln['verb']}, "
+                            f"<d>[English] {ln['line']}</d>")
+            for act in ch["actions"]:
+                a = _sub(act, idx)
+                a = a[:1].upper() + a[1:] if a else a
+                bits.append(a if a.rstrip().endswith((".", "!", "?")) else a + ".")
+        spoken.append(" ".join(bits))
+
     head = "\n".join(body)
+    described = "\n".join(
+        (b + (" " + spoken[i] if spoken[i] else "")).strip()
+        for i, b in enumerate(body))
+    if doc.get("style", "").strip():
+        described = doc["style"].strip() + "\n\n" + described
     defs_s = "\n".join(defs) if defs else "N/A"
     rets_s = "\n".join(rets) if rets else "N/A"
     # THE ASSEMBLED PROMPT, in the block order prompt_scene.py uses. Every
@@ -969,16 +1029,30 @@ def emit(doc):
     n_sh = len(doc.get("shots", []))
     who = ", ".join(f"<Subject {idx[c['name']]['subject']}>"
                     for c in doc["cast"] if c["kind"] != "setting")
+    # "2 shots with <Subject 1>, using the listed references" is a manifest, not
+    # a summary. The guide wants a paragraph saying what happens; the worked
+    # example reads "In three shots on a concrete stairwell landing, <Subject 1>
+    # and <Subject 2> trade eight short clipped lines about a plan that has
+    # moved." Ours is built from what the author actually wrote.
+    setting_txt = next((_sub(c["description"], idx) for c in doc["cast"]
+                        if c["kind"] == "setting" and c.get("description")), "")
+    n_lines = sum(len(ch["lines"]) for s in doc["shots"] for ch in s["chunks"])
+    opening = (_sub(doc["shots"][0]["description"], idx).rstrip(" .")
+               if doc["shots"] else "")
     summary = (f"[{doc.get('task', 'reference generation')}] "
-               f"{'A single shot' if n_sh <= 1 else f'{n_sh} shots'}"
-               + (f" with {who}" if who else "")
-               + f", using the listed references for identity"
-               + (" and voice." if naud else "."))
+               + (f"In {n_sh} shots" if n_sh > 1 else "In a single shot")
+               + (f" in {setting_txt}" if setting_txt else "")
+               + (f", {who}" if who else "")
+               + (f" speak{'s' if len(sid_of) == 1 else ''} {n_lines} "
+                  f"line{'s' if n_lines != 1 else ''}" if n_lines else "")
+               + (f". It opens on {opening}." if opening else ".")
+               + (" The references supply identity"
+                  + (" and voice." if naud else ".") if npic or naud else ""))
     prompt = (
         "subject_definitions:\n" + defs_s + "\n\n"
         "summary:\n" + summary + "\n\n"
         "retention_analysis:\n" + rets_s + "\n\n"
-        "detailed_description:\n" + head + "\n\n"
+        "detailed_description:\n" + described + "\n\n"
         "overall_soundscape: " + (_sub(doc.get("soundscape", ""), idx).strip() or "N/A")
         + "\n\n"
         "non_diegetic_music: " + (doc.get("music") or "N/A"))
@@ -1056,6 +1130,10 @@ class H3Script:
                        "@man  = a man in his thirties, dark hair\n"
                        "@room = setting. a bedroom in warm low light\n"
                        "\n"
+                       "style = Photorealistic live-action, 16:9, handheld with "
+                       "visible grain and shallow depth of field, lit warm and "
+                       "low from one lamp at frame left. No other people, no "
+                       "readable text, no music.\n"
                        "soundscape = room tone, breathing, the bed moving\n"
                        "\n"
                        "shot | a locked-off two-shot of @ada and @man on the bed\n"
