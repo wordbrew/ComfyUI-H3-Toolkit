@@ -973,6 +973,70 @@
           "name": "source_audio",
           "type": "AUDIO",
           "link": 33
+        },
+        {
+          "name": "megapixels",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "megapixels"
+          }
+        },
+        {
+          "name": "divisible_by",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "divisible_by"
+          }
+        },
+        {
+          "name": "pin_audio",
+          "type": "BOOLEAN",
+          "link": null,
+          "widget": {
+            "name": "pin_audio"
+          }
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "name": "temporal_size",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "temporal_size"
+          }
+        },
+        {
+          "name": "temporal_overlap",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "temporal_overlap"
+          }
+        },
+        {
+          "name": "extra_frames",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "extra_frames"
+          }
         }
       ],
       "outputs": [
@@ -1049,6 +1113,54 @@
           "name": "source_latent",
           "type": "LATENT",
           "link": 38
+        },
+        {
+          "name": "split_frame",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "split_frame"
+          }
+        },
+        {
+          "name": "insert_frames",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "insert_frames"
+          }
+        },
+        {
+          "name": "blend_before",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "blend_before"
+          }
+        },
+        {
+          "name": "blend_after",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "blend_after"
+          }
+        },
+        {
+          "name": "strength",
+          "type": "FLOAT",
+          "link": null,
+          "widget": {
+            "name": "strength"
+          }
+        },
+        {
+          "name": "audio_feather_ticks",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "audio_feather_ticks"
+          }
         }
       ],
       "outputs": [
