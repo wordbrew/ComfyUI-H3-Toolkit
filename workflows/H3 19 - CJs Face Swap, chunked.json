@@ -591,7 +591,7 @@
           "links": null
         }
       ],
-      "title": "grow + soften — err generous",
+      "title": "grow + soften \u2014 err generous",
       "properties": {
         "cnr_id": "comfyui-kjnodes",
         "ver": "d40331fc90608257bce1af743263bb74b14c1dce",
@@ -1782,7 +1782,7 @@
           "links": null
         }
       ],
-      "title": "reads the clip's real size — wire w/h/length from here",
+      "title": "reads the clip's real size \u2014 wire w/h/length from here",
       "properties": {
         "Node name for S&R": "H3MatchSource"
       },
@@ -2563,7 +2563,7 @@
         null
       ],
       "widgets_values_named": {
-        "audio": "source.mp4",
+        "audio": "voice.wav",
         "upload": null
       }
     },
@@ -4326,7 +4326,7 @@
           ]
         }
       ],
-      "title": "1. schedule — no source wired, so chunks are just lengths",
+      "title": "1. schedule \u2014 no source wired, so chunks are just lengths",
       "properties": {
         "Node name for S&R": "H3ChunkPlan"
       },
@@ -4511,7 +4511,7 @@
           "links": []
         }
       ],
-      "title": "2. one chunk — no source wired",
+      "title": "2. one chunk \u2014 no source wired",
       "properties": {
         "Node name for S&R": "H3ChunkOpen"
       },
@@ -4739,7 +4739,7 @@
           ]
         }
       ],
-      "title": "SEAM CHECK — look here first",
+      "title": "SEAM CHECK \u2014 look here first",
       "properties": {
         "Node name for S&R": "H3SeamCheck"
       },
