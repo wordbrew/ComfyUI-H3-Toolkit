@@ -279,8 +279,14 @@ def lint(prompt, long_form=False):
                 f"INDEPENDENTLY — the model carries no memory of the previous prompt. "
                 f"Relative wording is what made the early chains incoherent; every link "
                 f"must describe the whole scene from scratch.")
-        if not re.search(r"\b(single|one) (?:uninterrupted |unbroken )?continuous take\b|"
-                         r"\bruns unbroken\b|\bholds? the same framing\b", low):
+        # `continuous shot` and `the run is unbroken` are H3 Script's own wording
+        # for the same clause, which now lives in summary rather than the tail.
+        # A rule that only knows one phrasing reports a clause it is looking at.
+        if not re.search(r"\b(single|one) (?:uninterrupted |unbroken )?continuous "
+                         r"(?:take|shot)\b|"
+                         r"\b(?:runs?|run is|take is) unbroken\b|"
+                         r"\bcuts cleanly between\b|"
+                         r"\bholds? (?:the same|its own) framing\b", low):
             warn("longform/no-continuity-clause",
                  "No positive continuity clause. State what the camera DOES — 'a single "
                  "continuous take', 'the camera holds the same framing', 'the take runs "

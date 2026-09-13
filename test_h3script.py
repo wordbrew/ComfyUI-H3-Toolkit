@@ -209,7 +209,11 @@ check("returns", hs.H3Script.RETURN_NAMES,
        # the cast's OWN anchors, in the order this node numbered them, so the
        # picture cited and the picture shown cannot come apart
        "tail",
-       "picture_1", "picture_2", "picture_3", "picture_4", "voice_1", "voice_2"))
+       "picture_1", "picture_2", "picture_3", "picture_4", "voice_1", "voice_2",
+       # a COMPLETE six-section prompt per chunk, `---` separated, for H3 Long-
+       # Form Links' beats. Last, on the end, because a saved graph stores output
+       # slots by index. The loose sections above stay for the graphs using them.
+       "chunk_prompts"))
 check("the original ten keep their positions", hs.H3Script.RETURN_NAMES[:10],
       ("head", "subject_defs", "retention", "soundscape", "music",
        "dialogue_lines", "dialogue_actions", "speaker_map", "document", "info"))
