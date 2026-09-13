@@ -142,7 +142,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "INTERIOR V2V — keep both ends, generate a new middle\n\nWHAT THIS IS\n  Feed a clip. Its first 51 frames and last 51 frames are copied into the\n  latent and locked. The 90 frames in between are generated fresh, at\n  FULL denoise, from the prompt.\n\n  This is NOT a restyle. There is no PDD LoRA, no style LoRA and no\n  Split Sigmas here on purpose — those belong to a second pass over a\n  finished render, which is a different job. This graph generates new\n  content in the middle of an existing take.\n\nWHY BOTH ENDS\n  Every seam this project has measured had a locked PAST and an open\n  future, and the model always does the same thing: it reproduces the\n  handed-over prefix, then makes a fresh decision. Nothing has softened\n  that — feathering, partial strength, gradients, sigma-release, nine\n  rounds.\n\n  All of those gave the model more about where it CAME FROM. None gave\n  it anywhere to ARRIVE. A locked tail does: the last frames are stamped\n  back at every denoise step, so the clip cannot end anywhere else.\n\n  Untested. Two locked edges means two of the boundaries that have never\n  been softened. What is worth looking at is the CONTENT in between.\n\nTHE PROMPT DESCRIBES AN ERRAND\n  Something that leaves and comes back. If the middle ends somewhere\n  else, the locked tail has to force a discontinuity it cannot hide.\n\nSETTINGS\n  192 frames (17*11+5). 51 held each end = 15 latent steps each, and 51\n  is a multiple of 3 so both land on exact 40 Hz audio ticks. Windowing\n  is bypassed — one 192-frame run fits in a single pass."
+        "INTERIOR V2V \u2014 keep both ends, generate a new middle\n\nWHAT THIS IS\n  Feed a clip. Its first 51 frames and last 51 frames are copied into the\n  latent and locked. The 90 frames in between are generated fresh, at\n  FULL denoise, from the prompt.\n\n  This is NOT a restyle. There is no PDD LoRA, no style LoRA and no\n  Split Sigmas here on purpose \u2014 those belong to a second pass over a\n  finished render, which is a different job. This graph generates new\n  content in the middle of an existing take.\n\nWHY BOTH ENDS\n  Every seam this project has measured had a locked PAST and an open\n  future, and the model always does the same thing: it reproduces the\n  handed-over prefix, then makes a fresh decision. Nothing has softened\n  that \u2014 feathering, partial strength, gradients, sigma-release, nine\n  rounds.\n\n  All of those gave the model more about where it CAME FROM. None gave\n  it anywhere to ARRIVE. A locked tail does: the last frames are stamped\n  back at every denoise step, so the clip cannot end anywhere else.\n\n  Untested. Two locked edges means two of the boundaries that have never\n  been softened. What is worth looking at is the CONTENT in between.\n\nTHE PROMPT DESCRIBES AN ERRAND\n  Something that leaves and comes back. If the middle ends somewhere\n  else, the locked tail has to force a discontinuity it cannot hide.\n\nSETTINGS\n  192 frames (17*11+5). 51 held each end = 15 latent steps each, and 51\n  is a multiple of 3 so both land on exact 40 Hz audio ticks. Windowing\n  is bypassed \u2014 one 192-frame run fits in a single pass."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -225,7 +225,7 @@
         }
       ],
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
@@ -846,7 +846,7 @@
         }
       ],
       "outputs": [],
-      "title": "enable info — READ THIS FIRST"
+      "title": "enable info \u2014 READ THIS FIRST"
     },
     {
       "id": 21,
@@ -1022,7 +1022,7 @@
         64,
         8
       ],
-      "title": "2. encode it — this is what gets held"
+      "title": "2. encode it \u2014 this is what gets held"
     },
     {
       "id": 24,
@@ -1112,7 +1112,7 @@
         1.0,
         8
       ],
-      "title": "3. hold both ends — generate the middle"
+      "title": "3. hold both ends \u2014 generate the middle"
     },
     {
       "id": 25,
@@ -1451,7 +1451,7 @@
   "groups": [
     {
       "id": 1,
-      "title": "MODEL — windowing goes here",
+      "title": "MODEL \u2014 windowing goes here",
       "bounding": [
         880,
         -40,

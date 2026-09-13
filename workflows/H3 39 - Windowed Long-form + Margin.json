@@ -140,7 +140,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "WINDOWED LONG-FORM — one latent, one denoising pass\n\nWhy this instead of chaining clips:\n  A chain hands each link to the next, and every measured chain fails\n  the same three ways — contrast climbs (+0.028 by link 4), identity\n  drifts, and the model reproduces the handed-over prefix then makes a\n  fresh decision at the seam (wave 15, never solved).\n\n  Windowing has no handoff. ONE latent is denoised once; windows only\n  bound the attention cost. So none of those three apply.\n\nREQUIRES A PATCHED COMFYUI. Read H3 Enable Context Windows' info: if it\nsays CANNOT USE THEM, this graph will not work — use H3 10 (chunking)\ninstead, which needs no patch.\n\nIt bounds attention, NOT memory: the whole latent stays on the GPU.\nIf a length will not fit, chunk it instead.\n\nEvery window sits at the clip ORIGIN. Continuity across a seam comes\nonly from overlap. Raise overlap_frames if seams show."
+        "WINDOWED LONG-FORM \u2014 one latent, one denoising pass\n\nWhy this instead of chaining clips:\n  A chain hands each link to the next, and every measured chain fails\n  the same three ways \u2014 contrast climbs (+0.028 by link 4), identity\n  drifts, and the model reproduces the handed-over prefix then makes a\n  fresh decision at the seam (wave 15, never solved).\n\n  Windowing has no handoff. ONE latent is denoised once; windows only\n  bound the attention cost. So none of those three apply.\n\nREQUIRES A PATCHED COMFYUI. Read H3 Enable Context Windows' info: if it\nsays CANNOT USE THEM, this graph will not work \u2014 use H3 10 (chunking)\ninstead, which needs no patch.\n\nIt bounds attention, NOT memory: the whole latent stays on the GPU.\nIf a length will not fit, chunk it instead.\n\nEvery window sits at the clip ORIGIN. Continuity across a seam comes\nonly from overlap. Raise overlap_frames if seams show."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -223,7 +223,7 @@
         }
       ],
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
@@ -474,7 +474,7 @@
         false,
         0
       ],
-      "title": "H3 Context Windows — set margin_frames to run the A/B (0 = baseline)"
+      "title": "H3 Context Windows \u2014 set margin_frames to run the A/B (0 = baseline)"
     },
     {
       "id": 11,
@@ -831,7 +831,7 @@
         }
       ],
       "outputs": [],
-      "title": "enable info — READ THIS FIRST"
+      "title": "enable info \u2014 READ THIS FIRST"
     },
     {
       "id": 21,
@@ -880,7 +880,7 @@
       "color": "#432",
       "bgcolor": "#653",
       "widgets_values": [
-        "MARGIN — the A/B this workflow exists for\n\nWhere the August windowing work stopped: neighbouring\nwindows GENERATE different content for the same frames.\nA locked-off background drifts, and no crossfade curve\nfixes a disagreement about content. Overlap is not the\nproblem, so tuning it was never going to be the answer.\n\nmargin_frames attacks it from the other side. Each\nwindow is run over its own span PLUS this many frames\non each side, taken from the shared latent at the\ncurrent noise level, and only the inner span is fused.\nA window's edge tokens only ever saw context on one\nside, which is exactly where the windows disagree — so\nthrow them away instead of blending them.\n\nNothing coarse is injected. That is what separates it\nfrom the \"halo\" variant (feed each window its\nneighbours' previous-step prediction), which was\nmeasured harmful: H3 pins every conditioning row at its\n0.999 clean timestep, so a half-denoised prediction\nreads as finished context and the windows anchor to\nblur. Our own drift-control result said the same from\nthe other direction.\n\nTHE SWEEP, same seed, same prompt:\n  margin 0   the baseline — this is H3 09\n  margin 17  <- set now\n  margin 34  more context, more compute\n\nWatch a STILL part of the frame across a seam. Moving\nshots hide seams; static ones expose them, which is why\nthis take is a locked-off one.\n\nCost: more compute per window. Seam positions do not\nmove, so the A/B is honest.\n\nUNTESTED on weights. Idea from\nDrakenZA/Comfyui-H3-DrakenNodes."
+        "MARGIN \u2014 the A/B this workflow exists for\n\nWhere the August windowing work stopped: neighbouring\nwindows GENERATE different content for the same frames.\nA locked-off background drifts, and no crossfade curve\nfixes a disagreement about content. Overlap is not the\nproblem, so tuning it was never going to be the answer.\n\nmargin_frames attacks it from the other side. Each\nwindow is run over its own span PLUS this many frames\non each side, taken from the shared latent at the\ncurrent noise level, and only the inner span is fused.\nA window's edge tokens only ever saw context on one\nside, which is exactly where the windows disagree \u2014 so\nthrow them away instead of blending them.\n\nNothing coarse is injected. That is what separates it\nfrom the \"halo\" variant (feed each window its\nneighbours' previous-step prediction), which was\nmeasured harmful: H3 pins every conditioning row at its\n0.999 clean timestep, so a half-denoised prediction\nreads as finished context and the windows anchor to\nblur. Our own drift-control result said the same from\nthe other direction.\n\nTHE SWEEP, same seed, same prompt:\n  margin 0   the baseline \u2014 this is H3 09\n  margin 17  <- set now\n  margin 34  more context, more compute\n\nWatch a STILL part of the frame across a seam. Moving\nshots hide seams; static ones expose them, which is why\nthis take is a locked-off one.\n\nCost: more compute per window. Seam positions do not\nmove, so the A/B is honest.\n\nUNTESTED on weights. Idea from\nDrakenZA/Comfyui-H3-DrakenNodes."
       ]
     }
   ],
@@ -1121,7 +1121,7 @@
   "groups": [
     {
       "id": 1,
-      "title": "MODEL — windowing goes here",
+      "title": "MODEL \u2014 windowing goes here",
       "bounding": [
         880,
         -40,

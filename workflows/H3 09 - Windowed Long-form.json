@@ -140,7 +140,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "WINDOWED LONG-FORM — one latent, one denoising pass\n\nWhy this instead of chaining clips:\n  A chain hands each link to the next, and every measured chain fails\n  the same three ways — contrast climbs (+0.028 by link 4), identity\n  drifts, and the model reproduces the handed-over prefix then makes a\n  fresh decision at the seam (wave 15, never solved).\n\n  Windowing has no handoff. ONE latent is denoised once; windows only\n  bound the attention cost. So none of those three apply.\n\nREQUIRES A PATCHED COMFYUI. Read H3 Enable Context Windows' info: if it\nsays CANNOT USE THEM, this graph will not work — use H3 10 (chunking)\ninstead, which needs no patch.\n\nIt bounds attention, NOT memory: the whole latent stays on the GPU.\nIf a length will not fit, chunk it instead.\n\nEvery window sits at the clip ORIGIN. Continuity across a seam comes\nonly from overlap. Raise overlap_frames if seams show."
+        "WINDOWED LONG-FORM \u2014 one latent, one denoising pass\n\nWhy this instead of chaining clips:\n  A chain hands each link to the next, and every measured chain fails\n  the same three ways \u2014 contrast climbs (+0.028 by link 4), identity\n  drifts, and the model reproduces the handed-over prefix then makes a\n  fresh decision at the seam (wave 15, never solved).\n\n  Windowing has no handoff. ONE latent is denoised once; windows only\n  bound the attention cost. So none of those three apply.\n\nREQUIRES A PATCHED COMFYUI. Read H3 Enable Context Windows' info: if it\nsays CANNOT USE THEM, this graph will not work \u2014 use H3 10 (chunking)\ninstead, which needs no patch.\n\nIt bounds attention, NOT memory: the whole latent stays on the GPU.\nIf a length will not fit, chunk it instead.\n\nEvery window sits at the clip ORIGIN. Continuity across a seam comes\nonly from overlap. Raise overlap_frames if seams show."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -223,7 +223,7 @@
         }
       ],
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
@@ -473,7 +473,7 @@
         true,
         false
       ],
-      "title": "2. window it — 85f / 17f overlap"
+      "title": "2. window it \u2014 85f / 17f overlap"
     },
     {
       "id": 11,
@@ -830,7 +830,7 @@
         }
       ],
       "outputs": [],
-      "title": "enable info — READ THIS FIRST"
+      "title": "enable info \u2014 READ THIS FIRST"
     },
     {
       "id": 21,
@@ -1094,7 +1094,7 @@
   "groups": [
     {
       "id": 1,
-      "title": "MODEL — windowing goes here",
+      "title": "MODEL \u2014 windowing goes here",
       "bounding": [
         880,
         -40,

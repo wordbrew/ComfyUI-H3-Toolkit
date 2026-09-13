@@ -10,7 +10,7 @@ torch.nn = nn; nn.functional = fn
 for name, mod in (("torch", torch), ("torch.nn", nn),
                   ("torch.nn.functional", fn)):
     sys.modules.setdefault(name, mod)
-root = pathlib.Path("/home/cgree/projects/ComfyUI-H3-Toolkit")
+root = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("h3p", root / "__init__.py",
                                               submodule_search_locations=[str(root)])
 m = importlib.util.module_from_spec(spec); sys.modules["h3p"] = m

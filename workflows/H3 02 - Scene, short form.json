@@ -214,13 +214,13 @@
         "Node name for S&R": "H3Character"
       },
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
         1
       ],
-      "title": "H3 Character — save one first with H3 Character (save)"
+      "title": "H3 Character \u2014 save one first with H3 Character (save)"
     },
     {
       "id": 6,
@@ -831,7 +831,7 @@
         0.999,
         0.999
       ],
-      "title": "Guide Strength — 0.999 = unchanged, drop to 0.7 to weaken refs"
+      "title": "Guide Strength \u2014 0.999 = unchanged, drop to 0.7 to weaken refs"
     }
   ],
   "links": [

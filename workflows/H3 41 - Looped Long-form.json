@@ -140,7 +140,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "BROKEN — DO NOT RUN. Kept as the record of why.\n\nTESTED 2026-09-11. CJ: \"flickering all over and repeating itself in\ndifferent cuts/cross fades.\"\n\nWHAT IS WRONG WITH IT\n  The wrapped window covers latent steps [90..101, 0..14] and is told it\n  starts at pixel frame 306. So it generates \"what this shot looks like\n  306-396 frames in\" for ALL 27 of its steps — including the 15 that ARE\n  the clip's opening. Window 1 has already written those same latent\n  cells as the opening, and the fuse adds over the whole index list, so\n  the two get averaged.\n\n  That is not two views of one moment being blended. It is two moments\n  306 frames apart being averaged together, which is exactly the\n  repeating and cross-fading in the output.\n\nTHE ROOT REASON\n  RoPE time is LINEAR and a loop needs it CIRCULAR. No number you can\n  add to a position says \"frame 345 is adjacent to frame 0\". Wrapping\n  the SCHEDULE without changing what gets WRITTEN is the error, and no\n  setting on this graph fixes it.\n\nTHE FIX THAT WAS NEVER BUILT\n  Make the wrapped window context-only on its head: evaluate all 27\n  steps, fuse back only the 12 that are not wrapped. `h3_inner` in\n  windowing.py already narrows exactly like that for the margin. The\n  opening would then be written by window 1 alone, and this window's job\n  becomes \"generate an ending that leads into that opening\".\n\n  One-directional — the end learns about the beginning, never the\n  reverse. Untried.\n\nWHAT STILL STANDS\n  The coverage argument that motivated this is still true: linear\n  windowing clamps its last window back to fit, so frame 0 and the last\n  frame are covered by ONE window where the middle is covered by two.\n  Those are the two frames a loop has to join. The problem is this\n  implementation, not the observation.\n\n  And core's `looped_uniform` remains unusable either way: uniform\n  family (re-derives window positions every step, measured harmful on\n  H3) plus strided index lists that mean nothing on a (1,4,4,4,4) grid."
+        "BROKEN \u2014 DO NOT RUN. Kept as the record of why.\n\nTESTED 2026-09-11. CJ: \"flickering all over and repeating itself in\ndifferent cuts/cross fades.\"\n\nWHAT IS WRONG WITH IT\n  The wrapped window covers latent steps [90..101, 0..14] and is told it\n  starts at pixel frame 306. So it generates \"what this shot looks like\n  306-396 frames in\" for ALL 27 of its steps \u2014 including the 15 that ARE\n  the clip's opening. Window 1 has already written those same latent\n  cells as the opening, and the fuse adds over the whole index list, so\n  the two get averaged.\n\n  That is not two views of one moment being blended. It is two moments\n  306 frames apart being averaged together, which is exactly the\n  repeating and cross-fading in the output.\n\nTHE ROOT REASON\n  RoPE time is LINEAR and a loop needs it CIRCULAR. No number you can\n  add to a position says \"frame 345 is adjacent to frame 0\". Wrapping\n  the SCHEDULE without changing what gets WRITTEN is the error, and no\n  setting on this graph fixes it.\n\nTHE FIX THAT WAS NEVER BUILT\n  Make the wrapped window context-only on its head: evaluate all 27\n  steps, fuse back only the 12 that are not wrapped. `h3_inner` in\n  windowing.py already narrows exactly like that for the margin. The\n  opening would then be written by window 1 alone, and this window's job\n  becomes \"generate an ending that leads into that opening\".\n\n  One-directional \u2014 the end learns about the beginning, never the\n  reverse. Untried.\n\nWHAT STILL STANDS\n  The coverage argument that motivated this is still true: linear\n  windowing clamps its last window back to fit, so frame 0 and the last\n  frame are covered by ONE window where the middle is covered by two.\n  Those are the two frames a loop has to join. The problem is this\n  implementation, not the observation.\n\n  And core's `looped_uniform` remains unusable either way: uniform\n  family (re-derives window positions every step, measured harmful on\n  H3) plus strided index lists that mean nothing on a (1,4,4,4,4) grid."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -223,7 +223,7 @@
         }
       ],
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
@@ -475,7 +475,7 @@
         0,
         true
       ],
-      "title": "2. window it — LOOPED, 90f / 39f overlap"
+      "title": "2. window it \u2014 LOOPED, 90f / 39f overlap"
     },
     {
       "id": 11,
@@ -832,7 +832,7 @@
         }
       ],
       "outputs": [],
-      "title": "enable info — READ THIS FIRST"
+      "title": "enable info \u2014 READ THIS FIRST"
     },
     {
       "id": 21,
@@ -1096,7 +1096,7 @@
   "groups": [
     {
       "id": 1,
-      "title": "MODEL — windowing goes here",
+      "title": "MODEL \u2014 windowing goes here",
       "bounding": [
         880,
         -40,

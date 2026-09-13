@@ -139,7 +139,7 @@
       "widgets_values": [
         "a face"
       ],
-      "title": "① TARGET — what to find, in plain words"
+      "title": "\u2460 TARGET \u2014 what to find, in plain words"
     },
     {
       "id": 4,
@@ -263,7 +263,7 @@
       "widgets_values": [
         "0"
       ],
-      "title": "② WHICH one — index from the preview above"
+      "title": "\u2461 WHICH one \u2014 index from the preview above"
     },
     {
       "id": 7,
@@ -313,7 +313,7 @@
         1,
         false
       ],
-      "title": "grow + soften — err generous"
+      "title": "grow + soften \u2014 err generous"
     },
     {
       "id": 8,
@@ -527,7 +527,7 @@
         "Node name for S&R": "H3Character"
       },
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
@@ -638,7 +638,7 @@
         121,
         "max"
       ],
-      "title": "③ RESULT — prompt comes from H3 Scene Prompt"
+      "title": "\u2462 RESULT \u2014 prompt comes from H3 Scene Prompt"
     },
     {
       "id": 13,
@@ -856,7 +856,7 @@
         20,
         0.3
       ],
-      "title": "denoise 0.7 — NOT 1.0, see note"
+      "title": "denoise 0.7 \u2014 NOT 1.0, see note"
     },
     {
       "id": 18,
@@ -1091,7 +1091,7 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "FACE DETAILER — spend the pixel budget on the face.\n\nTHE IDEA\n  A face in a wide frame occupies very few latent cells, which is why it\n  comes out soft. Cut it out, render the CUT at the budget the whole frame\n  had, and paste it back. Same model, same cost, far more of it spent on\n  the face.\n\n  H3 Subject Crop's upscale_megapixels does the enlarging. 0.26 is about\n  512x512. Wire width/height from the CROP into the conditioning node --\n  they report the upscaled size. H3 Subject Uncrop puts it back down.\n\nSIGMA SHIFT IS 3 HERE, NOT 12\n  This is the setting that makes a refiner behave like one. Shift 12 is\n  tuned for generating a scene from nothing and compresses the schedule\n  toward sigma 1, so even denoise 0.10 discards 40% of the source -- there\n  is no light pass available. At shift 3, denoise 0.30 keeps 43%, and more\n  of the steps land in the low-sigma range where detail is decided.\n\n  Leave AUDIO shift at 3; it was already there.\n\nDENOISE\n  0.30 at shift 3 is a real refinement. Raise it and the face starts\n  changing rather than resolving; lower it and nothing happens. Sigma is\n  the actual variable -- if you change STEPS, denoise changes meaning,\n  because BasicScheduler builds int(steps/denoise) sigmas.\n\nWHY THE MASK STILL MATTERS\n  The crop decides what gets rendered; the mask decides what gets kept.\n  grow_px 8 gives the face a small margin so the jaw and hairline are not\n  cut mid-feature, and H3 Stabilize Mask fills the frames where tracking\n  drops the face.\n\nVIDEO, NOT STILLS\n  H3 renders the whole clip in one pass, so the refined face is temporally\n  coherent by construction. Per-frame image detailers flicker; this cannot."
+        "FACE DETAILER \u2014 spend the pixel budget on the face.\n\nTHE IDEA\n  A face in a wide frame occupies very few latent cells, which is why it\n  comes out soft. Cut it out, render the CUT at the budget the whole frame\n  had, and paste it back. Same model, same cost, far more of it spent on\n  the face.\n\n  H3 Subject Crop's upscale_megapixels does the enlarging. 0.26 is about\n  512x512. Wire width/height from the CROP into the conditioning node --\n  they report the upscaled size. H3 Subject Uncrop puts it back down.\n\nSIGMA SHIFT IS 3 HERE, NOT 12\n  This is the setting that makes a refiner behave like one. Shift 12 is\n  tuned for generating a scene from nothing and compresses the schedule\n  toward sigma 1, so even denoise 0.10 discards 40% of the source -- there\n  is no light pass available. At shift 3, denoise 0.30 keeps 43%, and more\n  of the steps land in the low-sigma range where detail is decided.\n\n  Leave AUDIO shift at 3; it was already there.\n\nDENOISE\n  0.30 at shift 3 is a real refinement. Raise it and the face starts\n  changing rather than resolving; lower it and nothing happens. Sigma is\n  the actual variable -- if you change STEPS, denoise changes meaning,\n  because BasicScheduler builds int(steps/denoise) sigmas.\n\nWHY THE MASK STILL MATTERS\n  The crop decides what gets rendered; the mask decides what gets kept.\n  grow_px 8 gives the face a small margin so the jaw and hairline are not\n  cut mid-feature, and H3 Stabilize Mask fills the frames where tracking\n  drops the face.\n\nVIDEO, NOT STILLS\n  H3 renders the whole clip in one pass, so the refined face is temporally\n  coherent by construction. Per-frame image detailers flicker; this cannot."
       ],
       "title": "Read me"
     },
@@ -1112,11 +1112,11 @@
       "properties": {
         "Node name for S&R": "H3ScenePrompt"
       },
-      "title": "③ RESULT — who replaces her; <Video 1> supplies the pose",
+      "title": "\u2462 RESULT \u2014 who replaces her; <Video 1> supplies the pose",
       "widgets_values": [
         "video editing",
         5.0,
-        "Realistic video, the same shot, same lighting, same framing — only the face is resolved further",
+        "Realistic video, the same shot, same lighting, same framing \u2014 only the face is resolved further",
         "<Subject 1>'s face in close framing: skin texture, the line of the brows, the eyes and lashes, the mouth. Her expression, head angle and position are exactly as they already are in the shot and do not change.",
         "Room tone, the low hum of the wheel, faint street noise, no speech",
         "N/A",
@@ -1177,7 +1177,7 @@
       "properties": {
         "Node name for S&R": "H3MatchSource"
       },
-      "title": "reads the clip's real size — wire w/h/length from here",
+      "title": "reads the clip's real size \u2014 wire w/h/length from here",
       "inputs": [
         {
           "name": "images",

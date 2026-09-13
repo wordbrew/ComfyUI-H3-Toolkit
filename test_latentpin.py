@@ -34,7 +34,7 @@ comfy = types.ModuleType("comfy"); comfy.nested_tensor = nt; comfy.__path__ = []
 sys.modules.setdefault("comfy", comfy); sys.modules.setdefault("comfy.nested_tensor", nt)
 
 import importlib.util, pathlib
-root = pathlib.Path("/home/cgree/projects/ComfyUI-H3-Toolkit")
+root = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("h3p", root / "__init__.py",
                                               submodule_search_locations=[str(root)])
 pk = importlib.util.module_from_spec(spec); sys.modules["h3p"] = pk

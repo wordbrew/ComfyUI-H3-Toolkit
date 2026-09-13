@@ -591,7 +591,7 @@
           "links": null
         }
       ],
-      "title": "grow + soften — err generous",
+      "title": "grow + soften \u2014 err generous",
       "properties": {
         "cnr_id": "comfyui-kjnodes",
         "ver": "d40331fc90608257bce1af743263bb74b14c1dce",
@@ -1782,7 +1782,7 @@
           "links": null
         }
       ],
-      "title": "reads the clip's real size — wire w/h/length from here",
+      "title": "reads the clip's real size \u2014 wire w/h/length from here",
       "properties": {
         "Node name for S&R": "H3MatchSource"
       },
@@ -2563,7 +2563,7 @@
         null
       ],
       "widgets_values_named": {
-        "audio": "V1-0020_1.mp4",
+        "audio": "ref_voice.wav",
         "upload": null
       }
     },
@@ -2738,14 +2738,14 @@
         "Node name for S&R": "MiniMaxH3ReferenceToVideo"
       },
       "widgets_values": [
-        "subject_definitions:\n<Subject 1> is the woman in <Picture 1> and <Picture 2>.\n<Audio 1> is the voice for <Subject 1> (S1).\n\nsummary:\n[reference generation] The target video shows <Subject 1>, using <Picture 1> and <Picture 2> for <Subject 1>'s identity, and <Audio 1> for <Subject 1>'s voice.\n\nretention_analysis:\n<Subject 1> (Shot 1): fully_preserved — face, and body match <Picture 1> and <Picture 2> exactly.\n<Audio 1>: reference — timbre and delivery only, new dialogue.\n\ndetailed_description:\nCinematic video, the woman facing the camera.\n[Shot 1]<Subject 1> is having sex with a dark-skinned man. The man's erect dark-skinned penis sliding in and out of her exposed vagina quickly.\n\noverall_soundscape: wet slick noises, soft moaning from the woman, quiet bedroom ambiance.\n\nnon_diegetic_music: N/A",
+        "subject_definitions:\n<Subject 1> is the woman in <Picture 1> and <Picture 2>.\n<Audio 1> is the voice for <Subject 1> (S1).\n\nsummary:\n[reference generation] The target video shows <Subject 1>, using <Picture 1> and <Picture 2> for <Subject 1>'s identity, and <Audio 1> for <Subject 1>'s voice.\n\nretention_analysis:\n<Subject 1> (Shot 1): fully_preserved \u2014 face, and body match <Picture 1> and <Picture 2> exactly.\n<Audio 1>: reference \u2014 timbre and delivery only, new dialogue.\n\ndetailed_description:\nCinematic video, the woman facing the camera.\n[Shot 1]<Subject 1> is having sex with a dark-skinned man. The man's erect dark-skinned penis sliding in and out of her exposed vagina quickly.\n\noverall_soundscape: wet slick noises, soft moaning from the woman, quiet bedroom ambiance.\n\nnon_diegetic_music: N/A",
         1344,
         768,
         124,
         "match"
       ],
       "widgets_values_named": {
-        "prompt": "subject_definitions:\n<Subject 1> is the woman in <Picture 1> and <Picture 2>.\n<Audio 1> is the voice for <Subject 1> (S1).\n\nsummary:\n[reference generation] The target video shows <Subject 1>, using <Picture 1> and <Picture 2> for <Subject 1>'s identity, and <Audio 1> for <Subject 1>'s voice.\n\nretention_analysis:\n<Subject 1> (Shot 1): fully_preserved — face, and body match <Picture 1> and <Picture 2> exactly.\n<Audio 1>: reference — timbre and delivery only, new dialogue.\n\ndetailed_description:\nCinematic video, the woman facing the camera.\n[Shot 1]<Subject 1> is having sex with a dark-skinned man. The man's erect dark-skinned penis sliding in and out of her exposed vagina quickly.\n\noverall_soundscape: wet slick noises, soft moaning from the woman, quiet bedroom ambiance.\n\nnon_diegetic_music: N/A",
+        "prompt": "subject_definitions:\n<Subject 1> is the woman in <Picture 1> and <Picture 2>.\n<Audio 1> is the voice for <Subject 1> (S1).\n\nsummary:\n[reference generation] The target video shows <Subject 1>, using <Picture 1> and <Picture 2> for <Subject 1>'s identity, and <Audio 1> for <Subject 1>'s voice.\n\nretention_analysis:\n<Subject 1> (Shot 1): fully_preserved \u2014 face, and body match <Picture 1> and <Picture 2> exactly.\n<Audio 1>: reference \u2014 timbre and delivery only, new dialogue.\n\ndetailed_description:\nCinematic video, the woman facing the camera.\n[Shot 1]<Subject 1> is having sex with a dark-skinned man. The man's erect dark-skinned penis sliding in and out of her exposed vagina quickly.\n\noverall_soundscape: wet slick noises, soft moaning from the woman, quiet bedroom ambiance.\n\nnon_diegetic_music: N/A",
         "width": 1344,
         "height": 768,
         "length": 124,
@@ -4174,7 +4174,7 @@
         "format": "AnimateDiff"
       },
       "widgets_values_named": {
-        "video": "1761609511584148.webm",
+        "video": "source.mp4",
         "force_rate": 24,
         "custom_width": 0,
         "custom_height": 0,
@@ -4326,7 +4326,7 @@
           ]
         }
       ],
-      "title": "1. schedule — no source wired, so chunks are just lengths",
+      "title": "1. schedule \u2014 no source wired, so chunks are just lengths",
       "properties": {
         "Node name for S&R": "H3ChunkPlan"
       },
@@ -4511,7 +4511,7 @@
           "links": []
         }
       ],
-      "title": "2. one chunk — no source wired",
+      "title": "2. one chunk \u2014 no source wired",
       "properties": {
         "Node name for S&R": "H3ChunkOpen"
       },
@@ -4739,7 +4739,7 @@
           ]
         }
       ],
-      "title": "SEAM CHECK — look here first",
+      "title": "SEAM CHECK \u2014 look here first",
       "properties": {
         "Node name for S&R": "H3SeamCheck"
       },

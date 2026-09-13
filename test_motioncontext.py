@@ -71,7 +71,7 @@ class _IO:
     setattr(_In, "Output", staticmethod(lambda *a, **k: None))
     NodeOutput = staticmethod(lambda *a, **k: a)
 _api = _mod("comfy_api"); _lat = _mod("comfy_api.latest", io=_IO()); _api.latest = _lat
-root = pathlib.Path("/home/cgree/projects/ComfyUI-H3-Toolkit")
+root = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("h3v", root/"__init__.py",
                                               submodule_search_locations=[str(root)])
 pk = importlib.util.module_from_spec(spec); sys.modules["h3v"] = pk

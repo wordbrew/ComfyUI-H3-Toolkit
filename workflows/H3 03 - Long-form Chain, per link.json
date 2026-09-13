@@ -213,7 +213,7 @@
         "Node name for S&R": "H3Character"
       },
       "widgets_values": [
-        "Ada",
+        "example_character",
         3,
         1,
         0,
@@ -296,7 +296,7 @@
         2024,
         "keyframe completion"
       ],
-      "title": "H3 Long-form Links — bump link_index per render"
+      "title": "H3 Long-form Links \u2014 bump link_index per render"
     },
     {
       "id": 7,
