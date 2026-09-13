@@ -128,6 +128,8 @@ def install():
     _t = types.ModuleType("torch")
     _t.Tensor = T
     _t.ones_like = lambda x: T(x.shape, 1.0)
+    # H3LatentInsert allocates its own canvas rather than being handed one
+    _t.zeros = lambda shape, device=None, dtype=None: T(shape, 0.0)
     _t.cos = lambda x: T(x.shape, data=[math.cos(v) for v in x.data])
 
     def _linspace(a, b, n, device=None, dtype=None):

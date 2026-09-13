@@ -142,7 +142,7 @@
       "inputs": [],
       "outputs": [],
       "widgets_values": [
-        "INSERT V2V \u2014 cut the take, grow it, keep both halves\n\nWHAT THIS IS, AND HOW IT DIFFERS FROM H3 42\n  H3 42 holds the first and last N frames and regenerates the middle AT THE\n  SAME LENGTH: whatever was between the brackets is overwritten and the take\n  is exactly as long as it was.\n\n  This one makes the take LONGER. The source is cut at `split_frame`,\n  everything before it stays at the head, everything after it slides down by\n  `insert_frames`, and the span that opens up between them is generated. None\n  of the source is overwritten unless you ask for it.\n\nSETTINGS AS SHIPPED\n  192 source frames (17*11+5), cut at frame 102, 51 new frames inserted, so\n  the render is 243 (17*14+5). 51 is 3 VAE chunks and a multiple of 3, so the\n  seams land on exact 40 Hz audio ticks.\n\n  H3 Encode AV's `extra_frames` is 51 as well. That is what makes the latent\n  canvas 243 while the source stays 192 \u2014 the two numbers have to agree, and\n  H3 Latent Insert refuses with the number it wanted if they do not, before\n  anything samples.\n\nWHERE THE NEW FRAMES GO\n  split_frame 0        in front of the clip  (head extension)\n  split_frame >= end   after it              (tail extension)\n  anything between     an interior insert\n\n  It steps by 17 because that is one VAE chunk. The tail has to move by whole\n  chunks or every latent step lands on a frame coverage it was not encoded\n  for, which renders as a clip subtly out of time rather than as an error.\n\nCHANGING THE SHOT AS WELL AS EXTENDING IT\n  blend_before / blend_after widen the generated span INTO the source either\n  side of the cut, so the new material has a run-up and a run-out written for\n  it instead of butting straight against untouched footage. Both at 0 as\n  shipped: the pure insert is the thing worth looking at first.\n\n  At insert_frames 0 they ARE H3 42 \u2014 a hole in a clip of unchanged length.\n\nTHE PROMPT DESCRIBES THE WHOLE TAKE\n  Including the beat being inserted, and ending where the source resumes. If\n  the new middle ends somewhere else, the held tail has to force a\n  discontinuity it cannot hide.\n\nSTILL TWO TEMPORAL EDGES\n  Both ends of the generated span are mask edges and nothing has ever softened\n  one. What is new is that the footage either side survives."
+        "INSERT V2V \u2014 cut the take, grow it, keep both halves\n\nWHAT THIS IS, AND HOW IT DIFFERS FROM H3 42\n  H3 42 holds the first and last N frames and regenerates the middle AT THE\n  SAME LENGTH: whatever was between the brackets is overwritten and the take\n  is exactly as long as it was.\n\n  This one makes the take LONGER. The source is cut at `split_frame`,\n  everything before it stays at the head, everything after it slides down by\n  `insert_frames`, and the span that opens up between them is generated. None\n  of the source is overwritten unless you ask for it.\n\nONE NUMBER, ONE PLACE\n  H3 Latent Insert sizes its own canvas. It knows the source's length and it\n  knows how many frames you are adding, so nothing upstream has to be told\n  anything: the conditioning node's latent is NOT wired into it.\n\n  The first version of this graph did ask for a matching canvas, via an\n  `extra_frames` widget on H3 Encode AV. That meant the same number typed into\n  two nodes, and it broke on the first real render. Removed.\n\n  The conditioning node's `length` still wants to be about right, because a\n  reference VIDEO gets trimmed to it. Reference IMAGES are unaffected, and\n  this graph only uses images.\n\nSETTINGS AS SHIPPED\n  192 source frames (17*11+5), cut at frame 51, 187 new frames inserted, so\n  the render is 379 (17*22+5) \u2014 a little under 16 seconds. That is a long run\n  for one pass; drop insert_frames to 51 or 68 for a quick look first.\n\nWHERE THE NEW FRAMES GO\n  split_frame 0        in front of the clip  (head extension)\n  split_frame >= end   after it              (tail extension)\n  anything between     an interior insert\n\n  It steps by 17 because that is one VAE chunk. The tail has to move by whole\n  chunks or every latent step lands on a frame coverage it was not encoded\n  for, which renders as a clip subtly out of time rather than as an error.\n\nCHANGING THE SHOT AS WELL AS EXTENDING IT\n  blend_before / blend_after widen the generated span INTO the source either\n  side of the cut, so the new material has a run-up and a run-out written for\n  it instead of butting straight against untouched footage. Both at 0 as\n  shipped: the pure insert is the thing worth looking at first.\n\n  At insert_frames 0 they ARE H3 42 \u2014 a hole in a clip of unchanged length.\n\nTHE PROMPT DESCRIBES THE WHOLE TAKE\n  Including the beat being inserted, and ending where the source resumes. If\n  the new middle ends somewhere else, the held tail has to force a\n  discontinuity it cannot hide.\n\nSTILL TWO TEMPORAL EDGES\n  Both ends of the generated span are mask edges and nothing has ever softened\n  one. What is new is that the footage either side survives."
       ],
       "color": "#432",
       "bgcolor": "#653"
@@ -391,15 +391,13 @@
         {
           "name": "LATENT",
           "type": "LATENT",
-          "links": [
-            37
-          ]
+          "links": []
         }
       ],
       "widgets_values": [
         640,
         1120,
-        243,
+        379,
         "max"
       ]
     },
@@ -1029,14 +1027,6 @@
           "widget": {
             "name": "temporal_overlap"
           }
-        },
-        {
-          "name": "extra_frames",
-          "type": "INT",
-          "link": null,
-          "widget": {
-            "name": "extra_frames"
-          }
         }
       ],
       "outputs": [
@@ -1084,8 +1074,7 @@
         0,
         0,
         64,
-        8,
-        51
+        8
       ],
       "title": "2. encode it \u2014 this is what gets held"
     },
@@ -1105,14 +1094,14 @@
       "mode": 0,
       "inputs": [
         {
-          "name": "latent",
-          "type": "LATENT",
-          "link": 37
-        },
-        {
           "name": "source_latent",
           "type": "LATENT",
           "link": 38
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": null
         },
         {
           "name": "split_frame",
@@ -1193,8 +1182,8 @@
         "Node name for S&R": "H3LatentInsert"
       },
       "widgets_values": [
-        102,
         51,
+        187,
         0,
         0,
         1.0,
@@ -1503,19 +1492,11 @@
       "INT"
     ],
     [
-      37,
-      8,
-      1,
-      24,
-      0,
-      "LATENT"
-    ],
-    [
       38,
       23,
       0,
       24,
-      1,
+      0,
       "LATENT"
     ],
     [

@@ -52,17 +52,22 @@ def stamped(t_v, h=4, w=4):
 
 
 def run(source_frames, insert, split, before=0, after=0, feather=0, strength=1.0,
-        target_frames=None):
+        target_frames=None, wire_latent=True):
     target_frames = source_frames + insert if target_frames is None else target_frames
     s_v, t_v = latent_t(source_frames), latent_t(target_frames)
     s_a, t_a = audio_t(source_frames), audio_t(target_frames)
     src = [stamped(s_v), T((1, 32, 2, s_a), 9.0)]
+    # -1.0 marks "came from the wired canvas"; a canvas the node allocates itself
+    # is zeros, so the two are told apart by value in the assertions below.
     tgt = [T((1, 24, t_v, 4, 4), -1.0), T((1, 32, 2, t_a), 0.0)]
     node = mask.NODE_CLASS_MAPPINGS["H3LatentInsert"]()
-    out = node.go({"samples": tgt}, {"samples": src}, split, insert, before, after,
-                  strength, audio_feather_ticks=feather)
+    out = node.go({"samples": src}, split, insert, before, after, strength,
+                  latent={"samples": tgt} if wire_latent else None,
+                  audio_feather_ticks=feather)
     lat, gen, total, info = out["result"]
-    return lat["samples"], lat["noise_mask"], gen, total, info, (s_v, t_v, s_a, t_a)
+    v, _ = lat["samples"]
+    return lat["samples"], lat["noise_mask"], gen, total, info, (
+        s_v, int(v.shape[2]), s_a, audio_t(total))
 
 
 SRC = 345                  # 17*20+5 -> 102 video steps, 575 audio ticks
@@ -149,22 +154,52 @@ ok("the tail ramp falls into the held tail",
 check("deep inside the head is still fully held", maf.at(0)[0], 0.0)
 check("deep inside the tail is still fully held", maf.at(t_af - 1)[0], 0.0)
 
-print("it refuses a canvas that is not source + insert")
-# THE REFUSAL THAT MATTERS. A target built to the source's own length would put
-# the tail somewhere plausible and wrong, and the render would come back merely
-# odd rather than broken.
+print("it sizes its own canvas, so no upstream node has to be told the length")
+# THE DESIGN THIS REPLACED asked for a canvas of source+insert and refused
+# anything else, which meant the same number typed into two nodes. It failed on
+# its first real render for exactly that reason. The length lives only in the
+# latent, so the node can work it out -- and a wired canvas of the wrong length
+# is now REPLACED and reported, not refused.
 for label, kwargs in (
-        ("a target that was never lengthened", dict(target_frames=SRC)),
-        ("a target lengthened by the wrong amount", dict(target_frames=SRC + 34)),
-        ("a hole with nothing in it", dict(insert=0, split=170))):
+        ("nothing wired at all", dict(wire_latent=False)),
+        ("a canvas that was never lengthened", dict(target_frames=SRC)),
+        ("a canvas lengthened by the wrong amount", dict(target_frames=SRC + 34))):
     args = dict(source_frames=SRC, insert=INS, split=170)
     args.update(kwargs)
-    try:
-        run(**args)
-        fails.append(f"{label}: no error raised")
-        print(f"  FAIL {label}: no error raised")
-    except ValueError:
-        pass
+    (sv2, _), (mv2, _), gen2, total2, info2, (_, t_v2, _, _) = run(**args)
+    check(f"{label}: the take is still {SRC + INS}", total2, SRC + INS)
+    check(f"{label}: and the canvas is {latent_t(SRC + INS)} steps",
+          t_v2, latent_t(SRC + INS))
+    check(f"{label}: the tail still lands 20 steps later",
+          sv2.at(t_v2 - 1, axis=2)[0], float(latent_t(SRC) - 1))
+    ok(f"{label}: the generated gap is fresh canvas, not the wired one",
+       sv2.at(60, axis=2)[0] == 0.0)
+ok("a replaced canvas says so in the info",
+   "canvas was built here instead" in run(SRC, INS, 170, target_frames=SRC)[4])
+ok("a right-sized wired canvas is used as given",
+   run(SRC, INS, 170)[0][0].at(60, axis=2)[0] == -1.0)
+
+# THE RENDER THAT FAILED, 2026-09-12: 192 frames, cut at 51, 187 inserted. It
+# failed because the canvas had been sized 243 by a second widget on another
+# node. Nothing upstream is told anything now, so it just works.
+print("the render this was rebuilt for")
+(sv3, _), (mv3, _), gen3, total3, _, (_, t_v3, _, _) = run(192, 187, 51,
+                                                           wire_latent=False)
+check("192 + 187 is 379, which is 17*22+5", total3, 379)
+check("and the canvas is sized for it", t_v3, latent_t(379))
+check("51 frames = 15 steps stay at the head",
+      [mv3.at(k, axis=2)[0] for k in (14, 15)], [0.0, 1.0])
+check("the source's tail lands at the end",
+      sv3.at(t_v3 - 1, axis=2)[0], float(latent_t(192) - 1))
+check("187 frames are generated", gen3, 187)
+
+print("it still refuses a hole with nothing in it")
+try:
+    run(SRC, 0, 170)
+    fails.append("a hole with nothing in it: no error raised")
+    print("  FAIL a hole with nothing in it: no error raised")
+except ValueError:
+    pass
 
 print("the info says where the new frames went")
 ok("an interior insert names the frame", "at frame 170" in info)

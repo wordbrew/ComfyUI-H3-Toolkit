@@ -134,18 +134,6 @@ class H3EncodeAV:
                                             "so whether that boundary is a seam "
                                             "or just the architecture is an open "
                                             "question, not a known fault."}),
-            "extra_frames": ("INT", {"default": 0, "min": 0, "max": 3600,
-                             "step": 17,
-                             "tooltip": "Frames to ADD to the `length` output "
-                                        "only — the latent is still the clip's "
-                                        "own length. For H3 Latent Insert, which "
-                                        "needs a target canvas longer than the "
-                                        "source by exactly the number of frames "
-                                        "being inserted. Set it to the same "
-                                        "number as that node's insert_frames and "
-                                        "leave `length` wired where it is; if the "
-                                        "two disagree, the insert refuses before "
-                                        "anything samples. 0 = off."}),
         }}
 
     RETURN_TYPES = ("LATENT", "INT", "INT", "INT", "STRING")
@@ -158,7 +146,7 @@ class H3EncodeAV:
 
     def go(self, images, vae, megapixels, divisible_by, audio_vae=None,
            source_audio=None, pin_audio=True, width=0, height=0,
-           temporal_size=0, temporal_overlap=8, extra_frames=0):
+           temporal_size=0, temporal_overlap=8):
         n = int(images.shape[0])
         # Trim DOWN, never up: the VAE takes 17n+5 and there is nothing to
         # invent at the tail. Reported rather than silent — losing frames off
@@ -280,16 +268,8 @@ class H3EncodeAV:
             info += (f"\n  {mp / 1.03:.2f}x above H3's 1.03 MP canvas — intended "
                      f"for a REFINE at low denoise; generating from noise up "
                      f"here duplicates features. Cost is quadratic in area.")
-        # THE LATENT KEEPS THE CLIP'S LENGTH; only the reported one grows. An
-        # insert needs a CANVAS longer than the clip it is inserting into, and
-        # those are different numbers, so this moves only what feeds the
-        # conditioning node.
-        extra = max(0, int(extra_frames)) // 17 * 17
-        if extra:
-            info += (f"\n  length reports {run + extra} — {run} source + {extra} "
-                     f"for an insert; the latent is still {run}")
         return {"ui": {"h3char": [info]},
-                "result": (out, int(tw), int(th), int(run + extra), info)}
+                "result": (out, int(tw), int(th), int(run), info)}
 
 
 NODE_CLASS_MAPPINGS = {"H3EncodeAV": H3EncodeAV}
