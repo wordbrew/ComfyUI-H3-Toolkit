@@ -187,9 +187,29 @@ function openPanel(node) {
     const wears = input(entry.wears, "wears — a charcoal wool coat", "flex:1;");
     const voice = input(entry.voice, "voice — a low measured voice", "flex:1;");
     const pron = input(entry.pronoun, "she", "width:64px;");
+
+    // RETENTION IS A PER-RUN DECISION, not a property of the person. A saved
+    // asset's card carries one as a DEFAULT and this overrides it for this take
+    // — "" means inherit, so the card stays authoritative and a re-saved
+    // character still takes effect. Preselected to "" when the document's value
+    // is simply what the card said, which is how "inherited" is told apart from
+    // "explicitly set to the same thing".
+    const inherited = entry.store_retention &&
+                      entry.store_retention === entry.retention;
+    const keep = select([
+      { value: "", label: "Keep: as saved" },
+      { value: "fully_preserved", label: "Keep: fully" },
+      { value: "partially_preserved", label: "Keep: partially" },
+      { value: "free", label: "Keep: free" },
+    ], inherited ? "" : (entry.retention || ""), "width:150px;");
+    const preserve = input(entry.preserve,
+                           "what stays the same — hair, eye colour, build", "flex:1;");
     const person = row([el("span", { textContent: "also",
       style: "color:#888;width:36px;font-size:11px;flex:0 0 auto;" }),
       wears, voice, pron]);
+    const hold = row([el("span", { textContent: "keep",
+      style: "color:#888;width:36px;font-size:11px;flex:0 0 auto;" }),
+      keep, preserve]);
 
     function sync() {
       const isChar = kind.value === "character";
@@ -199,14 +219,29 @@ function openPanel(node) {
     }
     sync();
     del.onclick = () => { wrap.remove(); refresh(); };
-    for (const n of [name, picked, described, wears, voice, pron]) n.onchange = refresh;
+    for (const n of [name, picked, described, wears, voice, pron, keep, preserve]) {
+      n.onchange = refresh;
+    }
     kind.onchange = () => { sync(); refresh(); };   // BOTH, not one or the other
 
-    wrap.append(row([name, kind, picked, described, del]), person);
+    wrap.append(row([name, kind, picked, described, del]), person, hold);
     wrap._read = () => {
       const nm = (name.value || "").trim().replace(/[^A-Za-z0-9_]/g, "_");
       if (!nm) return null;
       const extra = {};
+      // a setting is a place and holds no wardrobe or voice, but it IS kept or
+      // not kept like anything else.
+      //
+      // "as saved" has to carry the card's value through, not drop the key. The
+      // text round trip re-reads the card from the head line, so dropping it is
+      // harmless there — but the live preview compiles the DOCUMENT directly,
+      // and an absent key falls back to partially_preserved. The panel would
+      // have shown one marker and the render used another. `serialize` still
+      // omits it, because it matches the baseline a fresh parse produces.
+      if (keep.value) extra.retention = keep.value;
+      else if (entry.store_retention) extra.retention = entry.store_retention;
+      if (entry.store_retention) extra.store_retention = entry.store_retention;
+      if ((preserve.value || "").trim()) extra.preserve = preserve.value.trim();
       if (kind.value !== "setting") {
         for (const [k, f] of [["wears", wears], ["voice", voice],
                               ["pronoun", pron]]) {

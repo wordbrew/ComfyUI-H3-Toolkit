@@ -309,6 +309,12 @@ def parse(text):
                     if desc:
                         entry["store_description"] = desc
                     if ret in RETENTIONS:
+                        # KEEP WHAT THE CARD SAID. Without it an override is
+                        # undetectable after parsing -- the script's value has
+                        # already replaced it -- so nothing could report that
+                        # two sources disagreed, which is the failure this
+                        # compiler exists to end. Derived, never serialized.
+                        entry["store_retention"] = ret
                         entry["retention"] = ret
                     entry["from_store"] = bool(npic or desc)
                 elif rest.startswith("setting."):
@@ -1510,8 +1516,17 @@ class H3Script:
             g = idx[c["name"]]
             pics = ",".join(str(p) for p in g["pictures"]) or "-"
             auds = ",".join(str(a) for a in g["audio"]) or "-"
+            # SAY WHICH SOURCE WON. The card is a default and the script is a
+            # per-run override, and until now the prompt showed the result with
+            # nothing saying the two had disagreed -- a silent disagreement
+            # between two sources being exactly what this node exists to end.
+            keep = c.get("retention", "partially_preserved")
+            card = c.get("store_retention")
+            if card and card != keep:
+                keep = f"{keep} (overriding the card's {card})"
             rows.append(f"  @{c['name']:<12} Subject {g['subject']}   "
-                        f"Picture {pics:<8} Audio {auds:<5} {c['kind']}")
+                        f"Picture {pics:<8} Audio {auds:<5} {c['kind']:<10} "
+                        f"{keep}")
         if notes:
             rows.append("  lint:")
             rows += [f"    {n}" for n in notes]

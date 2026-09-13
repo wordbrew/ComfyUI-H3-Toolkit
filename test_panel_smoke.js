@@ -130,7 +130,8 @@ const DOCUMENT = {
   ok: true,
   document: {
     version: 1, task: "reference generation", soundscape: "", music: "N/A",
-    cast: [{ name: "ada", kind: "character", character: "skye" },
+    cast: [{ name: "ada", kind: "character", character: "skye",
+            retention: "fully_preserved", store_retention: "fully_preserved" },
            { name: "room", kind: "setting", description: "a bedroom" }],
     shots: [
       { description: "close on her at the window", frames: 141, notes: ["nearer camera"],
@@ -252,6 +253,38 @@ setTimeout(() => {
     if (!b) throw new Error(`no control labelled "${label}"`);
     b.onclick({ target: b, preventDefault() {}, stopPropagation() {} });
   };
+
+  // RETENTION IS A PER-RUN DECISION. The card is a default; this overrides it
+  // for this take. "as saved" must carry the card's value through rather than
+  // dropping the key, because the live preview compiles the DOCUMENT and an
+  // absent key falls back to partially_preserved — the panel would show one
+  // marker and the render use another.
+  console.log("retention can be set per run, and inherits when it is not");
+  check("a reference row has a retention control", () => {
+    let keepSel = null;
+    const walk = (n) => {
+      if (!keepSel && n.tagName === "select" &&
+          n.children.some((o) => o.textContent === "Keep: fully")) keepSel = n;
+      for (const c of n.children) walk(c);
+    };
+    walk(body);
+    if (!keepSel) throw new Error("no retention control drawn");
+    if (keepSel.value !== "") {
+      throw new Error(`a card-default entry should read "as saved", got ` +
+                      `"${keepSel.value}"`);
+    }
+    const card = keepSel.parentNode.parentNode;
+    const inherited = card._read();
+    if (inherited.retention !== "fully_preserved") {
+      throw new Error(`"as saved" lost the card's value: ` +
+                      JSON.stringify(inherited.retention));
+    }
+    keepSel.value = "partially_preserved";
+    const overridden = card._read();
+    if (overridden.retention !== "partially_preserved") {
+      throw new Error("choosing a marker did not override the card");
+    }
+  });
 
   console.log("every control resolves when clicked");
   for (const label of ["Add a reference", "Add a shot"]) {
