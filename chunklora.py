@@ -144,12 +144,20 @@ class H3ChunkLora:
                          "# time span | lora_1/2/3 | strength\n"
                          "# 00:00-00:20 | lora_1 | 0.4-0.9\n"
                          "# 00:20       | lora_2 | 0.8\n",
-                         "tooltip": "Times are on the FINISHED clip. Name the "
-                                    "PICKER SLOT (lora_1..3), not a filename. "
-                                    "A strength range ramps across the span."},),
+                         "tooltip": "Times are on the FINISHED clip. A strength "
+                                    "range ramps across the span.\n\nName either "
+                                    "a FILENAME, exactly as the pickers below "
+                                    "spell it, or a picker slot (lora_1..3). "
+                                    "Filenames have no ceiling — one node carries "
+                                    "as many as you list — which is why H3 Script "
+                                    "emits them and leaves the pickers empty. The "
+                                    "slots are for schedules written by hand, "
+                                    "where a dropdown beats typing a path."},),
         }, "optional": {
             "chunk_plan": ("H3_CHUNK_PLAN",),
-            "lora_1": (names,),
+            "lora_1": (names, {"tooltip": "Only needed if the schedule says "
+                               "'lora_1'. A schedule naming files directly "
+                               "leaves this empty."}),
             "lora_2": (names,),
             "lora_3": (names,),
         }}

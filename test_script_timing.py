@@ -226,35 +226,32 @@ ok("a consumer's own access pattern works",
    (_res[12] or {}).get("chunks") is not None)
 check("lora_schedule output exists", isinstance(_res[13], str), True)
 
-print("per-shot loras become a schedule in slots, on the FINISHED clip")
+print("per-shot loras become a schedule of FILES, on the FINISHED clip")
 ldoc = hs.parse("@ada = a woman\nshot 141 | one\n  lora h3/A.safetensors 0.8\n"
                 "  say @ada hi\nshot 243 | two\n  lora h3/B.safetensors 0.4 -> 0.9\n"
                 "  say @ada there\n")
 lchunks, _ = hs.build_plan(ldoc, chunk_frames=141, context=39)
-groups = hs.lora_schedule(ldoc, lchunks)
-check("two files fit one node", len(groups), 1)
-sched, slots = groups[0]
-check("two files take two slots", slots,
-      {"lora_1": "h3/A.safetensors", "lora_2": "h3/B.safetensors"})
-ok("the schedule names SLOTS, never filenames",
-   "lora_1" in sched and ".safetensors" not in sched)
+sched = hs.lora_schedule(ldoc, lchunks)
+ok("it is one schedule, not a list of node-sized groups", isinstance(sched, str))
+# NAMING THE FILE IS WHAT REMOVES THE HAND-WORK. H3 Chunk Lora loads a row whose
+# name is not a picker slot by filename, so nothing has to be typed into a picker
+# and there is no three-per-node ceiling to chain around. Both were my invention.
+ok("the schedule names FILES, never picker slots",
+   "h3/A.safetensors" in sched and "h3/B.safetensors" in sched
+   and "lora_1" not in sched)
 ok("a ramp survives", "0.4-0.9" in sched)
 check("one row per scheduled lora", len(sched.splitlines()), 2)
 ok("the first shot starts the finished clip at 00:00", sched.startswith("00:00-"))
 
-print("three slots per NODE is not a ceiling — more means another node")
+print("and seven loras are still ONE schedule, because slots are not involved")
 four = hs.parse("@a = x\n" + "".join(
     f"shot 141 | s{i}\n  lora h3/L{i}.safetensors 1.0\n" for i in range(7)))
 fchunks, _ = hs.build_plan(four, chunk_frames=141, context=39)
-fg = hs.lora_schedule(four, fchunks)
-check("seven loras become three nodes", len(fg), 3)
-check("the first two are full", [len(g[1]) for g in fg[:2]], [3, 3])
-check("the last holds the remainder", len(fg[2][1]), 1)
-ok("every node numbers its own pickers from 1",
-   all(set(g[1]) <= {"lora_1", "lora_2", "lora_3"} for g in fg))
+fs = hs.lora_schedule(four, fchunks)
+check("seven rows, one per lora", len(fs.splitlines()), 7)
+ok("no chaining is implied anywhere in it", "lora_" not in fs)
 ok("no lora is dropped",
-   sum(len(g[1]) for g in fg) == 7)
-ok("each node gets its own schedule rows", all(g[0].strip() for g in fg))
+   all(f"h3/L{i}.safetensors" in fs for i in range(7)))
 
 ok("the default script in the widget actually parses",
    hs.parse(hs.H3Script.INPUT_TYPES()["required"]["script"][1]["default"])
