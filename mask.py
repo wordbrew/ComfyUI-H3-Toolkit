@@ -880,7 +880,20 @@ class H3LatentInsert:
                 f"is {t_px}, but inserting {ins} needs a target of {s_px + ins}. "
                 f"Set `extra_frames` to {ins} on whichever node feeds the "
                 f"conditioning node's `length` — H3 Encode AV or H3 Match Source "
-                f"Clip — and leave that wire where it is.")
+                f"Clip — and leave that wire where it is."
+                # The widgets are echoed because the first time this fired, the
+                # numbers on the node and the numbers that arrived were not the
+                # same: a saved node whose `inputs` omitted its widget entries
+                # let the frontend rebuild the mapping its own way. Reading the
+                # widgets off the canvas is not evidence of what the node got.
+                f"\n  this node received: split_frame={int(split_frame)}, "
+                f"insert_frames={int(insert_frames)}, "
+                f"blend_before={int(blend_before)}, "
+                f"blend_after={int(blend_after)}, strength={float(strength)}, "
+                f"audio_feather_ticks={int(audio_feather_ticks)}"
+                f"\n  if those are not the numbers on the node, the graph's "
+                f"widget mapping is stale — re-add the node, or load the "
+                f"shipped workflow again.")
 
         # A SOURCE FRAME -> THE STEP IT STARTS. The final group is 5 pixel frames
         # (2 steps), not 17, so it has no interior boundary to cut at: anything
