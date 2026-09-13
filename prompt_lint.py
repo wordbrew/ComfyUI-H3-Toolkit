@@ -108,6 +108,48 @@ def lint(prompt, long_form=False):
     refs_used = sorted(set(re.findall(r"<(Picture|Video|Audio)\s+(\d+)>", text)))
     body = six["detailed_description"] or six.get("integrated") or text
 
+    # --- two sources disagreeing about the same subject -------------------- #
+    #
+    # WHY THIS IS A PROMPT RULE AND NOT A GRAPH RULE. Several nodes here can
+    # produce retention text -- H3 Character builds one for a single saved asset,
+    # H3 Script builds one for the whole cast -- and a graph is free to wire both
+    # into different slots of the same prompt. Nothing errors: the prompt names a
+    # subject twice, possibly with different markers, and the model picks. Reading
+    # the ASSEMBLED TEXT catches it whoever produced it, rather than teaching each
+    # node about the others.
+    for _name in ("subject_definitions", "retention_analysis"):
+        _block = six.get(_name)
+        if not _block:
+            continue
+        _seen, _dupes = set(), set()
+        for _line in _block.splitlines():
+            _m = re.match(r"\s*(<Subject\s+\d+>)", _line)
+            if not _m:
+                continue
+            if _m.group(1) in _seen:
+                _dupes.add(_m.group(1))
+            _seen.add(_m.group(1))
+        if _dupes:
+            err(f"conflict/{_name}",
+                f"{', '.join(sorted(_dupes))} appears more than once in "
+                f"{_name}. Two sources are describing the same subject — "
+                f"commonly H3 Character wired into one slot and H3 Script into "
+                f"another. They can disagree and nothing downstream will say so; "
+                f"the model takes whichever it prefers. Use one source.")
+
+    # A CLAUSE THAT IS ALREADY A PROMPT, wrapped in another one. H3 Script's
+    # chunk_prompts emits complete six-section prompts, so leaving H3 Long-Form
+    # Links' own head / subject_def_1 / retention_1 filled nests the format
+    # inside itself. It renders, and it renders wrong.
+    for _name in SECTIONS:
+        _n = text.count(f"{_name}:")
+        if _n > 1:
+            err("conflict/nested",
+                f"'{_name}:' appears {_n} times. A prompt has been assembled "
+                f"around something that was already a complete prompt — clear "
+                f"the loose section fields when the clause carries its own.")
+            break
+
     # --- references must be declared, typed and given a retention marker
     if refs_used:
         if not has_sections:
