@@ -19,8 +19,8 @@ import torch.nn.functional as Fn
 from .avlatent import av
 from .chunkplan import snap_context
 from .geometry import cover_crop, crop_to_multiple
-from .timing import (FPS, FRAME_PER_TOKEN, align_frames, audio_t,
-                     av_aligned_runs_through,
+from .timing import (AUDIO_LATENT_HZ, FPS, FRAME_PER_TOKEN, align_frames,
+                     audio_t, av_aligned_runs_through,
                      describe, frame_groups, is_av_aligned, snap_av_aligned)
 
 CATEGORY = "MiniMax H3/mask"
@@ -721,7 +721,7 @@ class H3LatentBracket:
             f"  generated span: frames {hf}-{hf + gen_px} of {total_px}",
             "  BOTH edges are temporal mask edges, and no setting has ever "
             "softened one. What is new is that the model has a destination.",
-        ])
+        ] + feather_warning(f))
         logging.info("H3LatentBracket: head %df (%d/%d) tail %df (%d/%d), "
                      "generating %d video step(s)",
                      hf, hv, ha, tf, tv, ta, gen_v)
@@ -755,6 +755,54 @@ def _latent_t(frames):
 # Derived from the canonical table so a change to the grid propagates here.
 _STEP_STARTS = tuple(sum(FRAME_PER_TOKEN[:k]) for k in range(len(FRAME_PER_TOKEN)))
 _GROUP = sum(FRAME_PER_TOKEN)
+
+
+# The two clocks agree every 3 frames (3 frames = 5 ticks at 24 fps / 40 Hz), and
+# a video count has to be a multiple of 17 -- so a count that is exact on BOTH is
+# a multiple of 51. Everything else rounds at the boundary.
+AV_EXACT = 51
+
+
+def av_drift_ms(frames):
+    """Milliseconds the audio clock is out after moving `frames` pixel frames.
+
+    A video shift is a whole number of frames; the audio it has to carry is
+    `frames * 40/24` ticks, which is only an integer every 3 frames. The tail of
+    an insert therefore lands up to half a tick away from where its picture does.
+    """
+    exact = int(frames) * AUDIO_LATENT_HZ / FPS
+    return (audio_t(frames) - exact) * 1000.0 / AUDIO_LATENT_HZ
+
+
+def nearest_av_exact(frames):
+    """The multiples of 51 either side of `frames`, for a count that is exact."""
+    q = int(frames) // AV_EXACT
+    return tuple(n for n in (q * AV_EXACT, (q + 1) * AV_EXACT) if n > 0)
+
+
+def feather_warning(ticks):
+    """ComfyUI 0.35 scales the model's audio output by the denoise mask.
+
+    `out[1] = out[1] * audio_denoise_mask` (comfy/ldm/minimax/model.py:595, new in
+    0.35). A HELD tick has mask 0 and gets no update, which is how the hold
+    works; a GENERATED tick has mask 1 and is untouched. But a feathered tick is
+    somewhere between, so it receives a fraction of the velocity at every step
+    and never finishes denoising -- it ends up part way between noise and signal.
+
+    That is not a crossfade between held and generated audio. It is a band of
+    under-denoised samples at each seam, `ticks` long, and it is a REGRESSION:
+    on 0.34 a fractional mask only relabelled the row's timestep, which was
+    harmless. Reported rather than forced, because the mechanism is read off the
+    code and the audible result has not been measured -- the A/B is one widget.
+    """
+    if not ticks:
+        return []
+    return [f"  AUDIO FEATHER: {ticks} tick(s) ({ticks * 1000 // AUDIO_LATENT_HZ} ms) "
+            f"either side are a FRACTIONAL mask, and ComfyUI 0.35 multiplies the "
+            f"model's audio output by it — those ticks get a fraction of the "
+            f"velocity at every step and may not finish denoising. If the seams "
+            f"sound garbled, set audio_feather_ticks to 0 and compare on the same "
+            f"seed: that makes the mask binary. Harmless on 0.34, suspect on 0.35."]
 
 
 def frames_at_step(step):
@@ -915,11 +963,18 @@ class H3LatentInsert:
                                                "held head and back into the held "
                                                "tail. Video cuts hard; a hard "
                                                "audio edge clicks. 8 = 0.2s at "
-                                               "40 Hz.\n\nAbove 0 this is a "
-                                               "FRACTIONAL mask, and ComfyUI 0.35 "
-                                               "scales the model's output by the "
-                                               "mask — that interaction is open. "
-                                               "0 keeps the mask binary."}),
+                                               "40 Hz.\n\nSUSPECT ON 0.35. Above "
+                                               "0 this is a FRACTIONAL mask, and "
+                                               "0.35 multiplies the model's audio "
+                                               "output by it, so a feathered tick "
+                                               "gets a fraction of the velocity "
+                                               "every step and may never finish "
+                                               "denoising — under-denoised "
+                                               "samples at each seam rather than "
+                                               "a crossfade. Harmless on 0.34. If "
+                                               "the seams sound garbled set this "
+                                               "to 0, which keeps the mask "
+                                               "binary, and compare on one seed."}),
         }}
 
     RETURN_TYPES = ("LATENT", "INT", "INT", "STRING")
@@ -1041,6 +1096,28 @@ class H3LatentInsert:
                  "after the clip" if cut >= s_px else f"at frame {cut}"
                  + (f" (asked for {want}, nearest step boundary below)"
                     if cut != want else ""))
+
+        # THE TWO CLOCKS. The tail's picture moves `ins` frames; its soundtrack
+        # has to move `ins * 40/24` ticks, which is only a whole number every 3
+        # frames. Off-grid the tail's audio lands a fraction of a tick from its
+        # picture, and that is the one error here that no feather covers, because
+        # it is a SHIFT rather than an edge.
+        grid = []
+        drift = av_drift_ms(ins) if ins else 0.0
+        if abs(drift) > 0.5:
+            near = " or ".join(str(n) for n in nearest_av_exact(ins))
+            grid.append(
+                f"  AUDIO GRID: {ins} frames is {ins * AUDIO_LATENT_HZ / FPS:.2f} "
+                f"tick(s), so the held tail's sound sits {abs(drift):.0f} ms from "
+                f"its picture. Exact insert lengths are multiples of {AV_EXACT} "
+                f"(17 frames x 3) — nearest are {near}.")
+        seams = sorted({n for n in (keep_to, keep_from) if 0 < n < s_px
+                        and n * AUDIO_LATENT_HZ % FPS})
+        if seams:
+            grid.append(
+                f"  seam(s) at frame {', '.join(str(n) for n in seams)} fall "
+                f"between audio ticks, placing the join up to 12 ms out. Cut on a "
+                f"multiple of 3 frames to land exactly.")
         info = "\n".join([
             f"H3 LATENT INSERT: {ins} new frame(s) {where} — {s_px} -> {t_px} "
             f"({describe(t_px)})",
@@ -1055,7 +1132,7 @@ class H3LatentInsert:
             "  BOTH edges of that span are temporal mask edges and no setting has "
             "ever softened one. What is new is that the footage either side of it "
             "survives.",
-        ] + ([note] if note else []))
+        ] + grid + feather_warning(f) + ([note] if note else []))
         logging.info("H3LatentInsert: cut %d, +%d frames (%d->%d), holding "
                      "%d+%d of %d video step(s)",
                      cut, ins, s_px, t_px, hv, tail_v, t_v)
