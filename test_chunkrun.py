@@ -569,8 +569,31 @@ def test_refuses_bad_wiring():
     check("single chunk passes through", "one chunk" in info, True)
 
 
+def test_chunk_range():
+    print("the review gate picks a RANGE of chunks, and 0/0 still means all")
+    # A CHAINED TAKE IS ONE QUEUE ITEM from first frame to last, so there is no
+    # point at which ComfyUI could pause. Gating means running part of the plan,
+    # ending the graph, and picking the next part up off disk. Everything below
+    # is what keeps that from changing any graph written before it existed.
+    p = {"chunks": [{}] * 5}
+    for args, want, label in (
+            ((0, 0), (0, 4), "0/0 runs the whole plan, as every old graph asks"),
+            ((0, 1), (0, 1), "stop after chunk 1"),
+            ((2, 0), (2, 4), "resume at 2 and run to the end"),
+            ((2, 2), (2, 2), "exactly one chunk"),
+            # a gate you can set to an empty range is a gate that renders
+            # nothing and says nothing, so both ends clamp INTO the plan
+            ((3, 1), (3, 3), "a last before first clamps up to first"),
+            ((9, 0), (4, 4), "a first past the end clamps to the last chunk"),
+            ((0, 99), (0, 4), "a last past the end clamps to the last chunk")):
+        check(label, chunkrun.chunk_range(p, *args), want)
+    check("an empty plan does not explode",
+          chunkrun.chunk_range({"chunks": []}, 2, 3), (0, 0))
+    check("nor does no plan at all", chunkrun.chunk_range(None, 0, 0), (0, 0))
+
+
 def main():
-    for fn in (test_v2v_slices, test_extra_optional, test_fresh_generation,
+    for fn in (test_chunk_range, test_v2v_slices, test_extra_optional, test_fresh_generation,
                test_context_clamped, test_body_capture, test_links_remapped,
                test_overlap_trimmed_at_the_join, test_context_overlap_plan,
                test_pin_lines_up_with_the_source, test_a_cut_carries_nothing,
