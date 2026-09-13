@@ -142,16 +142,16 @@ opt = H3EncodeAV.INPUT_TYPES()["optional"]
 check("required order", list(req), ["images", "vae", "megapixels", "divisible_by"])
 check("optional order", list(opt),
       ["audio_vae", "source_audio", "pin_audio", "width", "height",
-       "temporal_size", "temporal_overlap", "extra_frames"])
+       "temporal_size", "temporal_overlap"])
 ok("temporal tiling was APPENDED, so no saved graph shifts",
-   list(opt)[-3:-1] == ["temporal_size", "temporal_overlap"])
-# extra_frames moves the LENGTH OUTPUT only, for H3 Latent Insert's longer
-# canvas. Appended after tiling, and off at 0, so no saved graph shifts either.
-ok("extra_frames was appended after it", list(opt)[-1] == "extra_frames")
-ok("and defaults off, so the length output is unchanged",
-   opt["extra_frames"][1]["default"] == 0)
-ok("stepping by 17 keeps the target on a legal run",
-   opt["extra_frames"][1]["step"] == 17)
+   list(opt)[-2:] == ["temporal_size", "temporal_overlap"])
+# `length` REPORTS THE CLIP, always. An `extra_frames` widget lived here for one
+# afternoon so H3 Latent Insert could get a longer canvas, and it was the wrong
+# node to put it on: it made two widgets in two places that had to agree, and
+# the first render with it failed on exactly that. The insert node sizes its own
+# canvas now. Nothing here should ever report a length the latent does not have.
+ok("length reports the clip, with no knob to inflate it",
+   "extra_frames" not in opt and "extra_frames" not in req)
 ok("tiling defaults OFF — one call, exactly the old behaviour",
    opt["temporal_size"][1]["default"] == 0)
 ok("overlap default matches core's VAEEncodeTiled",

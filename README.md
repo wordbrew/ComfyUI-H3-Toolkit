@@ -69,9 +69,10 @@ insert; `blend_before` / `blend_after` widen the generated span into the source
 so the new material has a run-up written for it. Both widgets step by 17 frames
 because that is one VAE chunk — coverage is positional, so the tail has to move
 by whole chunks or every latent step lands on a frame span it was not encoded
-for. Set the source encoder's `extra_frames` to the same number as
-`insert_frames`; if the two disagree the node says so before anything samples.
-See workflows 42 and 43.
+for. It **sizes its own canvas** from the source and `insert_frames`, so its
+`latent` input is optional and nothing upstream has to be told the new length —
+the conditioning node's `length` only ever trims reference videos. See workflows
+42 and 43.
 
 For a refinement pass, drop the **sigma shift**. Shift 12 is tuned for generating a
 scene from nothing and compresses the schedule toward sigma 1, so even denoise 0.10
