@@ -227,6 +227,30 @@ check("the source's tail lands at the end",
       sv3.at(t_v3 - 1, axis=2)[0], float(latent_t(192) - 1))
 check("187 frames are generated", gen3, 187)
 
+print("the two clocks, and where they disagree")
+# Video moves in whole frames; the audio it carries is frames*40/24 ticks, a
+# whole number only every 3. A count exact on BOTH grids is a multiple of 51.
+check("a multiple of 51 is exact on both clocks",
+      [round(mask.av_drift_ms(n), 3) for n in (51, 102, 204)], [0.0, 0.0, 0.0])
+check("187 is legal video and off the audio grid",
+      round(mask.av_drift_ms(187), 1), 8.3)
+check("and the node names the exact lengths either side of it",
+      mask.nearest_av_exact(187), (153, 204))
+ok("an off-grid insert is reported with the drift in ms",
+   "8 ms from its picture" in run(192, 187, 51, wire_latent=False)[4])
+ok("and names 204 as the fix",
+   "153 or 204" in run(192, 187, 51, wire_latent=False)[4])
+ok("an exact insert says nothing about the grid",
+   "AUDIO GRID" not in run(192, 204, 51, wire_latent=False)[4])
+
+# THE 0.35 REGRESSION. out[1] = out[1] * audio_denoise_mask, so a fractional
+# tick gets a fraction of the velocity at every step and may never finish
+# denoising -- under-denoised samples at the seam, not a crossfade.
+ok("a feather warns, because 0.35 scales the model's audio by the mask",
+   "may not finish denoising" in run(SRC, INS, 170, feather=8)[4])
+ok("and a feather of 0 is silent, because the mask is binary then",
+   "AUDIO FEATHER" not in run(SRC, INS, 170, feather=0)[4])
+
 print("it still refuses a hole with nothing in it")
 try:
     run(SRC, 0, 170)
