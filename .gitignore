@@ -7,3 +7,6 @@ CLAUDE.md
 # his reference image filenames, and this repo is public. Kept on disk and
 # deployed to the install, never committed.
 workflows/H3 13 - CJ Face Swap, chunked.json
+workflows/H3 19 - CJs Face Swap, chunked.json
+workflows/H3 20 - CJs Face Swap, chunked.json
+workflows/H3 21 - CJs Face Swap, chunked per-chunk crop.json
