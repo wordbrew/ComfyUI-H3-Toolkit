@@ -251,6 +251,21 @@ ok("a feather warns, because 0.35 scales the model's audio by the mask",
 ok("and a feather of 0 is silent, because the mask is binary then",
    "AUDIO FEATHER" not in run(SRC, INS, 170, feather=0)[4])
 
+print("a blend says what it used, because the widget cannot express the ladder")
+# STEP BOUNDARIES ARE NOT EVENLY SPACED: 0, 1, 5, 9, 13 inside each group of 17,
+# so the reachable blends sit about 4 apart with a 1-frame step at every group
+# edge. `step: 17` on the widget offered one position in five; `step: 1` offers
+# five times more than exist. Neither can be right, so the node reports.
+info5 = run(SRC, INS, 170, before=5)[4]
+ok("asking for 5 buys 8, and says so",
+   "8 frame(s) of run-up (asked for 5)" in info5)
+ok("a request that lands exactly is not annotated",
+   "(asked for" not in [l for l in run(SRC, INS, 170, before=17)[4].splitlines()
+                        if l.strip().startswith("held")][0])
+ok("the run-out is annotated the same way",
+   "(asked for 20)" in run(SRC, INS, 170, after=20)[4])
+ok("and 0 is never annotated", "(asked for 0)" not in run(SRC, INS, 170)[4])
+
 print("it still refuses a hole with nothing in it")
 try:
     run(SRC, 0, 170)

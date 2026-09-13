@@ -728,6 +728,20 @@ class H3LatentBracket:
         return {"ui": {"h3char": [info]}, "result": (out, int(gen_px), info)}
 
 
+def _asked(got, wanted):
+    """" (asked for N)" when a blend did not land on the number typed.
+
+    THE WIDGET CANNOT EXPRESS THE LADDER. Step boundaries sit at frame offsets
+    0, 1, 5, 9, 13 inside each 17-frame group, so the reachable blends from a
+    given cut are spaced about 4 apart with a 1-frame step at every group edge.
+    No `step` value describes that: 17 offered one position in five, and 1
+    offers five times more than exist -- typing 1, 2 or 4 all buy the same 4
+    frames. So the widget takes any number and the node says what it used.
+    """
+    w = max(0, int(wanted))
+    return f" (asked for {w})" if w and int(got) != w else ""
+
+
 def _frames_of(latent_t):
     """Pixel frames in a clip of `latent_t` video steps. Inverse of core's
     `video_latent_t`: 17n+5 frames <-> 5n+2 steps."""
@@ -939,9 +953,14 @@ class H3LatentInsert:
                                         "regenerated along with the insert, so "
                                         "the new material has a run-up written "
                                         "for it instead of butting against "
-                                        "untouched footage. Snaps to a step "
-                                        "boundary the generous way — you never "
-                                        "get less blend than you asked for."}),
+                                        "untouched footage.\n\nType any number. "
+                                        "It snaps UP to a latent step boundary, "
+                                        "so you never get less than you asked "
+                                        "for — but the reachable values are "
+                                        "about 4 apart with a 1-frame step at "
+                                        "each 17-frame edge, so 1, 2 and 4 all "
+                                        "buy the same 4 frames. The info says "
+                                        "what it used whenever that differs."}),
             "blend_after": ("INT", {"default": 0, "min": 0, "max": 3600,
                             "tooltip": "The same on the far side of the cut — "
                                        "source frames rewritten as the run-out."}),
@@ -1122,9 +1141,10 @@ class H3LatentInsert:
             f"H3 LATENT INSERT: {ins} new frame(s) {where} — {s_px} -> {t_px} "
             f"({describe(t_px)})",
             f"  held    source 0-{keep_to} and {keep_from}-{s_px}"
-            + (f", regenerating {cut - keep_to} frame(s) of run-up" if keep_to < cut
-               else "")
-            + (f" and {keep_from - cut} of run-out" if keep_from > cut else ""),
+            + (f", regenerating {cut - keep_to} frame(s) of run-up{_asked(
+                cut - keep_to, blend_before)}" if keep_to < cut else "")
+            + (f" and {keep_from - cut} of run-out{_asked(
+                keep_from - cut, blend_after)}" if keep_from > cut else ""),
             f"  video   {hv} + {tail_v} of {t_v} step(s) held, {gen_v} generated",
             f"  audio   {ha} + {tail_a} of {t_a} tick(s) held"
             + (f", feathered over {f} tick(s) each side" if f else " (hard edges)"),
