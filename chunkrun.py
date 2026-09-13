@@ -237,6 +237,23 @@ def slice_chunk(plan, index, source_images, mask=None, source_audio=None,
             len(chunks), kf, ctx, xtra, int(c.get("pin", 0)))
 
 
+def chunk_range(plan, first_chunk=0, last_chunk=0):
+    """(first, last) inclusive chunk indices this run covers.
+
+    0/0 is the whole plan, which is what every graph written before the review
+    gate existed asks for. `last_chunk` of 0 means "to the end" rather than
+    "chunk 0", because a gate you have to set TWO numbers to disable is a gate
+    that gets left on by accident.
+    """
+    n = len(((plan or {}).get("chunks")) or [])
+    if n <= 0:
+        return 0, 0
+    first = max(0, min(int(first_chunk or 0), n - 1))
+    last = int(last_chunk or 0)
+    last = n - 1 if last <= 0 else max(first, min(last, n - 1))
+    return first, last
+
+
 class H3ChunkOpen:
     """Start of the repeated section. Hands out one chunk's slices.
 
@@ -271,6 +288,35 @@ class H3ChunkOpen:
                                          "mask INSIDE the body instead, which is "
                                          "what lets SAM3 track per chunk."}),
             "source_audio": ("AUDIO",),
+            # --- the review gate -------------------------------------------- #
+            #
+            # A chained take is ONE queue item from first frame to last, so
+            # there is no point at which ComfyUI could stop and let you look.
+            # Gating means running a RANGE of chunks, ending the graph, and
+            # picking the next range up from where it stopped -- which is what
+            # H3 Chunk Checkpoint and H3 Chunk Resume carry between runs.
+            #
+            # All four are appended, and all four are inert at their defaults:
+            # first 0 / last 0 runs the whole plan exactly as before.
+            "first_chunk": ("INT", {"default": 0, "min": 0, "max": 4096,
+                            "tooltip": "The chunk to START at. Wire H3 Chunk "
+                                       "Resume's `from_chunk` here and its "
+                                       "`prev_latent` into resume_latent, and "
+                                       "the take picks up where the last run "
+                                       "stopped."}),
+            "last_chunk": ("INT", {"default": 0, "min": 0, "max": 4096,
+                           "tooltip": "The chunk to STOP after, inclusive. 0 "
+                                      "means run to the end of the plan. Set it "
+                                      "to first_chunk to render exactly one."}),
+            "resume_latent": ("LATENT", {"tooltip": "The carry for first_chunk, "
+                              "from H3 Chunk Resume. Without it a resumed chunk "
+                              "has no prefix to hold and its opening is "
+                              "unanchored — which is the seam this whole "
+                              "mechanism exists to avoid."}),
+            "resume_images": ("IMAGE", {"tooltip": "The previous chunk's decoded "
+                              "tail, for the keyframe and motion context a FRESH "
+                              "generation chains on. V2V does not need it: the "
+                              "source pins both sides of every seam."}),
         }}
 
     # chunk_count appended LAST -- saved workflows store slot indices, so a new
@@ -288,13 +334,24 @@ class H3ChunkOpen:
                    "to H3 Chunk Close, which repeats it for every chunk.")
 
     def go(self, plan, source_images=None, mask=None, source_audio=None,
-           extra_images=None, context_frames=39):
-        out = slice_chunk(plan, 0, source_images, mask, source_audio,
+           extra_images=None, context_frames=39, first_chunk=0, last_chunk=0,
+           resume_latent=None, resume_images=None):
+        n = len(((plan or {}).get("chunks")) or [])
+        # Open stands in for the FIRST chunk that will actually run, not for
+        # chunk 0 -- on a resume those differ, and standing in for the wrong one
+        # gives the body a length and a pin belonging to a chunk nobody renders.
+        first, last = chunk_range(plan, first_chunk, last_chunk)
+        out = slice_chunk(plan, first, source_images, mask, source_audio,
                           context_frames=context_frames,
                           extra_images=extra_images)
-        n = len(((plan or {}).get("chunks")) or [])
-        note = (f"\n  wire your chain from here into H3 Chunk Close; it repeats "
-                f"this for all {n} chunks.") if n > 1 else ""
+        if last - first + 1 < n:
+            note = (f"\n  GATED: chunks {first}-{last} of {n}. "
+                    + ("Resuming — the carry comes from resume_latent."
+                       if first else "The take stops after this range; resume "
+                       "from chunk {}.".format(last + 1)))
+        else:
+            note = (f"\n  wire your chain from here into H3 Chunk Close; it "
+                    f"repeats this for all {n} chunks.") if n > 1 else ""
         # prev_latent and prev_mask are None on Open by definition: it stands in
         # for chunk 0, and chunk 0 has nothing before it. Close fills them in
         # for the clones.
@@ -435,7 +492,15 @@ class H3ChunkClose:
 
         graph = GraphBuilder()
         outs, lat_outs, aud_outs, mask_outs = [], [], [], []
-        for ci, c in enumerate(chunks):
+        # THE GATE. Open carries the range and the carry to start it from; Close
+        # is what expands the loop, so it has to read them off Open's inputs the
+        # same way it already reads source_images and context_frames.
+        _oi = (dynprompt.get_node(open_id).get("inputs") or {})
+        _w = {k: v for k, v in _oi.items() if not is_link(v)}
+        first, last = chunk_range(plan, _w.get("first_chunk", 0),
+                                  _w.get("last_chunk", 0))
+        for ci in range(first, last + 1):
+            c = chunks[ci]
             # feed the slicer from whatever fed Open -- the video loader is a
             # shared external node, referenced not cloned
             open_node = dynprompt.get_node(open_id)
@@ -453,6 +518,18 @@ class H3ChunkClose:
             # the source pins both sides of every seam.
             if outs:
                 src_kw["prev_images"] = outs[-1]
+            elif is_link(_oi.get("resume_images")):
+                # the first chunk of a RESUMED run has no predecessor in this
+                # graph; its predecessor ran in a previous queue item and its
+                # tail came back off disk
+                v = _oi["resume_images"]
+                src_kw["prev_images"] = [v[0], v[1]]
+            if not lat_outs and is_link(_oi.get("resume_latent")):
+                # the carry, and the reason a resume is not just a re-run: this
+                # latent never went through the VAE, and a decode/re-encode per
+                # link is what climbed local contrast +12/+7/+5% down a chain
+                v = _oi["resume_latent"]
+                src_kw["prev_latent"] = [v[0], v[1]]
             if lat_outs:
                 # LATENT chaining: chunk N's context prefix is copied straight
                 # from chunk N-1's sampler output, so nothing is decoded and
@@ -529,9 +606,13 @@ class H3ChunkClose:
                 joined_audio = graph.node("AudioConcat", audio1=joined_audio,
                                           audio2=nxt, direction="after").out(0)
 
-        want = int(plan.get("total_frames") or 0)
-        made = sum(int(c["end"]) - int(c.get("keep_from", c["start"]))
-                   for c in chunks)
+        # only the run that reaches the END of the plan can overshoot it. A
+        # gated range is short ON PURPOSE, and trimming it to total_frames would
+        # silently pad-or-cut a partial take against the whole take's length.
+        want = int(plan.get("total_frames") or 0) if last == len(chunks) - 1 else 0
+        made = sum(int(chunks[i]["end"]) - int(chunks[i].get("keep_from",
+                                                             chunks[i]["start"]))
+                   for i in range(first, last + 1))
         if want and made > want:
             joined = graph.node("ImageFromBatch", id="fit", image=joined,
                                 batch_index=0, length=want).out(0)
