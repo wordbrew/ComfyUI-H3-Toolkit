@@ -66,10 +66,14 @@ middle at the same length — the model gets a destination, not just a past.
 after it sliding down by the number of frames you inserted. Cut at 0 to extend
 the front, past the end to extend the back, anywhere between for an interior
 insert; `blend_before` / `blend_after` widen the generated span into the source
-so the new material has a run-up written for it. Both widgets step by 17 frames
-because that is one VAE chunk — coverage is positional, so the tail has to move
+so the new material has a run-up written for it. `insert_frames` steps by 17
+because that is one VAE chunk: coverage is positional, so the tail has to move
 by whole chunks or every latent step lands on a frame span it was not encoded
-for. It **sizes its own canvas** from the source and `insert_frames`, so its
+for. **The cut is not on that grid** — five steps cover 17 frames wherever they
+start, so the cut only has to land on a latent step, and those sit at offsets
+0, 1, 5, 9 and 13 in each chunk. Type any frame; it snaps to the nearest
+boundary, about one every four frames, and the info says where it landed.
+It **sizes its own canvas** from the source and `insert_frames`, so its
 `latent` input is optional and nothing upstream has to be told the new length —
 the conditioning node's `length` only ever trims reference videos. See workflows
 42 and 43.

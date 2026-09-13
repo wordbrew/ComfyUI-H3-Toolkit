@@ -19,7 +19,8 @@ import torch.nn.functional as Fn
 from .avlatent import av
 from .chunkplan import snap_context
 from .geometry import cover_crop, crop_to_multiple
-from .timing import (FPS, align_frames, audio_t, av_aligned_runs_through,
+from .timing import (FPS, FRAME_PER_TOKEN, align_frames, audio_t,
+                     av_aligned_runs_through,
                      describe, frame_groups, is_av_aligned, snap_av_aligned)
 
 CATEGORY = "MiniMax H3/mask"
@@ -739,6 +740,46 @@ def _latent_t(frames):
     return 2 if int(frames) <= 5 else (int(frames) - 5) // 17 * 5 + 2
 
 
+# WHERE A CUT IS ALLOWED TO LAND, which is finer than the 17-frame chunk.
+#
+# A group of 5 latent steps covers 17 pixel frames, but not evenly: the steps
+# cover 1, 4, 4, 4, 4. So the boundaries inside a group sit at frame offsets
+# 0, 1, 5, 9, 13 -- FIVE places to cut per chunk, about one every 4 frames,
+# rather than one every 17.
+#
+# The 17-frame rule belongs to the SHIFT, not the cut. Sliding a tail by a whole
+# group keeps every step's k%5, and 5 consecutive steps cover 17 frames wherever
+# they start, so the shift is a multiple of 17 no matter which boundary the cut
+# is on. Conflating the two cost a factor of four in precision for nothing.
+#
+# Derived from the canonical table so a change to the grid propagates here.
+_STEP_STARTS = tuple(sum(FRAME_PER_TOKEN[:k]) for k in range(len(FRAME_PER_TOKEN)))
+_GROUP = sum(FRAME_PER_TOKEN)
+
+
+def frames_at_step(step):
+    """Pixel frames lying before latent step `step`."""
+    q, r = divmod(max(0, int(step)), len(FRAME_PER_TOKEN))
+    return q * _GROUP + _STEP_STARTS[r]
+
+
+def step_at_frame(frames, direction="down"):
+    """The latent step whose boundary is at or below (or above) `frames`.
+
+    A latent step is the atom -- you cannot hold half of one -- so every cut
+    lands on one of these. `down` never regenerates less than asked; `up` never
+    holds more than asked.
+    """
+    g, r = divmod(max(0, int(frames)), _GROUP)
+    n = len(FRAME_PER_TOKEN)
+    if direction == "down":
+        return g * n + max(k for k, o in enumerate(_STEP_STARTS) if o <= r)
+    for k, o in enumerate(_STEP_STARTS):
+        if o >= r:
+            return g * n + k
+    return (g + 1) * n
+
+
 class H3LatentInsert:
     """Cut an existing clip at a frame and generate NEW frames into the gap.
 
@@ -761,11 +802,18 @@ class H3LatentInsert:
       lands on a different coverage than it was encoded for, which is the
       measured failure behind "never slice a previous latent".
 
-      Every count here is a multiple of 17 pixel frames = 5 latent steps, so the
-      tail moves by a whole number of GROUPS and every step keeps its k%5. That
-      is not a convention to be polite about the grid; it is the reason this is
-      a copy and not a resample. The widgets step by 17 so you cannot ask for an
-      illegal shift, and a target latent that is not `source + 17m` is refused.
+      `insert_frames` is therefore a multiple of 17 pixel frames = 5 latent
+      steps, so the tail moves by a whole number of GROUPS and every step keeps
+      its k%5. That is not a convention to be polite about the grid; it is the
+      reason this is a copy and not a resample.
+
+      THE CUT IS NOT ON THAT GRID, and an earlier version of this node wrongly
+      put it there. 5 consecutive steps cover 17 frames WHEREVER THEY START, so
+      the shift is a whole group no matter which boundary the tail begins on.
+      The cut only has to land on a step, and steps start at frame offsets
+      0, 1, 5, 9, 13 within each group -- five places per chunk, about one every
+      4 frames. Conflating the shift's grid with the cut's cost a factor of four
+      in precision for nothing.
 
       The tail is written anchored to the END of the target, not by computing the
       shift -- same result, and it cannot drift by a step if the arithmetic above
@@ -820,15 +868,17 @@ class H3LatentInsert:
                                "decode and re-encode round trip is what climbed "
                                "contrast down a chain."}),
             "split_frame": ("INT", {"default": 0, "min": 0, "max": 3600,
-                            "step": 17,
                             "tooltip": "Where the source is cut, in its OWN "
                                        "frames. 0 inserts in front of the clip; "
                                        "at or past the last frame appends after "
                                        "it; anything between is an interior "
-                                       "insert. Steps by 17 because that is one "
-                                       "VAE chunk — the tail has to move by whole "
-                                       "chunks or every latent step lands on the "
-                                       "wrong frame coverage."}),
+                                       "insert.\n\nType any frame. It snaps DOWN "
+                                       "to the nearest latent step boundary — "
+                                       "those sit at offsets 0, 1, 5, 9 and 13 in "
+                                       "every 17 frames, so about one every 4 "
+                                       "frames — and the info says where it "
+                                       "landed. A step is the atom; holding half "
+                                       "of one is not a thing."}),
             "insert_frames": ("INT", {"default": 68, "min": 0, "max": 3600,
                               "step": 17,
                               "tooltip": "How many NEW frames open up at the cut, "
@@ -837,14 +887,14 @@ class H3LatentInsert:
                                          "upstream has to be told. 0 turns the "
                                          "node into H3 Latent Bracket."}),
             "blend_before": ("INT", {"default": 0, "min": 0, "max": 3600,
-                             "step": 17,
                              "tooltip": "Source frames BEFORE the cut that are "
                                         "regenerated along with the insert, so "
                                         "the new material has a run-up written "
                                         "for it instead of butting against "
-                                        "untouched footage."}),
+                                        "untouched footage. Snaps to a step "
+                                        "boundary the generous way — you never "
+                                        "get less blend than you asked for."}),
             "blend_after": ("INT", {"default": 0, "min": 0, "max": 3600,
-                            "step": 17,
                             "tooltip": "The same on the far side of the cut — "
                                        "source frames rewritten as the run-out."}),
             "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0,
@@ -916,27 +966,23 @@ class H3LatentInsert:
         else:
             video, aud = canvas
 
-        # A SOURCE FRAME -> THE STEP IT STARTS. The final group is 5 pixel frames
-        # (2 steps), not 17, so it has no interior boundary to cut at: anything
-        # landing in it means "the end of the clip", and snapping it down like a
-        # normal chunk would silently drop the last 5 frames off an append.
-        def _step_at(frames):
-            return s_v if frames >= s_px - 4 else max(0, frames) // 17 * 5
+        # THE CUT LANDS ON A LATENT STEP, not on a 17-frame chunk. Five boundaries
+        # per chunk, so about one every 4 frames — the 17 belongs to the SHIFT,
+        # which is a whole group wherever the cut is. Clamped to the source first
+        # so a split past the end means "the end" without a special case.
+        def _at(frames, direction="down"):
+            return min(s_v, step_at_frame(min(max(0, frames), s_px), direction))
 
-        def _frames_at(step):
-            return s_px if step >= s_v else step // 5 * 17
-
-        # the cut, and how far the generated span reaches into the source either
-        # side of it. Before the cut we snap DOWN and after it UP, so asking for a
-        # blend always gets at least what you asked for rather than less.
-        cut_step = _step_at(min(max(0, int(split_frame)), s_px))
-        cut = _frames_at(cut_step)
-        hv = _step_at(cut - max(0, int(blend_before)))
-        from_step = s_v if cut_step >= s_v else min(
-            s_v, _step_at(-(-(cut + max(0, int(blend_after))) // 17) * 17))
+        # Before the cut we snap DOWN and after it UP, so asking for a blend
+        # always gets at least what you asked for rather than less.
+        want = min(max(0, int(split_frame)), s_px)
+        cut_step = _at(want)
+        cut = frames_at_step(cut_step)
+        hv = _at(cut - max(0, int(blend_before)))
+        from_step = _at(cut + max(0, int(blend_after)), "up")
         tail_v = s_v - from_step
 
-        keep_to, keep_from = _frames_at(hv), _frames_at(from_step)
+        keep_to, keep_from = frames_at_step(hv), frames_at_step(from_step)
         ha = audio_t(keep_to)
         tail_a = s_a - audio_t(keep_from)
 
@@ -992,7 +1038,9 @@ class H3LatentInsert:
         out["noise_mask"] = comfy.nested_tensor.NestedTensor((mask_v, mask_a))
 
         where = ("in front of the clip" if cut == 0 else
-                 "after the clip" if cut >= s_px else f"at frame {cut}")
+                 "after the clip" if cut >= s_px else f"at frame {cut}"
+                 + (f" (asked for {want}, nearest step boundary below)"
+                    if cut != want else ""))
         info = "\n".join([
             f"H3 LATENT INSERT: {ins} new frame(s) {where} — {s_px} -> {t_px} "
             f"({describe(t_px)})",

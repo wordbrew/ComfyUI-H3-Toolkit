@@ -131,10 +131,11 @@ check("the tail now starts at source frame 221 -> 65 steps, +20",
 check("the step before it is generated", mvb.at(84, axis=2)[0], 1.0)
 check("the tail is still phase-correct", svb.at(85, axis=2)[0], 65.0)
 check("generated_frames counts the run-up and run-out too", genb, INS + 34 + 51)
-# asked for 18 frames of run-out, got 34 -- one whole chunk, never less. The tail
-# therefore starts at source step 60, which is target step 80.
-check("blend_after snaps UP, so you never get less than you asked for",
-      [run(SRC, INS, 170, after=18)[1][0].at(k, axis=2)[0] for k in (79, 80)],
+# asked for 18 frames of run-out and got exactly 18: frame 188 is a step
+# boundary (11*17+1), which is source step 56, which is target step 76. The
+# coarse version rounded this to 34 frames -- the whole point of the finer grid.
+check("blend_after snaps UP to the nearest step, never less than asked",
+      [run(SRC, INS, 170, after=18)[1][0].at(k, axis=2)[0] for k in (75, 76)],
       [1.0, 0.0])
 
 print("insert_frames 0 is the bracket: a hole, same length")
@@ -153,6 +154,39 @@ ok("the tail ramp falls into the held tail",
    maf.at(t_af - 292)[0] > maf.at(t_af - 292 + 4)[0] > maf.at(t_af - 292 + 7)[0])
 check("deep inside the head is still fully held", maf.at(0)[0], 0.0)
 check("deep inside the tail is still fully held", maf.at(t_af - 1)[0], 0.0)
+
+print("the cut lands on a latent step, which is 4x finer than a VAE chunk")
+# THE 17 BELONGS TO THE SHIFT, NOT THE CUT. Five steps cover 17 frames wherever
+# they start, so the tail moves a whole group whichever boundary it begins on.
+# The first version put the cut on the 17s too and threw away 4x the precision.
+check("a group's steps start at 0, 1, 5, 9, 13",
+      [mask.frames_at_step(k) for k in range(6)], [0, 1, 5, 9, 13, 17])
+check("and the pattern repeats every 17 frames",
+      [mask.frames_at_step(k) for k in (5, 6, 7, 8, 9, 10)],
+      [17, 18, 22, 26, 30, 34])
+check("frames snap DOWN to the boundary at or below",
+      [mask.step_at_frame(f) for f in (0, 1, 4, 5, 12, 13, 16, 17)],
+      [0, 1, 1, 2, 3, 4, 4, 5])
+check("or UP, when holding less than asked is the wrong way to round",
+      [mask.step_at_frame(f, "up") for f in (0, 1, 2, 5, 14, 17, 18)],
+      [0, 1, 2, 2, 5, 5, 6])
+for f in range(0, 200):
+    got = mask.frames_at_step(mask.step_at_frame(f))
+    if got > f or mask.frames_at_step(mask.step_at_frame(f) + 1) <= f:
+        fails.append(f"snap-down is not the nearest boundary at frame {f}")
+        print(f"  FAIL snap-down at {f}: got {got}")
+        break
+
+# a cut at 103 -- one past a chunk boundary, so the old grid would have thrown it
+# back to 102. 103 sits between boundaries 102 and 103... frame 103 IS 6*17+1.
+(sv4, _), (mv4, _), gen4, _, info4, (_, t_v4, _, _) = run(SRC, INS, 103)
+check("cutting at 103 holds 31 steps, not 30", mv4.at(30, axis=2)[0], 0.0)
+check("and step 31 is generated", mv4.at(31, axis=2)[0], 1.0)
+check("the tail still lands 20 steps later", sv4.at(t_v4 - 1, axis=2)[0],
+      float(latent_t(SRC) - 1))
+check("the inserted span is still exactly 68 frames", gen4, INS)
+ok("an off-boundary request says where it actually landed",
+   "asked for 104" in run(SRC, INS, 104)[4])
 
 print("it sizes its own canvas, so no upstream node has to be told the length")
 # THE DESIGN THIS REPLACED asked for a canvas of source+insert and refused
