@@ -1,8 +1,8 @@
 {
   "id": "h3-38-scripted-long-form",
   "revision": 0,
-  "last_node_id": 42,
-  "last_link_id": 123,
+  "last_node_id": 43,
+  "last_link_id": 125,
   "nodes": [
     {
       "id": 12,
@@ -66,10 +66,10 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
+        "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe."
       ],
       "widgets_values_named": {
-        "text": "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
+        "text": "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe."
       },
       "color": "#432",
       "bgcolor": "#653"
@@ -367,7 +367,7 @@
           ]
         }
       ],
-      "title": "decoded frames — the NEXT chunk's keyframe",
+      "title": "decoded frames \u2014 the NEXT chunk's keyframe",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -491,7 +491,7 @@
           "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
-          "links": null
+          "links": []
         }
       ],
       "properties": {
@@ -555,7 +555,7 @@
           "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
-          "links": null
+          "links": []
         }
       ],
       "properties": {
@@ -619,7 +619,7 @@
           "localized_name": "MASK",
           "name": "MASK",
           "type": "MASK",
-          "links": null
+          "links": []
         }
       ],
       "properties": {
@@ -1009,7 +1009,7 @@
           "localized_name": "STRING",
           "name": "STRING",
           "type": "STRING",
-          "links": null
+          "links": []
         }
       ],
       "title": "lora schedule",
@@ -1155,7 +1155,7 @@
           "localized_name": "extra",
           "name": "extra",
           "type": "IMAGE",
-          "links": null
+          "links": []
         },
         {
           "localized_name": "pin",
@@ -1174,7 +1174,7 @@
           "slot_index": 12
         }
       ],
-      "title": "2. one chunk — no source wired",
+      "title": "2. one chunk \u2014 no source wired",
       "properties": {
         "Node name for S&R": "H3ChunkOpen"
       },
@@ -1316,7 +1316,7 @@
           "links": []
         }
       ],
-      "title": "1. schedule — no source wired, so chunks are just lengths  (replaced by H3 Script)",
+      "title": "1. schedule \u2014 no source wired, so chunks are just lengths  (replaced by H3 Script)",
       "properties": {
         "Node name for S&R": "H3ChunkPlan"
       },
@@ -1370,10 +1370,10 @@
           "localized_name": "STRING",
           "name": "STRING",
           "type": "STRING",
-          "links": null
+          "links": []
         }
       ],
-      "title": "script info — numbering, clocks, lora slots",
+      "title": "script info \u2014 numbering, clocks, lora slots",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -1454,7 +1454,7 @@
           "widget": {
             "name": "head"
           },
-          "link": 100
+          "link": null
         },
         {
           "localized_name": "beats",
@@ -1463,7 +1463,7 @@
           "widget": {
             "name": "beats"
           },
-          "link": 96
+          "link": 124
         },
         {
           "localized_name": "tail",
@@ -1472,7 +1472,7 @@
           "widget": {
             "name": "tail"
           },
-          "link": 105
+          "link": null
         },
         {
           "localized_name": "link_index",
@@ -1509,7 +1509,7 @@
           "widget": {
             "name": "subject_def_1"
           },
-          "link": 101
+          "link": null
         },
         {
           "localized_name": "retention_1",
@@ -1519,7 +1519,7 @@
           "widget": {
             "name": "retention_1"
           },
-          "link": 102
+          "link": null
         },
         {
           "localized_name": "expected_count",
@@ -1548,7 +1548,7 @@
           "widget": {
             "name": "soundscape"
           },
-          "link": 103
+          "link": null
         },
         {
           "localized_name": "music",
@@ -1557,7 +1557,7 @@
           "widget": {
             "name": "music"
           },
-          "link": 104
+          "link": null
         },
         {
           "localized_name": "chunk_plan",
@@ -1604,25 +1604,27 @@
           "localized_name": "lint",
           "name": "lint",
           "type": "STRING",
-          "links": []
+          "links": [
+            125
+          ]
         }
       ],
-      "title": "H3 Long-Form Links — makes the prompt PER CHUNK",
+      "title": "H3 Long-Form Links \u2014 makes the prompt PER CHUNK",
       "properties": {
         "Node name for S&R": "H3LongFormLinks"
       },
       "widgets_values": [
-        "A woman in a rust knit jumper stands in a long grey gallery with tall windows down the left side and flat overcast daylight.",
+        "",
         "she begins at the far end of the gallery and starts walking steadily toward the camera\nshe reaches the midpoint, her hands loosely together in front of her, still walking\nshe slows as she nears the lens, glancing once to the windows on her left\nshe arrives close to camera and comes to a stop, weight settled, looking into the lens",
-        "A single continuous take from one tripod; the camera holds the same framing throughout and the take runs unbroken.",
+        "",
         0,
         6.4,
         2024,
         "fixed",
-        "<Subject 1> is the woman in <Picture 1> and <Picture 2> and <Picture 3>,",
-        "<Subject 1> (Shot 1): fully_preserved — face, wavy brunette hair, and body match <Picture 1> and <Picture 2> and <Picture 3> exactly.",
+        "",
+        "",
         0,
-        "keyframe completion",
+        "reference generation",
         141,
         "",
         ""
@@ -1636,7 +1638,7 @@
         "seed": 2024,
         "control_after_generate": "fixed",
         "subject_def_1": "<Subject 1> is the woman in <Picture 1> and <Picture 2> and <Picture 3>,",
-        "retention_1": "<Subject 1> (Shot 1): fully_preserved — face, wavy brunette hair, and body match <Picture 1> and <Picture 2> and <Picture 3> exactly.",
+        "retention_1": "<Subject 1> (Shot 1): fully_preserved \u2014 face, wavy brunette hair, and body match <Picture 1> and <Picture 2> and <Picture 3> exactly.",
         "expected_count": 0,
         "task_type": "keyframe completion"
       },
@@ -1779,7 +1781,7 @@
           "localized_name": "Filenames",
           "name": "Filenames",
           "type": "VHS_FILENAMES",
-          "links": null
+          "links": []
         }
       ],
       "properties": {
@@ -1839,10 +1841,10 @@
           "localized_name": "STRING",
           "name": "STRING",
           "type": "STRING",
-          "links": null
+          "links": []
         }
       ],
-      "title": "CLOSE — what gets cloned",
+      "title": "CLOSE \u2014 what gets cloned",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -2116,7 +2118,7 @@
         39,
         8
       ],
-      "title": "3b. CARRY — previous chunk's latent tail becomes this prefix"
+      "title": "3b. CARRY \u2014 previous chunk's latent tail becomes this prefix"
     },
     {
       "id": 34,
@@ -2144,7 +2146,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "CARRY — frames copied per chunk"
+      "title": "CARRY \u2014 frames copied per chunk"
     },
     {
       "id": 35,
@@ -2207,7 +2209,7 @@
         4,
         0.5
       ],
-      "title": "SEAM CHECK — look here first"
+      "title": "SEAM CHECK \u2014 look here first"
     },
     {
       "id": 36,
@@ -2234,7 +2236,7 @@
       "properties": {
         "Node name for S&R": "PreviewImage"
       },
-      "title": "SEAM STRIPS — the red line is the cut"
+      "title": "SEAM STRIPS \u2014 the red line is the cut"
     },
     {
       "id": 37,
@@ -2353,41 +2355,31 @@
           "localized_name": "head",
           "name": "head",
           "type": "STRING",
-          "links": [
-            100
-          ]
+          "links": []
         },
         {
           "localized_name": "subject_defs",
           "name": "subject_defs",
           "type": "STRING",
-          "links": [
-            101
-          ]
+          "links": []
         },
         {
           "localized_name": "retention",
           "name": "retention",
           "type": "STRING",
-          "links": [
-            102
-          ]
+          "links": []
         },
         {
           "localized_name": "soundscape",
           "name": "soundscape",
           "type": "STRING",
-          "links": [
-            103
-          ]
+          "links": []
         },
         {
           "localized_name": "music",
           "name": "music",
           "type": "STRING",
-          "links": [
-            104
-          ]
+          "links": []
         },
         {
           "localized_name": "dialogue_lines",
@@ -2470,9 +2462,7 @@
           "localized_name": "tail",
           "name": "tail",
           "type": "STRING",
-          "links": [
-            105
-          ]
+          "links": []
         },
         {
           "localized_name": "picture_1",
@@ -2517,6 +2507,13 @@
           "name": "voice_2",
           "type": "AUDIO",
           "links": []
+        },
+        {
+          "name": "chunk_prompts",
+          "type": "STRING",
+          "links": [
+            124
+          ]
         }
       ],
       "properties": {
@@ -2525,11 +2522,11 @@
         "Node name for S&R": "H3Script"
       },
       "widgets_values": [
-        "@skye = character skye\n@room = setting. a bedroom, rain on the window, one warm lamp\n\nstyle = Photorealistic live-action, 16:9, handheld with visible grain and shallow depth of field, lit warm and low from one lamp at frame left so one side of her face carries the light and the other falls into shadow. The room is lived-in: an unmade bed, a chair by the window, rain moving on the glass behind her. The camera drifts slightly with the operator's breathing and never makes a deliberate move. No other people, no readable text, no music.\nsoundscape = rain on glass, a quiet room tone, a chair creaking\n\nshot 141 | a close-up of @skye at the window, rain running down the glass\n  note she is turned three-quarters away, nearer camera\n  do   slow push in\n  lora h3\\H3_Motion_BoosterV2.safetensors 0.7\n  say  @skye | says quietly, half-turning | I told you I would come back.\n\nshot 243 | wider. she turns from the window, crosses the room and sits\n  do   the camera holds still\n  lora h3\\InkRiot_style_h3_ep50.safetensors 0.4 -> 0.9\n  say  @skye asks Do you want to play?\n",
+        "@skye = character skye\n@skye.wears = a soft grey sweater, sleeves pushed to the elbow\n@skye.voice = a low unhurried voice\n@skye.pronoun = she\n@room = setting. a lived-in bedroom with rain on the window and one warm lamp\n\nstyle = Photorealistic live-action, 16:9, shot on 35mm with visible grain and shallow depth of field, lit warm and low from one lamp at frame left so one side of her face carries the light and the other falls into shadow. The room is lived-in: an unmade bed, a chair by the window, rain moving on the glass behind her and the lamp throwing a soft edge along her jaw.\ncamera = handheld throughout with small continuous drift from the operator's breathing, never a deliberate move, and she stays in focus whenever she is in frame\nlips = auto\nnegatives = no other people, no readable text, no signage, no costume changes, no music\nsoundscape = close room tone in a small carpeted bedroom with rain steady on the glass, a faint hum from the lamp, and a chair creaking under her weight\n\nshot 141 | a close-up of @skye at the window in @room, rain running down the glass\n  note she is turned three-quarters away, nearer camera, one shoulder to the lens\n  do   the camera pushes in slowly on her face\n  lora h3\\H3_Motion_BoosterV2.safetensors 0.7\n  say  @skye | says quietly, half-turning | I told you I would come back.\n\nshot 243 | wider. @skye turns from the window, crosses the room and sits in the chair\n  note her hands settle in her lap and she looks up toward the lens\n  do   the camera holds still and lets her cross into the frame\n  lora h3\\InkRiot_style_h3_ep50.safetensors 0.4 -> 0.9\n  say  @skye | asks, looking up | Do you want to play?\n",
         141,
         39
       ],
-      "title": "H3 Script — press \"Edit the take\""
+      "title": "H3 Script \u2014 press \"Edit the take\""
     },
     {
       "id": 40,
@@ -2554,7 +2551,7 @@
       "color": "#432",
       "bgcolor": "#653",
       "widgets_values": [
-        "ONE SCRIPT, WIRED ALL THE WAY THROUGH\n\nPress \"Edit the take\" on H3 Script.\n\n  H3 Script -> H3 Dialogue -> H3 Long-Form Links -> the\n  reference node. The plan goes to the chunk loop, the\n  seam check, the dialogue and the chunk LoRA.\n\nWHAT EACH PIECE IS FOR\n\n  H3 Long-Form Links makes the prompt PER CHUNK — it\n  takes link_index from H3 Chunk Open and emits that\n  chunk's clause. Bypassing it gives every chunk the same\n  static prompt, which is a regression, not a shortcut.\n\n  H3 Dialogue is where a line PLACED on the timeline\n  becomes a timestamp. It owns the rule that no line may\n  start inside a carried handle; H3 Script deliberately\n  does not time dialogue, so there is one implementation\n  of that rule and not two.\n\n  H3 Chunk Lora sits INSIDE the chunk body — that is what\n  chunk_index from H3 Chunk Open is for. Without it every\n  chunk would get chunk 0's LoRA and nothing would say\n  so. Its schedule comes from the script; the PICKERS are\n  yours to set, because the node addresses a slot and not\n  a filename. `info` prints which slot is which file.\n\n  pictures and voice come from the character store, in\n  the order H3 Script numbered them, so <Picture 1> in\n  the prompt and the first image the model sees are the\n  same file.\n\n  H3 Chunk Plan is BYPASSED: H3 Script emits the plan.\n  Two sources for one set of cuts is the disagreement\n  this removes. The panel goes red if it finds one that\n  disagrees.\n\nTHE TAIL IS DERIVED. One shot reads as a continuous\ntake; several state the cuts. It used to carry \"runs\nunbroken\" over a script that cuts.\n\nShot lengths are 141 and 243 — on the 17n+5 grid and\ndivisible by three, so both clocks stay together."
+        "ONE SCRIPT, WIRED ALL THE WAY THROUGH\n\nPress \"Edit the take\" on H3 Script.\n\n  H3 Script -> H3 Dialogue -> H3 Long-Form Links -> the\n  reference node. The plan goes to the chunk loop, the\n  seam check, the dialogue and the chunk LoRA.\n\nWHAT EACH PIECE IS FOR\n\n  H3 Long-Form Links makes the prompt PER CHUNK \u2014 it\n  takes link_index from H3 Chunk Open and emits that\n  chunk's clause. Bypassing it gives every chunk the same\n  static prompt, which is a regression, not a shortcut.\n\n  H3 Dialogue is where a line PLACED on the timeline\n  becomes a timestamp. It owns the rule that no line may\n  start inside a carried handle; H3 Script deliberately\n  does not time dialogue, so there is one implementation\n  of that rule and not two.\n\n  H3 Chunk Lora sits INSIDE the chunk body \u2014 that is what\n  chunk_index from H3 Chunk Open is for. Without it every\n  chunk would get chunk 0's LoRA and nothing would say\n  so. Its schedule comes from the script; the PICKERS are\n  yours to set, because the node addresses a slot and not\n  a filename. `info` prints which slot is which file.\n\n  pictures and voice come from the character store, in\n  the order H3 Script numbered them, so <Picture 1> in\n  the prompt and the first image the model sees are the\n  same file.\n\n  H3 Chunk Plan is BYPASSED: H3 Script emits the plan.\n  Two sources for one set of cuts is the disagreement\n  this removes. The panel goes red if it finds one that\n  disagrees.\n\nTHE TAIL IS DERIVED. One shot reads as a continuous\ntake; several state the cuts. It used to carry \"runs\nunbroken\" over a script that cuts.\n\nShot lengths are 141 and 243 \u2014 on the 17n+5 grid and\ndivisible by three, so both clocks stay together."
       ]
     },
     {
@@ -2570,7 +2567,7 @@
       ],
       "flags": {},
       "order": 0,
-      "mode": 0,
+      "mode": 4,
       "inputs": [
         {
           "localized_name": "lines",
@@ -2658,9 +2655,7 @@
           "localized_name": "beats",
           "name": "beats",
           "type": "STRING",
-          "links": [
-            96
-          ]
+          "links": []
         },
         {
           "localized_name": "timeline",
@@ -2690,7 +2685,7 @@
         3.0,
         ""
       ],
-      "title": "H3 Dialogue — a placed line becomes a timestamp here"
+      "title": "H3 Dialogue \u2014 a placed line becomes a timestamp here"
     },
     {
       "id": 42,
@@ -2793,7 +2788,34 @@
         "h3\\InkRiot_style_h3_ep50.safetensors",
         "h3\\H3_Motion_BoosterV2.safetensors"
       ],
-      "title": "H3 Chunk Lora — set the pickers to what `info` names"
+      "title": "H3 Chunk Lora \u2014 set the pickers to what `info` names"
+    },
+    {
+      "id": 43,
+      "type": "PreviewAny",
+      "pos": [
+        927.643617596726,
+        1333.661719126676
+      ],
+      "size": [
+        380,
+        180
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 125
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewAny"
+      },
+      "widgets_values": []
     }
   ],
   "links": [
@@ -3078,62 +3100,6 @@
       "INT"
     ],
     [
-      96,
-      41,
-      0,
-      9,
-      1,
-      "STRING"
-    ],
-    [
-      100,
-      39,
-      0,
-      9,
-      0,
-      "STRING"
-    ],
-    [
-      101,
-      39,
-      1,
-      9,
-      6,
-      "STRING"
-    ],
-    [
-      102,
-      39,
-      2,
-      9,
-      7,
-      "STRING"
-    ],
-    [
-      103,
-      39,
-      3,
-      9,
-      10,
-      "STRING"
-    ],
-    [
-      104,
-      39,
-      4,
-      9,
-      11,
-      "STRING"
-    ],
-    [
-      105,
-      39,
-      15,
-      9,
-      2,
-      "STRING"
-    ],
-    [
       106,
       39,
       12,
@@ -3276,6 +3242,22 @@
       42,
       3,
       "STRING"
+    ],
+    [
+      124,
+      39,
+      22,
+      9,
+      1,
+      "STRING"
+    ],
+    [
+      125,
+      9,
+      5,
+      43,
+      0,
+      "*"
     ]
   ],
   "groups": [
@@ -3293,7 +3275,7 @@
     },
     {
       "id": 2,
-      "title": "THE BODY — cloned once per chunk",
+      "title": "THE BODY \u2014 cloned once per chunk",
       "bounding": [
         880,
         -40,

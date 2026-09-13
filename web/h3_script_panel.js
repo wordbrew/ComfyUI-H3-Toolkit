@@ -179,24 +179,45 @@ function openPanel(node) {
                             "describe them, or the place", "flex:1;");
     const del = el("button", { textContent: "Remove", style: BTN });
 
+    // WARDROBE, VOICE AND PRONOUN. The worked example states all three about
+    // every speaking subject, and the script had nowhere to put them. Clothing
+    // follows the PROMPT rather than the anchors — say nothing and the model
+    // fills the gap from the reference images, which is what drifted earlier
+    // long-form takes topless. A place has none of the three.
+    const wears = input(entry.wears, "wears — a charcoal wool coat", "flex:1;");
+    const voice = input(entry.voice, "voice — a low measured voice", "flex:1;");
+    const pron = input(entry.pronoun, "she", "width:64px;");
+    const person = row([el("span", { textContent: "also",
+      style: "color:#888;width:36px;font-size:11px;flex:0 0 auto;" }),
+      wears, voice, pron]);
+
     function sync() {
       const isChar = kind.value === "character";
       picked.style.display = isChar ? "" : "none";
       described.style.display = isChar ? "none" : "";
+      person.style.display = kind.value === "setting" ? "none" : "";
     }
     sync();
     del.onclick = () => { wrap.remove(); refresh(); };
-    for (const n of [name, picked, described]) n.onchange = refresh;
+    for (const n of [name, picked, described, wears, voice, pron]) n.onchange = refresh;
     kind.onchange = () => { sync(); refresh(); };   // BOTH, not one or the other
 
-    wrap.append(row([name, kind, picked, described, del]));
+    wrap.append(row([name, kind, picked, described, del]), person);
     wrap._read = () => {
       const nm = (name.value || "").trim().replace(/[^A-Za-z0-9_]/g, "_");
       if (!nm) return null;
-      if (kind.value === "character") {
-        return { name: nm, kind: "character", character: picked.value };
+      const extra = {};
+      if (kind.value !== "setting") {
+        for (const [k, f] of [["wears", wears], ["voice", voice],
+                              ["pronoun", pron]]) {
+          const v = (f.value || "").trim();
+          if (v) extra[k] = v;
+        }
       }
-      return { name: nm, kind: kind.value, description: described.value };
+      if (kind.value === "character") {
+        return { name: nm, kind: "character", character: picked.value, ...extra };
+      }
+      return { name: nm, kind: kind.value, description: described.value, ...extra };
     };
     return wrap;
   }
@@ -343,6 +364,10 @@ function openPanel(node) {
     };
   }
 
+  // declared before build() reads it: the fields are created further down, but
+  // `const` has no hoisting, so a call to build() before this line would throw
+  const lookFields = {};
+
   function currentNames() {
     return [...castBox.children].map((c) => c._read?.()?.name).filter(Boolean);
   }
@@ -350,7 +375,11 @@ function openPanel(node) {
   function build() {
     const cast = [...castBox.children].map((c) => c._read?.()).filter(Boolean);
     const shots = [...shotBox.children].map((c) => c._read?.()).filter(Boolean);
-    return { ...(doc || {}), version: 1, cast, shots };
+    const look = {};
+    // read the boxes, not the last parse: `doc` is spread first so anything the
+    // panel has no field for survives a round trip, and these must win over it
+    for (const k of Object.keys(lookFields)) look[k] = lookFields[k].value;
+    return { ...(doc || {}), version: 1, cast, shots, ...look };
   }
 
   // live numbering + lint, without queueing anything
@@ -823,7 +852,33 @@ function openPanel(node) {
                + "appear here as a saved asset, and their anchors become "
                + "<Picture 1>, <Picture 2> … automatically." });
 
-  body.append(heading("References"), castBox, row([addRef]), refHint,
+  // ---- the look ----------------------------------------------------------- //
+  // THE OPENING PARAGRAPH OF detailed_description, which the guide asks 350-500
+  // words for and a script without it emits about 130 of. Six fields rather than
+  // one blob because each is a different question, and the lint can then name
+  // the one that is empty instead of saying "the style is thin".
+  const LOOK = [
+    ["style", "Look", "format, lens, grain, depth of field, how it is lit, what the set is made of", 3],
+    ["camera", "Camera", "movement type, amplitude and speed — 'handheld with small continuous drift, never a deliberate move'", 2],
+    ["lips", "Lips", "auto — or your own wording. Needed whenever two people speak", 1],
+    ["negatives", "Never show", "no other people, no readable text, no signage, no music", 1],
+    ["soundscape", "Sound", "the acoustic space as a sentence, not a list of noises", 2],
+    ["music", "Score", "N/A unless the audience hears music the characters cannot", 1],
+  ];
+  const lookBox = el("div", { style: CARD });
+  for (const [key, label, hint, rows] of LOOK) {
+    const f = rows > 1
+      ? el("textarea", { value: (doc && doc[key]) || "", placeholder: hint,
+                         rows, style: FIELD + "flex:1;resize:vertical;font:inherit;" })
+      : input((doc && doc[key]) || "", hint, "flex:1;");
+    f.onchange = refresh;
+    lookFields[key] = f;
+    lookBox.append(row([el("span", { textContent: label,
+      style: "color:#888;width:74px;font-size:11px;flex:0 0 auto;" }), f]));
+  }
+
+  body.append(heading("The look"), lookBox,
+              heading("References"), castBox, row([addRef]), refHint,
               heading("Shots"), shotBox, row([addShot]));
 
   const showPrompt = el("button", { textContent: "Show the prompt", style: BTN });

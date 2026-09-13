@@ -62,10 +62,23 @@ def align_frames(seconds):
 
 
 def parse_beats(text):
-    """One clause per non-empty line. Blank lines and '#' comments ignored."""
+    """One clause per non-empty line -- or per `---` block, when there are any.
+
+    A BEAT USED TO BE A SENTENCE and one line held it comfortably. H3 Script now
+    emits a COMPLETE six-section prompt per chunk, which is a dozen lines with
+    blank lines inside it; per-line splitting would shred three chunks into
+    twenty clauses.
+
+    A line of `---` separates them when present. Checked BEFORE the per-line
+    path rather than replacing it: every hand-written `beats` in every saved
+    graph is one clause per line, and those must not change meaning.
+    """
+    raw = (text or "").strip()
+    if re.search(r"(?m)^\s*---\s*$", raw):
+        return [b.strip() for b in re.split(r"(?m)^\s*---\s*$", raw) if b.strip()]
     out = []
-    for raw in (text or "").strip().splitlines():
-        line = raw.strip()
+    for line in raw.splitlines():
+        line = line.strip()
         if line and not line.startswith("#"):
             out.append(line)
     return out
@@ -279,8 +292,14 @@ class H3LongFormLinks:
             if hits:
                 notes.append(f"ERROR beat {i + 1}: relative phrasing {sorted(set(hits))[:2]}"
                              f" — state the wardrobe as a fact, not as a change.")
-        if not re.search(r"\b(single|one) (?:uninterrupted |unbroken )?continuous take\b"
-                         r"|\bruns unbroken\b|\bholds? the same framing\b", t, re.I):
+        # LOOK IN THE CLAUSE TOO, not only in the tail. H3 Script's clauses are
+        # whole six-section prompts and carry the continuity clause in their own
+        # summary, so a tail-only check reported a clause it was looking at.
+        CONTINUITY = (r"\b(single|one) (?:uninterrupted |unbroken )?continuous "
+                      r"(?:take|shot)\b|\b(?:runs?|run is|take is) unbroken\b|"
+                      r"\bcuts cleanly between\b|"
+                      r"\bholds? (?:the same|its own) framing\b")
+        if not re.search(CONTINUITY, t + " " + " ".join(clauses), re.I):
             notes.append("WARN tail: no positive continuity clause. State what the camera "
                          "DOES — 'a single continuous take', 'the camera holds the same "
                          "framing', 'the take runs unbroken'.")

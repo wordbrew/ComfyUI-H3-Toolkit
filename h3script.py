@@ -56,6 +56,15 @@ GRAMMAR
     @name.retention_detail = <replaces the whole clause>
     @name.pictures  = 3        only when there is no store entry
     @name.audio     = 1
+    @name.wears     = a charcoal wool coat, collar turned up
+    @name.voice     = a low measured voice
+    @name.pronoun   = she        how later lines in a shot refer back to them
+
+  WARDROBE FOLLOWS THE PROMPT, NOT THE ANCHORS (tested 2026-08-05), and a prompt
+  that says nothing about clothing lets the model fill the gap from the reference
+  images -- which is what drifted earlier long-form takes topless. `wears` is
+  therefore worth stating on every clothed subject. `voice` is the timbre phrase
+  the guide puts in front of the speaker id.
 
   RETENTION IS ABOUT LIKENESS, and only that. `preserve` and `allow` scope what
   stays the same about a subject between shots. Pose, motion and performance go
@@ -66,7 +75,19 @@ GRAMMAR
                  behaviour, and what must NOT appear. It opens
                  detailed_description, which the guide wants at 350-500 words
                  for a generation task -- without it a take emits about 130.
-    soundscape = ...
+    camera     = how the camera behaves across the take: movement type,
+                 amplitude and speed, in natural language ("handheld with small
+                 continuous drift from the operator's breathing, never a
+                 deliberate move"). The guide asks for all three.
+    negatives  = what must NOT appear ("no other people, no readable text, no
+                 signage, no costume changes, no music"). Stated positively as
+                 exclusions, which is the one place a negative belongs.
+    lips       = lip discipline, for any take with more than one speaker. Omit
+                 it and a listening face mouths the other person's line. Set to
+                 `auto` for the default wording, or write your own.
+    soundscape = the acoustic SPACE as a sentence, not a list of noises: the
+                 worked example describes the room's tail and hum, not "rain,
+                 hum, footsteps".
     music      = ...
 
     shot | <description>
@@ -216,7 +237,7 @@ def parse(text):
            # because the format, the camera, the lighting, the set and the
            # exclusions had nowhere to live. Every worked example opens with
            # them.
-           "style": ""}
+           "style": "", "camera": "", "negatives": "", "lips": ""}
     by_name = {}
     shot = None
 
@@ -248,11 +269,22 @@ def parse(text):
                             entry[attr] = int(rest)
                         except ValueError:
                             raise _err(lineno, f"{attr} takes a number", line)
-                    elif attr in ("preserve", "allow", "retention_detail"):
+                    elif attr in ("preserve", "allow", "retention_detail",
+                                  "wears", "voice", "pronoun"):
                         # `preserve` lists what stays the same, `allow` what may
                         # vary -- both LIKENESS scoping. `retention_detail`
                         # replaces the whole clause when the default wording is
                         # not what a shot needs.
+                        #
+                        # `wears` and `voice` are the two things the worked
+                        # example states about every speaking subject and the
+                        # script had nowhere to put. Wardrobe follows the PROMPT,
+                        # not the anchors (tested 2026-08-05) -- and a prompt
+                        # that says nothing about clothing lets the model fill
+                        # the gap from the reference images, which is what drifted
+                        # earlier long-form tests topless. `voice` is the timbre
+                        # phrase that rides in front of the speaker id:
+                        # "<Subject 1>, with a low measured voice (S1), says:".
                         entry[attr] = rest
                     else:
                         raise _err(lineno, f"unknown attribute '{attr}'", line)
@@ -289,7 +321,14 @@ def parse(text):
 
             key, sep, rest = body.partition("=")
             key = key.strip()
-            if sep and key in ("task", "soundscape", "music", "style"):
+            # `style` is the look. `camera`, `negatives` and `lips` are the three
+            # other things the worked example's opening paragraph carries and a
+            # single style blob buried: how the camera behaves, what must NOT
+            # appear, and the lip discipline that keeps a listening face still.
+            # Separate keys because each one is a different question to answer,
+            # and because lint can then say which is missing.
+            if sep and key in ("task", "soundscape", "music", "style",
+                               "camera", "negatives", "lips"):
                 doc[key] = rest.strip()
                 continue
             if body.startswith("shot"):
@@ -403,10 +442,11 @@ def parse(text):
 
 
 _SETTING_DEFAULTS = {"task": "reference generation", "soundscape": "",
-                     "music": "N/A", "style": ""}
+                     "music": "N/A", "style": "", "camera": "", "negatives": "",
+                     "lips": ""}
 # order matters: parse() reads these off `@name.<attr> = ...` lines
 _CAST_ATTRS = ("retention", "pictures", "audio", "preserve", "allow",
-               "retention_detail")
+               "retention_detail", "wears", "voice", "pronoun")
 
 
 def _head_line(entry):
@@ -794,11 +834,173 @@ def _sub(text, idx):
     return NAME.sub(repl, text or "")
 
 
-def _pictures(nums):
-    toks = [f"<Picture {n}>" for n in nums]
+def _join_and(toks):
+    """a, b and c — the list form every section of the guide's examples uses."""
+    toks = [t for t in toks if t]
     if len(toks) > 1:
         return ", ".join(toks[:-1]) + " and " + toks[-1]
     return toks[0] if toks else ""
+
+
+def _pictures(nums):
+    return _join_and([f"<Picture {n}>" for n in nums])
+
+
+def _shots_using(doc):
+    """{name: [1-based shot numbers]} — which shots each name appears in.
+
+    Feeds the retention scope, `<Subject 1> (appears in [Shot 1] and [Shot 2])`.
+    A marker with no scope leaves the model to guess whether it covers the whole
+    take, and a scope naming a shot the prompt does not contain is worse than
+    none — which is why the per-chunk path recomputes this against its own
+    local numbering rather than reusing the take's.
+    """
+    out = {}
+    for i, s in enumerate(doc.get("shots", []), 1):
+        text = " ".join([s["description"]] + list(s["notes"]))
+        for ch in s["chunks"]:
+            text += " " + " ".join(ch["actions"])
+            text += " " + " ".join(l["who"] for l in ch["lines"])
+        for nm in set(NAME.findall(text)) | {l["who"] for ch in s["chunks"]
+                                             for l in ch["lines"]}:
+            out.setdefault(nm, []).append(i)
+    return out
+
+
+def _scope(where, total):
+    """The `(appears in [Shot 1] and [Shot 2])` clause, or nothing."""
+    if not where or len(where) >= total:
+        return ""
+    return " (appears in " + _join_and([f"[Shot {i}]" for i in where]) + ")"
+
+
+def _stamp(frames):
+    s = frames / 24.0
+    return f"{int(s // 60):02d}:{s % 60:06.3f}"
+
+
+def _sentence(text, idx=None, cap=True):
+    """Author's fragment -> a sentence: substituted, capitalised, stopped."""
+    t = _sub(text, idx) if idx is not None else (text or "")
+    t = t.strip()
+    if not t:
+        return ""
+    if cap:
+        # EVERY sentence, not just the first. An author writing
+        # "wider. she turns from the window" gets "Wider. She turns ..." -- the
+        # compiler already capitalises the opening, and stopping there produced
+        # prose that read like a typo in the middle of a shot.
+        t = re.sub(r"(^|[.!?]\s+)([a-z])",
+                   lambda m: m.group(1) + m.group(2).upper(), t)
+    return t if t.rstrip().endswith((".", "!", "?")) else t + "."
+
+
+def look_paragraph(doc):
+    """The opening paragraph of detailed_description: style, camera, lips, negatives.
+
+    WHY IT IS FOUR FIELDS AND ONE PARAGRAPH. The worked example opens with a
+    single block covering format, lens, grain, depth of field, light direction
+    and quality, set materials, camera behaviour, lip discipline and exclusions
+    -- and every take needs all of it, which is why a script with only `style`
+    emitted a look nobody asked for. They are separate keys because each is a
+    different question and lint can then name the one you skipped; they join into
+    one paragraph because that is the shape the model was trained on.
+
+    The lip line is not decoration. With two speakers and nothing said about it,
+    a listening face mouths the other person's words.
+    """
+    parts = []
+    for key in ("style", "camera"):
+        got = (doc.get(key) or "").strip()
+        if got:
+            parts.append(_sentence(got))
+    lips = (doc.get("lips") or "").strip()
+    if lips.lower() == "auto":
+        lips = ("each speaker's lips move only on their own line and are closed "
+                "and still while anyone else speaks")
+    if lips:
+        parts.append(_sentence(lips))
+    neg = (doc.get("negatives") or "").strip()
+    if neg:
+        parts.append(_sentence(neg))
+    return " ".join(p for p in parts if p)
+
+
+def shot_paragraph(doc, idx, n, sid_of, spoken=True, time_base=0,
+                   language="English", label=None):
+    """One shot as the guide writes it -> (text, frames it covers).
+
+    `[Shot 1]` opens untimed; every later cut carries `At MM:SS.mmm`. That is a
+    sentence in the guide, not an example, so it binds.
+
+    `time_base` is what makes a CHUNK possible. A chunk renders a window of the
+    take, and its clock starts at its own first frame -- so the same shot that is
+    "At 00:05.875" in the whole take is "[Shot 1]", untimed, when it opens the
+    chunk being rendered. Handing a chunk the take's clock is how a 5.9-second
+    render came to be told about a cut at 5.875 seconds it could never reach.
+
+    DIALOGUE GOES INSIDE ITS SHOT, not after the shot list. The guide's verbatim
+    form is subject + (Sx) + speech verb + tag, and the worked example names the
+    subject on FIRST mention in a shot and uses a pronoun after -- "She says at
+    once:" -- which is also how it avoids reading like a cast list.
+    """
+    s = doc["shots"][n - 1]
+    at_f = sum(int(doc["shots"][i].get("frames") or 0) for i in range(n - 1))
+    rel = at_f - time_base
+    # LABEL, not index. A chunk's prompt is the only thing the model sees, so its
+    # shots have to number from 1 within it -- a lone "[Shot 2]" cites a shot the
+    # prompt never describes.
+    head_ = f"[Shot {label or n}]"
+    if rel > 0:
+        head_ += f" At {_stamp(rel)},"
+    txt = _sub(s["description"], idx)
+    # capitalise only when the header does NOT end in a comma: a timed cut reads
+    # "At 00:05.875, wider." and a capital there is wrong
+    if txt:
+        # a timed cut reads "At 00:05.875, wider." so the FIRST letter stays
+        # lower after a comma -- but every sentence inside the fragment still
+        # capitalises, or "wider. she turns from the window" ships as written
+        lead = not head_.rstrip().endswith(",")
+        txt = re.sub(r"(^|[.!?]\s+)([a-z])",
+                     lambda m: m.group(1) + m.group(2).upper(), txt)
+        if not lead:
+            txt = txt[:1].lower() + txt[1:]
+    part = f"{head_} {txt}"
+    if not part.rstrip().endswith((".", "!", "?")):
+        part += "."
+    for note in s["notes"]:
+        tx = _sentence(note, idx)
+        if tx:
+            part += " " + tx
+    if not spoken:
+        return part, int(s.get("frames") or 0)
+
+    said = set()
+    for ch in s["chunks"]:
+        for ln in ch["lines"]:
+            who = ln["who"]
+            sid = sid_of.get(who, "S1")
+            cast = next((c for c in doc["cast"] if c["name"] == who), {})
+            if who in said:
+                # a pronoun once the subject is established in this shot. Without
+                # a stated one the tag repeats, which reads as a cast list rather
+                # than a scene.
+                subj = (cast.get("pronoun") or "").strip() or \
+                    f"<Subject {idx[who]['subject']}>"
+                subj = subj[:1].upper() + subj[1:]
+                lead = f"{subj} ({sid})" if subj.startswith("<") else subj
+            else:
+                said.add(who)
+                voice = (cast.get("voice") or "").strip()
+                tok = f"<Subject {idx[who]['subject']}>"
+                lead = f"{tok}, with {voice} ({sid})," if voice else f"{tok} ({sid})"
+            verb = (ln["verb"] or "says").strip().rstrip(",:")
+            part += f" {lead} {verb}: <d>[{language}] {ln['line']}</d>"
+        for act in ch["actions"]:
+            tx = _sentence(act, idx)
+            if tx:
+                part += " " + tx
+    return part, int(s.get("frames") or 0)
 
 
 def emit(doc):
@@ -814,16 +1016,7 @@ def emit(doc):
             for ln in ch["lines"]:
                 sid_of.setdefault(ln["who"], f"S{len(sid_of) + 1}")
 
-    # which shots each name actually appears in, for the retention scope
-    shots_using = {}
-    for i, s in enumerate(doc["shots"], 1):
-        text = " ".join([s["description"]] + list(s["notes"]))
-        for ch in s["chunks"]:
-            text += " " + " ".join(ch["actions"])
-            text += " " + " ".join(l["who"] for l in ch["lines"])
-        for nm in set(NAME.findall(text)) | {l["who"] for ch in s["chunks"]
-                                             for l in ch["lines"]}:
-            shots_using.setdefault(nm, []).append(i)
+    shots_using = _shots_using(doc)
 
     defs, rets = [], []
     for c in doc["cast"]:
@@ -851,18 +1044,30 @@ def emit(doc):
                                  f"{_pictures(got['pictures'])} are not present "
                                  f"in the target video.")
             desc += "." + tail_note
-            if got["audio"]:
-                # the guide's own template line: the audio is bound to the
-                # SPEAKER ID, not merely attached to the subject
-                sid = sid_of.get(c["name"], "S1")
-                desc += (f" <Audio {got['audio'][0]}> is the voice for {tok} "
-                         f"({sid}).")
         elif c["kind"] == "setting":
             desc = f"{tok} is the setting: {_sub(c['description'], idx)}"
         else:
             desc = f"{tok} is {_sub(c['description'], idx)}"
         if not desc.rstrip().endswith((".", "!", "?")):
             desc += "."
+        # WARDROBE AND VOICE APPLY TO ANYONE, not only to a saved character.
+        # They lived in the character branch at first and a described person got
+        # neither -- which is the half of the cast most likely to need the
+        # wardrobe line, since it has no anchors to fall back on.
+        #
+        # Clothing follows the PROMPT rather than the anchors (tested
+        # 2026-08-05): say nothing and the model fills the gap from the
+        # reference images, which is how earlier long-form takes drifted topless.
+        if c["kind"] != "setting":
+            wears = (c.get("wears") or "").strip()
+            if wears:
+                desc += f" {tok} wears {wears.rstrip('.')} in the target video."
+            if got["audio"]:
+                # the guide's own template line: the audio is bound to the
+                # SPEAKER ID, not merely attached to the subject
+                sid = sid_of.get(c["name"], "S1")
+                desc += (f" <Audio {got['audio'][0]}> is the voice for {tok} "
+                         f"({sid}).")
         defs.append(desc)
 
         # RETENTION IS ABOUT LIKENESS. It scopes what stays the same about a
@@ -906,41 +1111,11 @@ def emit(doc):
         # WHICH SHOTS. The guide's form is `<Subject 1> (appears in [Shot 1] and
         # [Shot 2]): marker - ...`, and a marker with no scope leaves the model to
         # guess whether it applies to the whole take.
-        where = shots_using.get(c["name"], [])
-        scope = ""
-        if where and len(where) < len(doc["shots"]):
-            names = [f"[Shot {i}]" for i in where]
-            scope = (" (appears in " + (" and ".join(names) if len(names) < 3
-                     else ", ".join(names[:-1]) + " and " + names[-1]) + ")")
+        scope = _scope(shots_using.get(c["name"], []), len(doc["shots"]))
         rets.append(f"{tok}{scope}: {r} - {note}")
 
-    # `[Shot 1]` opens untimed; every later cut carries `At MM:SS.mmm`. That is a
-    # sentence in the guide, not an example, so it binds. The clock is the take's
-    # own -- cumulative shot lengths -- which is what the author is describing;
-    # the finished clip differs by the handles the join drops, and no prompt has
-    # ever been given that number.
-    body, at_f = [], 0
-    for n, s in enumerate(doc["shots"], 1):
-        head_ = f"[Shot {n}]"
-        if n > 1 and s.get("frames"):
-            secs = at_f / 24.0
-            head_ += f" At {int(secs // 60):02d}:{secs % 60:06.3f},"
-        at_f += int(s.get("frames") or 0)
-        # a shot opens a sentence, so it reads like one — "[Shot 1] a close-up"
-        # was the author's lower-case fragment pasted straight after a bracket
-        shot_txt = _sub(s["description"], idx)
-        # capitalise only when the shot header does NOT end in a comma: a timed
-        # cut reads "At 00:05.875, wider." and a capital there is wrong
-        if shot_txt and not head_.rstrip().endswith(","):
-            shot_txt = shot_txt[:1].upper() + shot_txt[1:]
-        part = f"{head_} {shot_txt}"
-        if not part.rstrip().endswith((".", "!", "?")):
-            part += "."
-        for note in s["notes"]:
-            tx = _sub(note, idx)
-            tx = tx[:1].upper() + tx[1:] if tx else tx     # it follows a full stop
-            part += " " + (tx if tx.rstrip().endswith((".", "!", "?")) else tx + ".")
-        body.append(part)
+    body = [shot_paragraph(doc, idx, n, sid_of, spoken=False)[0]
+            for n in range(1, len(doc["shots"]) + 1)]
 
     # H3Dialogue's own input format: rows of `speaker | verb | line`, blank
     # lines separating chunks; actions one per chunk in the same order.
@@ -972,34 +1147,22 @@ def emit(doc):
             loras.append(f"# {l['name']} {l['strength']} — add a time span")
 
     # THE WHOLE-TAKE PROMPT CARRIES ITS DIALOGUE. `head` stays clean because the
-    # chunked path builds per-chunk clauses through H3 Dialogue and would double
-    # them up; the single-prompt path had no dialogue at all, which is why a take
-    # rendered silent when H3 Long-Form Links was out of the graph.
+    # chunked path builds per-chunk clauses and would double them up; the
+    # single-prompt path had no dialogue at all, which is why a take rendered
+    # silent when H3 Long-Form Links was out of the graph.
     #
-    # The form is the guide's, verbatim: subject + (Sx) + speech verb + tag.
-    # `(Sx)` goes BEFORE the tag -- trailing it after `</d>` risks the id being
-    # vocalised as a spoken artifact (observed 2026-08-05).
-    spoken = []
-    for n, s in enumerate(doc["shots"], 1):
-        bits = []
-        for ch in s["chunks"]:
-            for ln in ch["lines"]:
-                sid = sid_of[ln["who"]]
-                subj = f"<Subject {idx[ln['who']]['subject']}>"
-                bits.append(f"{subj} ({sid}) {ln['verb']}, "
-                            f"<d>[English] {ln['line']}</d>")
-            for act in ch["actions"]:
-                a = _sub(act, idx)
-                a = a[:1].upper() + a[1:] if a else a
-                bits.append(a if a.rstrip().endswith((".", "!", "?")) else a + ".")
-        spoken.append(" ".join(bits))
-
+    # ONE BUILDER FOR BOTH. `shot_paragraph` is what the per-chunk path uses too,
+    # so the guide's form -- subject + (Sx) + speech verb + tag, `(Sx)` BEFORE
+    # the tag, a pronoun after first mention -- exists in one place. The two used
+    # to be written separately and had drifted: this path lost the style
+    # paragraph, that one lost the shot slicing.
     head = "\n".join(body)
-    described = "\n".join(
-        (b + (" " + spoken[i] if spoken[i] else "")).strip()
-        for i, b in enumerate(body))
-    if doc.get("style", "").strip():
-        described = doc["style"].strip() + "\n\n" + described
+    described = "\n\n".join(
+        shot_paragraph(doc, idx, n, sid_of)[0]
+        for n in range(1, len(doc["shots"]) + 1))
+    look = look_paragraph(doc)
+    if look:
+        described = look + "\n\n" + described
     defs_s = "\n".join(defs) if defs else "N/A"
     rets_s = "\n".join(rets) if rets else "N/A"
     # THE ASSEMBLED PROMPT, in the block order prompt_scene.py uses. Every
@@ -1077,6 +1240,139 @@ def emit(doc):
     }
 
 
+CLAUSE_SEP = "\n---\n"
+
+
+def chunk_prompts(doc, chunks):
+    """One COMPLETE six-section prompt per chunk, joined for H3 Long-Form Links.
+
+    THE FAILURE THIS EXISTS TO REMOVE
+      The chunked path used to ship loose sections -- head, tail, defs, retention
+      -- to H3 Long-Form Links, which pasted them around a dialogue clause. The
+      result (measured 2026-09-12 on H3 38, chunk 0) was that:
+
+        - the style paragraph never arrived at all, because it rode the whole-take
+          `prompt` output that the chunked graph does not use;
+        - every chunk was handed the WHOLE take's shot list, so a 5.9-second
+          chunk was told about a cut at 00:05.875 it could never reach;
+        - the shot clock and the dialogue clock were different clocks in the same
+          paragraph, later timestamp first, so time ran backwards;
+        - the continuity clause landed inside detailed_description as prose about
+          structure rather than in summary.
+
+      A chunk is a window on the take, so the honest thing is to describe THAT
+      WINDOW: the shots it contains, on its own clock, with the dialogue in them.
+
+    WHICH SHOTS A CHUNK CONTAINS
+      A chunk's kept region is `keep_from..end`, not `start..end` -- the frames
+      before `keep_from` are the carried handle, reproduced under a denoise mask
+      of 0. A shot is included when it overlaps that kept region at all, because
+      a shot that merely starts before the window still fills it.
+
+    WHAT STAYS WHOLE
+      subject_definitions and retention_analysis are the take's, not the chunk's:
+      identity must not drift between chunks, and re-scoping a subject's shot list
+      per chunk would say "appears in [Shot 1]" to one chunk and "[Shot 2]" to
+      the next about the same person. The look paragraph is repeated in every
+      chunk for the same reason -- it is the one thing that must not change.
+    """
+    idx, npic, naud = index(doc)
+    out = emit(doc)
+    shots = doc.get("shots", [])
+    if not shots or not chunks:
+        return out["prompt"]
+
+    # first vocal event decides the ids, take-wide -- the same order emit() uses
+    sid_of, order = {}, []
+    for s in shots:
+        for ch in s["chunks"]:
+            for ln in ch["lines"]:
+                if ln["who"] not in sid_of:
+                    sid_of[ln["who"]] = f"S{len(sid_of) + 1}"
+                    order.append(ln["who"])
+
+    bounds, at = [], 0
+    for s in shots:
+        n = int(s.get("frames") or 0)
+        bounds.append((at, at + n))
+        at += n
+    look = look_paragraph(doc)
+    using = _shots_using(doc)
+
+    prompts = []
+    for c in chunks:
+        lo, hi = int(c.get("keep_from", c["start"])), int(c["end"])
+        mine = [i + 1 for i, (a, b) in enumerate(bounds)
+                if b > lo and a < hi] or [len(shots)]
+        base = bounds[mine[0] - 1][0]
+        # numbered from 1 WITHIN THIS CHUNK, and the retention scope renumbered
+        # to match -- a scope citing a shot the prompt does not contain is worse
+        # than no scope at all.
+        local = {n: k + 1 for k, n in enumerate(mine)}
+        paras = [shot_paragraph(doc, idx, n, sid_of, time_base=base,
+                                label=local[n])[0] for n in mine]
+        described = "\n\n".join(paras)
+        if look:
+            described = look + "\n\n" + described
+        rets = []
+        for line in out["retention"].splitlines():
+            nm = next((c["name"] for c in doc["cast"]
+                       if f"<Subject {idx[c['name']]['subject']}>" ==
+                       line.split(" (")[0].split(":")[0].strip()), None)
+            line = re.sub(r" \(appears in [^)]*\)", "", line, count=1)
+            here = [local[n] for n in using.get(nm, []) if n in local]
+            head_, sep, rest = line.partition(":")
+            rets.append(head_ + _scope(here, len(mine)) + sep + rest)
+        retention = "\n".join(rets) if rets else out["retention"]
+        # THE CONTINUITY CLAUSE BELONGS IN SUMMARY, not in the shot description,
+        # and it states how many cuts THIS WINDOW has -- a different number from
+        # the take's, and the one the model is about to render.
+        #
+        # The shape follows the worked example: "In three shots on a concrete
+        # stairwell landing, <Subject 1> and <Subject 2> trade eight short
+        # clipped lines...". Count, place, who, how much they say, then how the
+        # camera behaves.
+        cuts = len(mine)
+        # WHO SPEAKS HERE, not who speaks in the take. Naming a subject who says
+        # nothing in this window tells the model to find them a line.
+        here_who = []
+        for n in mine:
+            for ch in shots[n - 1]["chunks"]:
+                for ln in ch["lines"]:
+                    if ln["who"] not in here_who:
+                        here_who.append(ln["who"])
+        who = _join_and([f"<Subject {idx[n]['subject']}>" for n in here_who])
+        n_lines = sum(len(ch["lines"]) for n in mine
+                      for ch in shots[n - 1]["chunks"])
+        setting_txt = next((_sub(c2["description"], idx) for c2 in doc["cast"]
+                            if c2["kind"] == "setting" and c2.get("description")),
+                           "")
+        bits = ["In a single continuous shot" if cuts == 1 else f"In {cuts} shots"]
+        if setting_txt:
+            bits.append(f" in {setting_txt.rstrip('.')}")
+        if who and n_lines:
+            bits.append(f", {who} speak{'s' if len(here_who) == 1 else ''} "
+                        f"{n_lines} line{'s' if n_lines != 1 else ''}")
+        elif who:
+            bits.append(f", {who} appear{'s' if len(here_who) == 1 else ''}")
+        summary = (f"[{doc.get('task', 'reference generation')}] "
+                   + "".join(bits).rstrip() + ". "
+                   + ("The framing holds and the run is unbroken." if cuts == 1
+                      else "The camera cuts cleanly between them; each shot "
+                           "holds its own framing and the subjects stay the "
+                           "same people across the cuts.")
+                   + (" The references supply identity"
+                      + (" and voice." if naud else ".") if npic or naud else ""))
+        prompts.append(
+            "subject_definitions:\n" + out["subject_defs"] + "\n\n"
+            "summary:\n" + summary + "\n\n"
+            "retention_analysis:\n" + retention + "\n\n"
+            "detailed_description:\n" + described + "\n\n"
+            "overall_soundscape: " + (out["soundscape"].strip() or "N/A") + "\n\n"
+            "non_diegetic_music: " + (out["music"] or "N/A"))
+    return CLAUSE_SEP.join(prompts)
+
+
 def lint(doc, out):
     """Things that render fine and are wrong. Report, never refuse."""
     notes = []
@@ -1102,6 +1398,39 @@ def lint(doc, out):
         if empty and len(s["chunks"]) > 1:
             notes.append(f"chunk break(s) {empty} have neither a line nor an "
                          f"action; that stretch has nothing directing it")
+
+    # THE LOOK PARAGRAPH IS WHAT THE GUIDE ASKS 350-500 WORDS FOR, and a script
+    # that skips it emits a skeleton the model fills from the reference images.
+    # Each of these is a separate question, so each gets its own note rather than
+    # one "the style is thin".
+    if not (doc.get("style") or "").strip():
+        notes.append("no `style =` — nothing states format, lens, grain, "
+                     "lighting or set, so the look comes from the references")
+    if not (doc.get("camera") or "").strip():
+        notes.append("no `camera =` — the guide wants movement type, amplitude "
+                     "and speed; without it the camera invents a move")
+    speakers = {l["who"] for s in doc["shots"] for ch in s["chunks"]
+                for l in ch["lines"]}
+    if len(speakers) > 1 and not (doc.get("lips") or "").strip():
+        # measured behaviour, not a style preference: with nothing said about it
+        # a listening face mouths the other person's line
+        notes.append(f"{len(speakers)} speakers and no `lips =` — set it to "
+                     f"`auto`, or a listening face will mouth the other "
+                     f"person's line")
+    if not (doc.get("negatives") or "").strip():
+        notes.append("no `negatives =` — nothing excludes extra people, "
+                     "readable text or music")
+    for c in doc["cast"]:
+        if c["kind"] in ("character", "subject") and c["name"] in named \
+                and not (c.get("wears") or "").strip():
+            # wardrobe follows the prompt, not the anchors; saying nothing lets
+            # the model fill the gap from the reference images
+            notes.append(f"@{c['name']} has no `.wears` — clothing will come "
+                         f"from the reference images")
+    words = len((out.get("prompt") or "").split())
+    if words < 350:
+        notes.append(f"the whole-take prompt is {words} words; the guide asks "
+                     f"350-500 for a generation task")
     return notes
 
 
@@ -1147,16 +1476,22 @@ class H3Script:
     # every saved graph keeps its wiring. They are what makes a shot's length
     # mean something downstream -- wire them into H3 Chunk Plan and the cuts you
     # drew are the cuts it plans.
+    # `chunk_prompts` goes LAST, on the end, per the slot contract. It is the one
+    # to wire for a chunked take: a complete six-section prompt per chunk, into
+    # H3 Long-Form Links' `beats`, with head/tail/defs/retention left unwired.
+    # The loose sections stay for the graphs that already use them.
     RETURN_TYPES = ("STRING",) * 8 + ("STRING", "STRING", "STRING", "INT",
                                      "H3_CHUNK_PLAN", "STRING", "STRING",
                                      "STRING") + \
-                   ("IMAGE",) * MAX_PICTURES + ("AUDIO",) * MAX_VOICES
+                   ("IMAGE",) * MAX_PICTURES + ("AUDIO",) * MAX_VOICES + \
+                   ("STRING",)
     RETURN_NAMES = ("head", "subject_defs", "retention", "soundscape", "music",
                     "dialogue_lines", "dialogue_actions", "speaker_map",
                     "document", "info", "cut_frames", "total_frames", "plan",
                     "lora_schedule", "prompt", "tail") + \
                    tuple(f"picture_{i + 1}" for i in range(MAX_PICTURES)) + \
-                   tuple(f"voice_{i + 1}" for i in range(MAX_VOICES))
+                   tuple(f"voice_{i + 1}" for i in range(MAX_VOICES)) + \
+                   ("chunk_prompts",)
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DESCRIPTION = ("Compile a take written in @names into H3's prompt fields. "
@@ -1220,7 +1555,8 @@ class H3Script:
                            ",".join(str(c) for c in cuts), total, payload,
                            sched, out["prompt"], out["tail"],
                            *(list(pics) + [None] * MAX_PICTURES)[:MAX_PICTURES],
-                           *(list(voices) + [None] * MAX_VOICES)[:MAX_VOICES])}
+                           *(list(voices) + [None] * MAX_VOICES)[:MAX_VOICES],
+                           chunk_prompts(doc, chunks))}
 
 
 NODE_CLASS_MAPPINGS = {"H3Script": H3Script}

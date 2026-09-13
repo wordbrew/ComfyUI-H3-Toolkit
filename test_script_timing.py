@@ -258,6 +258,85 @@ ok("the default script in the widget actually parses",
    is not None)
 
 
+
+# --- the six-section format, per chunk ------------------------------------- #
+#
+# WHAT THIS DEFENDS. On 2026-09-12 the chunked path was measured against
+# docs/prompting-ref2va.md and diverged in five ways at once: the style
+# paragraph never arrived, every chunk was handed the WHOLE take's shot list, the
+# shot clock and the dialogue clock were different clocks in one paragraph, the
+# continuity clause sat inside detailed_description, and summary carried "link 1
+# of 2" bookkeeping. All five were invisible in a render.
+
+print("a chunk's prompt describes THAT chunk, in the guide's six sections")
+FULL = """@ada = a woman in her thirties
+@ben = a man with grey hair
+@ada.wears = a charcoal wool coat
+@ada.voice = a low measured voice
+@ada.pronoun = she
+@room = setting. a concrete stairwell landing
+style = Photorealistic live-action, 16:9, handheld on 35mm with visible grain
+camera = handheld with small continuous drift, never a deliberate move
+lips = auto
+negatives = no other people, no readable text, no music
+soundscape = close room tone in hard concrete with a long reflective tail
+
+shot 141 | a two-shot of @ada facing @ben on the landing
+  say @ada | says | You said tomorrow.
+  say @ada | says at once | To when?
+shot 141 | a close-up of @ben
+  say @ben | says | Understood.
+"""
+fdoc = hs.parse(FULL)
+fchunks2, _ = hs.build_plan(fdoc, chunk_frames=141, context=39)
+parts = hs.chunk_prompts(fdoc, fchunks2).split(hs.CLAUSE_SEP)
+check("one prompt per chunk", len(parts), len(fchunks2))
+for i, p in enumerate(parts):
+    for sec in ("subject_definitions:", "summary:", "retention_analysis:",
+                "detailed_description:", "overall_soundscape:",
+                "non_diegetic_music:"):
+        ok(f"chunk {i} has {sec}", sec in p)
+    ok(f"chunk {i} carries the look", "Photorealistic live-action" in p)
+    ok(f"chunk {i} carries the lip discipline", "lips move only" in p)
+    ok(f"chunk {i} says nothing about links", "link " not in p.lower())
+    ok(f"chunk {i} numbers its first shot [Shot 1]", "[Shot 1]" in p)
+
+print("the clock is the chunk's own, and only its own shots appear")
+first, last = parts[0], parts[-1]
+ok("the opening chunk's shot is untimed", "[Shot 1] A two-shot" in first)
+ok("it does not mention the later shot", "close-up of <Subject 2>" not in first)
+ok("the last chunk holds the later shot instead",
+   "close-up of <Subject 2>" in last and "A two-shot" not in last)
+ok("and no timestamp from the take's clock leaks into a chunk that cannot reach it",
+   "00:05." not in first)
+
+print("dialogue sits inside its shot, in the guide's verbatim form")
+ok("subject, then (Sx), then the verb, then the tag",
+   "<Subject 1>, with a low measured voice (S1), says: <d>[English] You said "
+   "tomorrow.</d>" in first)
+ok("a second line from the same speaker uses the pronoun",
+   "She says at once: <d>[English] To when?</d>" in first)
+ok("the id never trails the tag", "</d> (S" not in first)
+
+print("summary names this window, not the take")
+ok("the last chunk credits only the speaker who speaks in it",
+   "<Subject 2> speaks 1 line" in last and "<Subject 1> and" not in
+   last.split("detailed_description:")[0].split("summary:")[1])
+ok("the continuity clause is in summary, not in the description",
+   "unbroken" in last.split("detailed_description:")[0])
+
+print("wardrobe is stated, because clothing follows the prompt not the anchors")
+ok("the definition carries it",
+   "<Subject 1> wears a charcoal wool coat in the target video." in first)
+
+print("lint names each missing half of the look separately")
+thin = hs.parse("@a = a woman\nshot 141 | a close-up of @a\n  say @a says hi\n")
+notes = " | ".join(hs.lint(thin, hs.emit(thin)))
+for want in ("`style =`", "`camera =`", "`negatives =`", "`.wears`"):
+    ok(f"it asks for {want}", want in notes)
+ok("and it reports the word count against the guide's range",
+   "350-500" in notes)
+
 print()
 print(f"{len(fails)} failure(s)" if fails else "script timing: all checks pass")
 sys.exit(1 if fails else 0)
