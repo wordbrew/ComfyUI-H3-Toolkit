@@ -123,7 +123,7 @@ check("a split inside the final 5-frame group still appends",
       run(SRC, INS, 344)[1][0].at(s_v, axis=2)[0], 1.0)
 
 print("blend_before / blend_after widen the hole into the source")
-(svb, _), (mvb, _), genb, _, _, (_, t_vb, _, _) = run(SRC, INS, 170, before=34, after=51)
+(svb, _), (mvb, _), genb, _, _, (_, t_vb, _, _) = run(SRC, INS, 170, before=10, after=15)
 check("the head now stops at 136 frames = 40 steps",
       [mvb.at(k, axis=2)[0] for k in (39, 40)], [0.0, 1.0])
 check("the tail now starts at source frame 221 -> 65 steps, +20",
@@ -131,15 +131,15 @@ check("the tail now starts at source frame 221 -> 65 steps, +20",
 check("the step before it is generated", mvb.at(84, axis=2)[0], 1.0)
 check("the tail is still phase-correct", svb.at(85, axis=2)[0], 65.0)
 check("generated_frames counts the run-up and run-out too", genb, INS + 34 + 51)
-# asked for 18 frames of run-out and got exactly 18: frame 188 is a step
-# boundary (11*17+1), which is source step 56, which is target step 76. The
-# coarse version rounded this to 34 frames -- the whole point of the finer grid.
-check("blend_after snaps UP to the nearest step, never less than asked",
-      [run(SRC, INS, 170, after=18)[1][0].at(k, axis=2)[0] for k in (75, 76)],
+# 6 steps past the cut is source step 56 -- frame 188, which is 11*17+1 -- and
+# that lands at target step 76. In FRAMES that blend is 18, a number the old
+# 17-stepped widget could not ask for at all.
+check("six steps of run-out reaches the boundary at frame 188",
+      [run(SRC, INS, 170, after=6)[1][0].at(k, axis=2)[0] for k in (75, 76)],
       [1.0, 0.0])
 
 print("insert_frames 0 is the bracket: a hole, same length")
-(_, _), (mv0, _), gen0, total0, _, (_, t_v0, _, _) = run(SRC, 0, 170, before=34, after=34)
+(_, _), (mv0, _), gen0, total0, _, (_, t_v0, _, _) = run(SRC, 0, 170, before=10, after=10)
 check("the take is not longer", total0, SRC)
 check("and a hole is open in the middle",
       [mv0.at(k, axis=2)[0] for k in (39, 40, 59, 60)], [0.0, 1.0, 1.0, 0.0])
@@ -251,20 +251,23 @@ ok("a feather warns, because 0.35 scales the model's audio by the mask",
 ok("and a feather of 0 is silent, because the mask is binary then",
    "AUDIO FEATHER" not in run(SRC, INS, 170, feather=0)[4])
 
-print("a blend says what it used, because the widget cannot express the ladder")
-# STEP BOUNDARIES ARE NOT EVENLY SPACED: 0, 1, 5, 9, 13 inside each group of 17,
-# so the reachable blends sit about 4 apart with a 1-frame step at every group
-# edge. `step: 17` on the widget offered one position in five; `step: 1` offers
-# five times more than exist. Neither can be right, so the node reports.
-info5 = run(SRC, INS, 170, before=5)[4]
-ok("asking for 5 buys 8, and says so",
-   "8 frame(s) of run-up (asked for 5)" in info5)
-ok("a request that lands exactly is not annotated",
-   "(asked for" not in [l for l in run(SRC, INS, 170, before=17)[4].splitlines()
-                        if l.strip().startswith("held")][0])
-ok("the run-out is annotated the same way",
-   "(asked for 20)" in run(SRC, INS, 170, after=20)[4])
-ok("and 0 is never annotated", "(asked for 0)" not in run(SRC, INS, 170)[4])
+print("a blend counts STEPS, so every increment is a real position")
+# THE LADDER IN FRAMES IS UNEVEN -- boundaries sit at offsets 0, 1, 5, 9, 13
+# inside each group of 17 -- so a frame-counting widget can only offer too few
+# real positions (step 17: one in five) or too many (step 1: three of every four
+# doing nothing). Counting steps, n and n+1 are always different regions.
+seen = []
+for b in range(0, 9):
+    info = run(SRC, INS, 170, before=b)[4]
+    line = [l for l in info.splitlines() if l.strip().startswith("held")][0]
+    seen.append(line.split("regenerating ")[1].split(" frame")[0]
+                if "regenerating" in line else "0")
+check("eight steps give eight different run-ups",
+      seen, ["0", "4", "8", "12", "16", "17", "21", "25", "29"][:9])
+ok("and the info gives both units",
+   "17 frame(s) of run-up (5 step(s))" in run(SRC, INS, 170, before=5)[4])
+ok("five steps is exactly one VAE chunk",
+   "17 frame(s)" in run(SRC, INS, 170, before=5)[4])
 
 print("it still refuses a hole with nothing in it")
 try:
