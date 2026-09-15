@@ -728,6 +728,17 @@ class H3LatentBracket:
         return {"ui": {"h3char": [info]}, "result": (out, int(gen_px), info)}
 
 
+def _rounded(got, asked):
+    """" (asked for N)", but only when the ask did not land on a real value.
+
+    A blend has to end on a latent step and those are unevenly spaced in frames,
+    so a typed number often rounds up. Saying so every time would be noise on
+    the values that are exact -- which are the ones the widget's arrows produce.
+    """
+    a = max(0, int(asked))
+    return f" (asked for {a})" if a and int(got) != a else ""
+
+
 def _frames_of(latent_t):
     """Pixel frames in a clip of `latent_t` video steps. Inverse of core's
     `video_latent_t`: 17n+5 frames <-> 5n+2 steps."""
@@ -874,14 +885,16 @@ class H3LatentInsert:
       a hole in the middle of a clip of unchanged length. Above 0 you get both --
       new frames, and a rewritten run-up and run-out to carry into them.
 
-      THEY COUNT LATENT STEPS, and `insert_frames` counts pixel frames. That
-      looks inconsistent and is not: the insert is a SHIFT, which has to be a
-      whole group of 5 steps = 17 frames, so frames are the natural unit and 17
-      is a real increment. A blend is a BOUNDARY, and boundaries sit at frame
-      offsets 0, 1, 5, 9, 13 inside each group -- uneven, so a frame count can
-      only offer too few of the real positions or too many. In steps every
-      increment is exactly one more position, and the info reports what it came
-      to in frames.
+      Both are in FRAMES, and both land on values that exist. `insert_frames`
+      is a SHIFT, so its real values are multiples of 17 and a step of 17 walks
+      them. A blend is a BOUNDARY, and boundaries sit at frame offsets 0, 1, 5,
+      9, 13 inside each group -- so from a cut at 102 the real run-ups are 0, 4,
+      8, 12, 16, 17, 21, and no arithmetic increment walks that. The node snaps
+      UP (never less blend than asked) and the browser extension moves the
+      widget one RUNG per arrow press, so the number on the node is always one
+      the render can produce. Without the extension it still works; you just
+      see the number you typed rather than the one that will be used, and the
+      info says which.
 
     IT MAKES ITS OWN CANVAS, AND THAT IS THE POINT
       The first version took the blank latent from the conditioning node and
@@ -943,25 +956,23 @@ class H3LatentInsert:
                                          "The canvas is sized from this — nothing "
                                          "upstream has to be told. 0 turns the "
                                          "node into H3 Latent Bracket."}),
-            "blend_before": ("INT", {"default": 0, "min": 0, "max": 512,
-                             "tooltip": "LATENT STEPS of source BEFORE the cut "
-                                        "that are regenerated along with the "
-                                        "insert, so the new material has a "
-                                        "run-up written for it instead of "
-                                        "butting against untouched footage.\n\n"
-                                        "Steps, not frames, because a step is "
-                                        "the atom — every increment here is one "
-                                        "more real position. In frames the "
-                                        "boundaries are uneven (about 4 apart, "
-                                        "with a 1-frame step at each 17-frame "
-                                        "edge), so a frame count could only ever "
-                                        "offer too few of them or too many. The "
-                                        "info reports what it comes to in "
-                                        "frames.\n\n1 step is usually 4 frames; "
-                                        "5 steps is exactly 17."}),
-            "blend_after": ("INT", {"default": 0, "min": 0, "max": 512,
+            "blend_before": ("INT", {"default": 0, "min": 0, "max": 3600,
+                             "tooltip": "Source FRAMES before the cut that are "
+                                        "regenerated along with the insert, so "
+                                        "the new material has a run-up written "
+                                        "for it instead of butting against "
+                                        "untouched footage.\n\nThe arrows walk "
+                                        "the real values — 0, 4, 8, 12, 16, 17, "
+                                        "21 … from a cut at 102 — because a "
+                                        "blend has to end on a latent step and "
+                                        "those are unevenly spaced in frames. "
+                                        "Type anything and it snaps UP to the "
+                                        "next real one, so you never get less "
+                                        "than you asked for. The ladder moves "
+                                        "when split_frame does."}),
+            "blend_after": ("INT", {"default": 0, "min": 0, "max": 3600,
                             "tooltip": "The same on the far side of the cut — "
-                                       "latent steps of source rewritten as the "
+                                       "source frames rewritten as the "
                                        "run-out."}),
             "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0,
                          "step": 0.05,
@@ -1060,8 +1071,8 @@ class H3LatentInsert:
         # of every four values did nothing. Counting steps, every increment is
         # exactly one more real position and the info reports what it came to
         # in frames.
-        hv = max(0, cut_step - max(0, int(blend_before)))
-        from_step = min(s_v, cut_step + max(0, int(blend_after)))
+        hv = _at(cut - max(0, int(blend_before)))
+        from_step = _at(cut + max(0, int(blend_after)), "up")
         tail_v = s_v - from_step
 
         keep_to, keep_from = frames_at_step(hv), frames_at_step(from_step)
@@ -1149,10 +1160,12 @@ class H3LatentInsert:
             f"H3 LATENT INSERT: {ins} new frame(s) {where} — {s_px} -> {t_px} "
             f"({describe(t_px)})",
             f"  held    source 0-{keep_to} and {keep_from}-{s_px}"
-            + (f", regenerating {cut - keep_to} frame(s) of run-up "
-               f"({cut_step - hv} step(s))" if keep_to < cut else "")
-            + (f" and {keep_from - cut} of run-out "
-               f"({from_step - cut_step} step(s))" if keep_from > cut else ""),
+            + (f", regenerating {cut - keep_to} frame(s) of run-up"
+               f"{_rounded(cut - keep_to, blend_before)}"
+               if keep_to < cut else "")
+            + (f" and {keep_from - cut} of run-out"
+               f"{_rounded(keep_from - cut, blend_after)}"
+               if keep_from > cut else ""),
             f"  video   {hv} + {tail_v} of {t_v} step(s) held, {gen_v} generated",
             f"  audio   {ha} + {tail_a} of {t_a} tick(s) held"
             + (f", feathered over {f} tick(s) each side" if f else " (hard edges)"),

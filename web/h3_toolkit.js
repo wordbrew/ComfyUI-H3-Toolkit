@@ -290,23 +290,49 @@ function stepAtFrame(frames) {         // snap DOWN, as the node does
   return g * 5 + k;
 }
 
+// The blend values that actually exist, in frames, for a given cut. A blend
+// ends on a latent step, and steps are unevenly spaced in frames, so this is
+// the whole set — no arithmetic increment can walk it.
+function blendLadder(cutStep, dir, span) {
+  const here = framesAtStep(cutStep);
+  const out = [];
+  for (let n = 0; n <= span; n++) {
+    const other = cutStep + dir * n;
+    if (other < 0) break;
+    out.push(Math.abs(framesAtStep(other) - here));
+  }
+  return out;
+}
+
 app.registerExtension({
   name: "h3.latent.insert",
   async beforeRegisterNodeDef(nodeType, nodeData) {
     if (nodeData.name !== "H3LatentInsert") return;
 
-    function label(node) {
-      const get = (n) => Number(node.widgets?.find((w) => w.name === n)?.value) || 0;
-      const cut = stepAtFrame(get("split_frame"));
+    // THE WIDGET COUNTS FRAMES AND MOVES BY REAL ONES. ComfyUI's `step` is a
+    // single number and the ladder is not arithmetic — 0, 4, 8, 12, 16, 17, 21
+    // from a cut at 102 — so the increment is done here instead: whichever way
+    // the value just moved, land on the next value that exists.
+    function snap(node, name, dir) {
+      const w = node.widgets?.find((x) => x.name === name);
+      if (!w) return;
+      const cut = stepAtFrame(
+        Number(node.widgets?.find((x) => x.name === "split_frame")?.value) || 0);
+      const ladder = blendLadder(cut, dir, 400);
+      const asked = Math.max(0, Math.round(Number(w.value) || 0));
+      const was = w.__h3_last ?? asked;
+      let next;
+      if (asked > was) next = ladder.find((v) => v > was) ?? ladder[ladder.length - 1];
+      else if (asked < was) next = [...ladder].reverse().find((v) => v < was) ?? 0;
+      else next = ladder.find((v) => v >= asked) ?? asked;   // typed, or unchanged
+      w.value = next;
+      w.__h3_last = next;
+      w.label = `${name} — ${next} frames`;
+    }
+
+    function refresh(node) {
       for (const [name, dir] of [["blend_before", -1], ["blend_after", 1]]) {
-        const w = node.widgets?.find((x) => x.name === name);
-        if (!w) continue;
-        const n = Math.max(0, Math.round(Number(w.value) || 0));
-        const other = Math.max(0, cut + dir * n);
-        const frames = Math.abs(framesAtStep(other) - framesAtStep(cut));
-        // the widget's own name carries it, so it reads in the node's normal
-        // layout rather than adding a row that shifts everything down
-        w.label = n ? `${name} — ${frames} frames` : `${name} — none`;
+        snap(node, name, dir);
       }
       node.setDirtyCanvas?.(true, true);
     }
@@ -321,19 +347,27 @@ app.registerExtension({
         const prev = w.callback;
         w.callback = function () {
           const r = prev?.apply(this, arguments);
-          label(node);
+          refresh(node);
           return r;
         };
       }
-      requestAnimationFrame(() => label(node));
+      requestAnimationFrame(() => refresh(node));
     };
 
-    // a graph loaded from disk builds its widgets after onNodeCreated
+    // a graph loaded from disk builds its widgets after onNodeCreated, and its
+    // saved value is already a real one — seed __h3_last from it so the first
+    // arrow press moves one rung rather than snapping to where it already is
     const configure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
       configure?.apply(this, arguments);
       const node = this;
-      requestAnimationFrame(() => label(node));
+      requestAnimationFrame(() => {
+        for (const name of ["blend_before", "blend_after"]) {
+          const w = node.widgets?.find((x) => x.name === name);
+          if (w) w.__h3_last = Math.max(0, Math.round(Number(w.value) || 0));
+        }
+        refresh(node);
+      });
     };
   },
 });
