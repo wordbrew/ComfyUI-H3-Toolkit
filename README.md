@@ -73,9 +73,10 @@ for. **The cut is not on that grid** — five steps cover 17 frames wherever the
 start, so the cut only has to land on a latent step, and those sit at offsets
 0, 1, 5, 9 and 13 in each chunk. Type any frame; it snaps to the nearest
 boundary, about one every four frames, and the info says where it landed. The
-two blends count **latent steps** rather than frames, because those offsets are
-uneven and a frame count can only offer too few of the real positions or too
-many; one step is usually 4 frames and five is exactly 17.
+two blends are in frames too, and their arrows walk **the values that exist** —
+0, 4, 8, 12, 16, 17, 21 from a cut at 102 — because those offsets are uneven and
+no fixed increment covers them. Typing an in-between number snaps up, so a blend
+is never smaller than you asked for.
 It **sizes its own canvas** from the source and `insert_frames`, so its
 `latent` input is optional and nothing upstream has to be told the new length —
 the conditioning node's `length` only ever trims reference videos. See workflows
