@@ -259,3 +259,81 @@ app.registerExtension({
     };
   },
 });
+
+// ---------------------------------------------------------------------------
+// H3 Latent Insert — say what a blend is worth, in frames, on the node.
+//
+// WHY THE WIDGET COUNTS STEPS AND THE LABEL COUNTS FRAMES
+//   A latent step is the atom, so `blend_before = 3` is always exactly three
+//   more regenerated steps. But in FRAMES those steps are uneven: boundaries
+//   sit at offsets 0, 1, 5, 9, 13 inside each group of 17, so three steps is
+//   12 frames from one cut and 9 from another. That is why the widget cannot
+//   be in frames — no single increment describes the ladder — and also why a
+//   fixed label cannot be right either. It depends on `split_frame`.
+//
+//   So compute it live from the node's own widgets. The number you set stays
+//   exact and the number you care about is next to it.
+const FPT = [1, 4, 4, 4, 4];
+const GROUP = 17;
+const STARTS = [0, 1, 5, 9, 13];
+
+function framesAtStep(step) {
+  const q = Math.floor(Math.max(0, step) / 5);
+  return q * GROUP + STARTS[Math.max(0, step) % 5];
+}
+function stepAtFrame(frames) {         // snap DOWN, as the node does
+  const f = Math.max(0, Math.floor(frames));
+  const g = Math.floor(f / GROUP);
+  const r = f % GROUP;
+  let k = 0;
+  for (let i = 0; i < STARTS.length; i++) if (STARTS[i] <= r) k = i;
+  return g * 5 + k;
+}
+
+app.registerExtension({
+  name: "h3.latent.insert",
+  async beforeRegisterNodeDef(nodeType, nodeData) {
+    if (nodeData.name !== "H3LatentInsert") return;
+
+    function label(node) {
+      const get = (n) => Number(node.widgets?.find((w) => w.name === n)?.value) || 0;
+      const cut = stepAtFrame(get("split_frame"));
+      for (const [name, dir] of [["blend_before", -1], ["blend_after", 1]]) {
+        const w = node.widgets?.find((x) => x.name === name);
+        if (!w) continue;
+        const n = Math.max(0, Math.round(Number(w.value) || 0));
+        const other = Math.max(0, cut + dir * n);
+        const frames = Math.abs(framesAtStep(other) - framesAtStep(cut));
+        // the widget's own name carries it, so it reads in the node's normal
+        // layout rather than adding a row that shifts everything down
+        w.label = n ? `${name} — ${frames} frames` : `${name} — none`;
+      }
+      node.setDirtyCanvas?.(true, true);
+    }
+
+    const created = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+      created?.apply(this, arguments);
+      const node = this;
+      for (const name of ["split_frame", "blend_before", "blend_after"]) {
+        const w = this.widgets?.find((x) => x.name === name);
+        if (!w) continue;
+        const prev = w.callback;
+        w.callback = function () {
+          const r = prev?.apply(this, arguments);
+          label(node);
+          return r;
+        };
+      }
+      requestAnimationFrame(() => label(node));
+    };
+
+    // a graph loaded from disk builds its widgets after onNodeCreated
+    const configure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function () {
+      configure?.apply(this, arguments);
+      const node = this;
+      requestAnimationFrame(() => label(node));
+    };
+  },
+});
