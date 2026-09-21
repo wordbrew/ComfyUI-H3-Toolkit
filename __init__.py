@@ -53,6 +53,11 @@ from .windowing import (NODE_CLASS_MAPPINGS as _WIN_CLASSES,
                         NODE_DISPLAY_NAME_MAPPINGS as _WIN_NAMES)
 from .video import (NODE_CLASS_MAPPINGS as _VID_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _VID_NAMES)
+# MODEL-AGNOSTIC, and deliberately so: it knows nothing about H3 and its
+# category is plain `video`. It lives here because a second repo is a second
+# install and a second deploy, not because it belongs to this model.
+from .videotrim import (NODE_CLASS_MAPPINGS as _VT_CLASSES,
+                        NODE_DISPLAY_NAME_MAPPINGS as _VT_NAMES)
 
 _PARTS = (
     (_AUDIO_CLASSES, _AUDIO_NAMES),
@@ -76,6 +81,7 @@ _PARTS = (
     (_SCENE_CLASSES, _SCENE_NAMES),
     (_STORY_CLASSES, _STORY_NAMES),
     (_VID_CLASSES, _VID_NAMES),
+    (_VT_CLASSES, _VT_NAMES),
     (_WIN_CLASSES, _WIN_NAMES),
 )
 
@@ -139,6 +145,32 @@ def _register_routes():
             return await request.json()
         except Exception:
             return {}
+
+    @routes.get("/videotrim/probe")
+    async def _videotrim_probe(request):
+        """A video file's frame count, rate and size — one call per file.
+
+        THE BROWSER CANNOT WORK OUT A FRAME RATE. HTMLVideoElement knows
+        `duration` and nothing else, and getting frames and fps client-side
+        means WebCodecs and a demuxer. So the trim timeline asks once when a
+        file is chosen, and every drag after that is arithmetic in the page.
+
+        Note what is NOT here: no preview endpoint. VHS re-encodes the trimmed
+        range through ffmpeg on every widget change; the panel points a <video>
+        at core's own /view route instead and nothing is transcoded.
+        """
+        name = request.rel_url.query.get("file", "")
+        try:
+            import folder_paths
+            from .videotrim import _probe as probe_file
+            path = folder_paths.get_annotated_filepath(name)
+            _, frames, fps, w, h = probe_file(path)
+            return web.json_response({"ok": True, "frames": frames, "fps": fps,
+                                      "width": w, "height": h,
+                                      "duration": (frames / fps) if fps else 0.0})
+        except Exception as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
 
     @routes.get(ROUTE_PREFIX + "/characters")
     async def _characters(request):

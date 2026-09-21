@@ -123,6 +123,38 @@ nearly free. Give it megapixels and a ratio — or an image to take the ratio fr
 and it reports the size the 32-px grid actually delivered (0.62 MP asked is 0.608
 delivered), the token count, and the distance to H3's 1.03 MP canvas cap.
 
+**`video`** — `VideoTrimLoad`, `VideoTrimLoadAll`
+
+**Load Video (trim timeline)** replaces VHS's Load Video. Same functional
+surface — rate conversion, frame selection, resizing, audio, frame counts — with
+a timeline instead of two unrelated numbers. Drag the ends to resize the trim,
+drag the middle to slide the whole block at its length, which is what you want
+when a model demands an exact frame count: lock the length, hunt for the moment.
+Preview plays silently and finds its voice when you hover, loops inside the
+marked span, and nothing is ever re-encoded to show it to you — VHS's preview
+endpoint shells out to ffmpeg on every widget change; this points a `<video>` at
+core's own `/view`.
+
+Mark as many spans as you like while watching once; `span_index` picks which one
+a run emits. **Load Video (all spans)** emits them all and makes the graph below
+run once per span, which is a dataset pass rather than a shot hunt.
+
+Every number is in OUTPUT frames — after `force_rate` and `select_every_nth` —
+because that is what the node emits and what downstream nodes count. A ruler in
+source frames starts lying the moment `force_rate` is not the source's own rate.
+
+These two are **model-agnostic** and their category is plain `video`. They know
+nothing about H3 and do not enforce its 17n+5 grid; that is `H3MatchSource`'s
+job. They live here because a second repo is a second install, not because they
+belong to this model.
+
+They also work around a ComfyUI bug: `get_frame_count()` returns **1** for any
+untrimmed file whose stream carries neither a frame count nor a stream duration
+(common in webm, mkv, and remuxed or phone mp4s), because its decode-and-count
+fallback computes an end timestamp of zero and breaks on the first frame. Fixed
+upstream in `d537de93`, which is not in 0.35.0. The count is cross-checked
+against `duration x fps` here.
+
 ## Things that are easy to get wrong, and are enforced here
 
 - Every link of a chain is generated INDEPENDENTLY. Relative wording ("continuing
