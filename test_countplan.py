@@ -80,3 +80,57 @@ if fails:
     print(f"FAIL — {len(fails)} check(s)")
     sys.exit(1)
 print("count plan: duration follows the count, and the asymmetry is stated")
+
+
+print("the audio grid is stated where the choice is made")
+import importlib.util as _il, pathlib as _pl, types as _t
+for _m in ("torch.nn", "torch.nn.functional", "comfy", "comfy.utils", "folder_paths"):
+    sys.modules.setdefault(_m, _t.ModuleType(_m))
+sys.modules["torch"].nn = sys.modules["torch.nn"]
+sys.modules["torch.nn"].functional = sys.modules["torch.nn.functional"]
+_root = _pl.Path(__file__).resolve().parent
+_pkg = _t.ModuleType("h3cp"); _pkg.__path__ = [str(_root)]; sys.modules["h3cp"] = _pkg
+def _load(n):
+    sp = _il.spec_from_file_location(f"h3cp.{n}", _root / f"{n}.py")
+    m = _il.module_from_spec(sp); sys.modules[f"h3cp.{n}"] = m
+    sp.loader.exec_module(m); return m
+for _n in ("timing", "chunkplan", "avlatent", "geometry", "cropplan", "crop"):
+    try: _load(_n)
+    except Exception: pass
+lf = _load("longform")
+PLAN = lf.NODE_CLASS_MAPPINGS["H3ChunkPlan"]
+spec = PLAN.INPUT_TYPES()
+
+# 22 IS THE ONLY CARRY OFF BOTH CLOCKS (36.67 ticks) and it was the default for
+# months, so anything that did not override it inherited the worst option.
+ctx = spec["optional"]["context"]
+check("context defaults to 39, the smallest carry on both clocks",
+      ctx[1]["default"], "39")
+ok("39 is first in the list", ctx[0][0] == "39")
+ok("39 really is audio-exact", cp.count_plan(141, 2, 39)[3] == [])
+
+# chunk_frames STAYS AN INT: seven saved graphs drive it from a link, and an INT
+# link into a COMBO is invalid. A dropdown would have put the audio grid at the
+# point of choosing and made the value unwireable -- tried, reverted, and the
+# tooltip carries the grid instead.
+cf = spec["required"]["chunk_frames"]
+check("chunk_frames is an INT so it can be driven by a link", cf[0], "INT")
+check("stepping by 17 keeps the arrows on legal runs", cf[1]["step"], 17)
+check("and it defaults to the nearest audio-exact size to 5s", cf[1]["default"], 141)
+ok("the tooltip names the audio-exact sizes", "40 Hz AUDIO grid" in cf[1]["tooltip"])
+
+print("av_aligned snaps UP and says what it cost")
+r = PLAN().go(chunk_frames=158, chunk_mode="fixed",
+              chunk_count=4, context="39", av_aligned=True)
+ok("it reports the snap", "snapped UP to 192" in r["result"][2])
+ok("and the price per chunk", "Costs 34 frame(s)" in r["result"][2])
+check("the plan uses the snapped size", r["result"][3],
+      cp.total_for_count(192, 4, 39))
+r = PLAN().go(chunk_frames=141, chunk_mode="fixed",
+              chunk_count=4, context="39", av_aligned=True)
+ok("an already-aligned size is left alone", "snapped" not in r["result"][2])
+
+if fails:
+    print(f"\nFAIL — {len(fails)} check(s)")
+    sys.exit(1)
+print("\naudio grid: stated at the choice, defaulted sanely, snapped on request")
