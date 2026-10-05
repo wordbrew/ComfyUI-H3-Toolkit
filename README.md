@@ -205,7 +205,18 @@ The first three are torch-free so they can be tested without ComfyUI:
 python3 test_geometry.py
 python3 test_cropplan.py
 python3 validate_workflows.py workflows/*.json
+python3 audit_nodes.py            # the node surface itself
 ```
+
+`audit_nodes.py` checks the DECLARATIONS against the code, and the code against
+the shipped workflows: inputs that are declared but never read, outputs wired in
+no workflow, tooltips naming something that no longer exists, inputs that only
+do anything under some other input's setting, and side effects in `INPUT_TYPES`
+(which ComfyUI calls on every page load). `--checks` runs a subset and
+`--strict` picks which findings fail the exit code, so CI can gate on
+`inputs,docs,effects` while the tooltip census stays advisory. It found two real
+faults on its first run: cuts silently ignored by a `fixed` plan while the
+report called them detected, and a `mkdir` reachable from `INPUT_TYPES`.
 
 Run the validator after editing any workflow JSON by hand. Every workflow bug this
 pack has shipped was structural and silent — ComfyUI drops a bad connection on load

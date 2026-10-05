@@ -264,7 +264,25 @@ ok("cost tracks length", video_tokens(192, 640, 1120) > 2 * video_tokens(90, 640
 c, i = plan(1440, 90, "scene", cuts=[124, 400])
 text = describe(c, i, render=(640, 1120), ref_tokens=r)
 ok("report names the mode", "chunk_mode: scene" in text)
-ok("report lists cuts", "cuts detected at: 124, 400" in text)
+# "detected" -> "APPLIED", because the word had to distinguish a cut that
+# shaped the plan from one that was thrown away. A fixed-mode plan reported
+# "cuts detected" for cuts it had just ignored, and that cost a 59s render.
+ok("report lists applied cuts", "cuts APPLIED at: 124, 400" in text)
+
+# THE MIRROR CASE, which had no warning at all until 2026-10-05
+c2, i2 = plan(1416, 192, "fixed", cuts=[612, 1224], context=39)
+t2 = describe(c2, i2)
+ok("a fixed plan says the cuts were ignored", "cuts IGNORED" in t2)
+ok("and names the fix", "'scene'" in t2)
+ok("it does not claim them as applied", "cuts APPLIED" not in t2)
+ok("info separates applied from ignored",
+   i2["cuts"] == [] and i2["cuts_ignored"] == [612, 1224])
+ok("every pin survives, which is what 'ignored' means",
+   [x["pin"] for x in c2][1:] == [39] * (len(c2) - 1))
+# scene mode still severs the carry AT the cut -- pin 0 is a real cut
+c3, i3 = plan(1416, 192, "scene", cuts=[612, 1224], context=39)
+ok("scene mode still cuts", 0 in [x["pin"] for x in c3][1:])
+ok("and reports them applied", "cuts APPLIED at: 612, 1224" in describe(c3, i3))
 ok("report flags a track restart", "[track restarts]" in text)
 # both numbers that a chunk length decides, on every chunk line
 ok("report prints the token cost", "18,900 tokens" in text)

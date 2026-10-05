@@ -614,6 +614,21 @@ class H3ChunkPlan:
                     f"H3 Chunk Plan: `cut_frames` must be whole frame numbers "
                     f"separated by commas — got {cut_frames!r}.")
             cuts = [c for c in cuts if 0 < c < n]
+        # FOUR conditions gate scene detection, and failing any of them used to
+        # be silent -- the threshold widget sat there looking operative while
+        # nothing read it.
+        inert = []
+        if float(scene_threshold) != 0.12:
+            if chunk_mode != "scene":
+                inert.append(f"chunk_mode is {chunk_mode!r}, not 'scene'")
+            elif cuts:
+                inert.append("cut_frames was given, which takes priority over "
+                             "detection")
+            elif source_images is None:
+                inert.append("no source_images to difference — detection needs a "
+                             "clip, and a fresh generation has none")
+            elif n <= 1:
+                inert.append("only one frame")
         if chunk_mode == "scene" and not cuts and source_images is not None and n > 1:
             # mean |delta| per frame against its predecessor. Cheap, and a hard
             # cut changes the whole picture in one frame so it stands well clear
@@ -643,6 +658,14 @@ class H3ChunkPlan:
         # them. The widgets stay for fresh generation, where there is no clip;
         # they are INT so H3 Canvas can drive them.
         if source_images is not None:
+            if int(render_width) or int(render_height):
+                inert.append(f"render_width/render_height "
+                             f"({int(render_width)}x{int(render_height)}) are "
+                             f"ignored with a clip wired — the render size IS the "
+                             f"clip, "
+                             f"{int(source_images.shape[2])}x"
+                             f"{int(source_images.shape[1])}. They are for fresh "
+                             f"generation, where there is no clip to measure.")
             render = (int(source_images.shape[2]), int(source_images.shape[1]))
             render_from = "from source_images"
         elif render_width and render_height:
@@ -666,6 +689,8 @@ class H3ChunkPlan:
         if source_images is None:
             text = (describe_count_plan(chunk_frames, chunk_count,
                                         int(context)) + "\n" + text)
+        if inert:
+            text = ("".join(f"IGNORED: {m}\n" for m in inert)) + text
         if av_note:
             text = av_note + "\n" + text
         logging.info("H3ChunkPlan: %s", text.splitlines()[0])

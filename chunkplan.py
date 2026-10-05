@@ -238,6 +238,23 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                      "threshold.")
         mode = "fixed"
 
+    # THE MIRROR CASE, which had no warning at all. Cuts only shape the plan in
+    # `scene` mode; a fixed plan ignores them, every chunk keeps its carry, and
+    # the take comes back as one continuous shot. That cost a 59-second render:
+    # cuts were typed, the report said "cuts detected at: 612, 1224", and the
+    # output had no cut in it. Say so, and stop reporting them as applied.
+    ignored_cuts = []
+    if mode != "scene" and cuts:
+        ignored_cuts = sorted(set(int(c) for c in cuts))
+        notes.append(
+            f"{len(ignored_cuts)} cut(s) were given but chunk_mode is "
+            f"{mode!r}, which IGNORES them — every chunk keeps its carry and "
+            f"the take is one continuous shot. Set chunk_mode to 'scene' to "
+            f"make the chunks end at the cuts. Ignored: "
+            + ", ".join(str(c) for c in ignored_cuts[:8])
+            + ("..." if len(ignored_cuts) > 8 else ""))
+        cuts = None
+
     if mode == "scene":
         bounds = [0] + [c for c in sorted(set(int(c) for c in cuts))
                         if 0 < c < total] + [total]
@@ -420,7 +437,10 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
         "chunks": len(chunks), "mode": mode, "shots": len(shots),
         "total_frames": total, "chunk_frames": size,
         "off_grid": off, "notes": notes,
+        # APPLIED cuts only. These used to be whatever was passed in, so a
+        # fixed plan reported cuts it had just thrown away.
         "cuts": sorted(set(int(c) for c in cuts)) if cuts else [],
+        "cuts_ignored": ignored_cuts,
     }
     return chunks, info
 
@@ -516,7 +536,10 @@ def describe(chunks, info, render=None, ref_tokens=0, render_from=""):
     if info["cuts"]:
         shown = ", ".join(str(c) for c in info["cuts"][:16])
         more = "" if len(info["cuts"]) <= 16 else f" (+{len(info['cuts']) - 16} more)"
-        L.append(f"  cuts detected at: {shown}{more}")
+        L.append(f"  cuts APPLIED at: {shown}{more}")
+    if info.get("cuts_ignored"):
+        shown = ", ".join(str(c) for c in info["cuts_ignored"][:16])
+        L.append(f"  cuts IGNORED (chunk_mode is not 'scene'): {shown}")
     for n in info["notes"]:
         L.append(f"  NOTE {n}")
     return "\n".join(L)
