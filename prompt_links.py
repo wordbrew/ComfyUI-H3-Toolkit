@@ -166,15 +166,16 @@ class H3LongFormLinks:
                 "task_type": (["reference generation", "keyframe completion"],
                               {"default": "keyframe completion"}),
                 # APPENDED, and they stay appended. widgets_values is positional.
-                "chunk_frames": ("INT", {"default": 0, "min": 0, "max": 4096,
-                                 "tooltip": "Wire H3 Chunk Open's `length`. Under "
-                                            "chunking the chunk decides the "
-                                            "length, so this REPLACES "
-                                            "seconds_per_link — which is then "
-                                            "ignored, and the plan stops quoting "
-                                            "it. Leave at 0 for the manual chain "
-                                            "workflow, where seconds_per_link is "
-                                            "still the real setting."}),
+                "chunk_frames": ("INT", {"default": 0, "min": 0, "max": 3600,
+                                 "step": 17,
+                                 "tooltip": "FALLBACK ONLY, and ignored whenever "
+                                            "`chunk_plan` is wired — the plan "
+                                            "knows each link's real run, and a "
+                                            "single number cannot be right for "
+                                            "all of them because the tail chunk "
+                                            "differs. Set it only for a chained "
+                                            "take with no plan node. 0 falls "
+                                            "back to seconds_per_link."}),
                 # APPENDED. Both sections used to be hardcoded "N/A", which is
                 # not a neutral default -- it is the prompt actively saying
                 # there is no ambience and no music, so a graph that decoded the
@@ -227,11 +228,25 @@ class H3LongFormLinks:
               subject_def_1="", retention_1="", task_type="keyframe completion",
               expected_count=0, soundscape="", music="", chunk_frames=0,
               chunk_plan=None):
-        # A chunk's length comes from the plan, not from a seconds widget: the
-        # tail chunk is never the same length as the rest, so a single duration
-        # cannot describe the run. When it is wired, it wins outright.
-        chunked = int(chunk_frames or 0) > 0
-        frames = int(chunk_frames) if chunked else align_frames(seconds_per_link)
+        # A chunk's length comes from the PLAN, not from a widget you matched to
+        # it by hand. This is what the comment here used to claim and the code
+        # never did: it read the `chunk_frames` widget even with a plan wired, so
+        # the one number that had to agree with the plan was the one number
+        # nothing checked. Worse, a single value cannot be right for every link
+        # -- the tail chunk is a different run from the rest -- so the plan is
+        # read PER LINK.
+        _chunks = (chunk_plan or {}).get("chunks") or []
+        if _chunks:
+            _i = max(0, min(int(link_index), len(_chunks) - 1))
+            _c = _chunks[_i]
+            frames = int(_c.get("run") or (int(_c["end"]) - int(_c["start"])))
+            chunked = True
+        elif int(chunk_frames or 0) > 0:
+            frames = int(chunk_frames)
+            chunked = True
+        else:
+            frames = align_frames(seconds_per_link)
+            chunked = False
         dur = frames / FPS
         clauses = parse_beats(beats)
         if not clauses:
