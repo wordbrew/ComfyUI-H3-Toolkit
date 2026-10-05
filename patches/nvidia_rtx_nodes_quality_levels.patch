@@ -1,0 +1,88 @@
+diff --git a/__init__.py b/__init__.py
+index 9fb9495..b4ba0cb 100644
+--- a/__init__.py
++++ b/__init__.py
+@@ -12,6 +12,44 @@ class UpscaleType(str, Enum):
+     TARGET_DIMENSIONS = "target dimensions"
+ 
+ 
++# --- quality levels, enumerated from the SDK then FILTERED BY TEST --------- #
++#
++# The dropdown shipped with four of the seventeen levels in
++# nvvfx.effects.QualityLevel. Five more work; eight do not, and that was
++# established by running each one, not by reading the enum:
++#
++#   LOW..ULTRA              general upscale strength          WORKS
++#   BICUBIC                 plain interpolation               WORKS
++#   HIGHBITRATE_LOW..ULTRA  for already-clean sources         WORKS
++#   DENOISE_LOW..ULTRA      }  NvVFX_Run fails, code -7:
++#   DEBLUR_LOW..ULTRA       }  "invalid parameter value for this effect+selector"
++#
++# QualityLevel is shared across the whole VFX SDK, but this wheel exposes only
++# ONE effect -- effects.VideoSuperRes -- so the denoise and deblur levels belong
++# to effects NVIDIA has not shipped here. They enumerate fine and fail at run
++# time, which is the worst way to offer an option, so they are excluded.
++#
++# Still enumerated dynamically rather than hardcoded: a level the SDK drops
++# cannot leave a dead entry pointing at a missing attribute, and a level it adds
++# shows up once it is added to _VERIFIED. The four original names stay first and
++# ULTRA stays the default, so a saved workflow keeps its value and its meaning.
++_PREFERRED = ("LOW", "MEDIUM", "HIGH", "ULTRA")
++_VERIFIED = _PREFERRED + ("BICUBIC", "HIGHBITRATE_LOW", "HIGHBITRATE_MEDIUM",
++                          "HIGHBITRATE_HIGH", "HIGHBITRATE_ULTRA")
++
++
++def _quality_levels():
++    members = getattr(nvvfx.effects.QualityLevel, "__members__", {})
++    if not members:
++        return list(_PREFERRED), {n: getattr(nvvfx.effects.QualityLevel, n)
++                                  for n in _PREFERRED}
++    names = [n for n in _VERIFIED if n in members]
++    return names, {n: members[n] for n in names}
++
++
++QUALITY_NAMES, QUALITY_LEVELS = _quality_levels()
++
++
+ class RTXVideoSuperResolution(io.ComfyNode):
+     class UpscaleTypedDict(TypedDict):
+         resize_type: UpscaleType
+@@ -41,7 +79,20 @@ class RTXVideoSuperResolution(io.ComfyNode):
+                         ])
+                     ],
+                 ),
+-                io.Combo.Input("quality", options=["LOW", "MEDIUM", "HIGH", "ULTRA"], default="ULTRA"),
++                io.Combo.Input("quality", options=QUALITY_NAMES, default="ULTRA",
++                               tooltip="LOW..ULTRA is general upscale strength. "
++                                       "HIGHBITRATE_* is for sources that are "
++                                       "already CLEAN -- it sharpens instead of "
++                                       "spending the budget repairing "
++                                       "compression artifacts, which is what a "
++                                       "freshly decoded render is. BICUBIC is "
++                                       "plain interpolation, a baseline for "
++                                       "checking the learned path earns its "
++                                       "time.\n\nThe SDK's DENOISE_* and "
++                                       "DEBLUR_* levels are deliberately absent: "
++                                       "they belong to VFX effects this wheel "
++                                       "does not ship, and fail at run time with "
++                                       "NvVFX_Run code -7."),
+             ],
+             outputs=[
+                 io.Image.Output("upscaled_images"),
+@@ -71,13 +122,9 @@ class RTXVideoSuperResolution(io.ComfyNode):
+         out_pixels = output_width * output_height
+         batch_size = max(1, MAX_PIXELS // out_pixels)
+ 
+-        quality_mapping = {
+-            "LOW": nvvfx.effects.QualityLevel.LOW,
+-            "MEDIUM": nvvfx.effects.QualityLevel.MEDIUM,
+-            "HIGH": nvvfx.effects.QualityLevel.HIGH,
+-            "ULTRA": nvvfx.effects.QualityLevel.ULTRA,
+-        }
+-        selected_quality = quality_mapping.get(quality, nvvfx.effects.QualityLevel.HIGH)
++        # HIGH stays the fallback for an unknown name, as upstream had it: a
++        # workflow saved against a level this SDK build lacks still renders.
++        selected_quality = QUALITY_LEVELS.get(quality, nvvfx.effects.QualityLevel.HIGH)
+ 
+         with nvvfx.VideoSuperRes(selected_quality) as sr:
+             sr.output_width = output_width

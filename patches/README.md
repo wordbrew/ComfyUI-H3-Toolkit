@@ -20,7 +20,13 @@ just comes out wrong. Both of the OLD core patches were rewritten as subclasses
 living in the pack, precisely because a silent revert cost more than the patches
 saved.
 
-## h3-denoise-mask-velocity.patch -- PROVISIONAL, and core (2026-09-03)
+## h3-denoise-mask-velocity.patch -- SHIPPED IN 0.35, DO NOT APPLY (2026-10-04)
+Comfy-Org/ComfyUI#15988 landed. `ldm/minimax/model.py:593-595` has it
+verbatim, so applying this would scale the masked velocity twice. Removed
+from apply.py's registry; the file is kept only as a record of what we ran
+before the fix was upstream. See [[h3-comfy-035]].
+
+### original note (2026-09-03)
 
 Comfy-Org/ComfyUI#15988, verbatim, applied to `comfy/ldm/minimax/model.py`.
 Six lines: scale the video and audio velocity by their denoise masks before the
@@ -216,3 +222,33 @@ the hard way on the way to this:
   which is not a legal run at all.
 
 **Not reported upstream yet.**
+
+## nvidia_rtx_nodes_quality_levels.patch -- Comfy-Org/Nvidia_RTX_Nodes_ComfyUI
+
+The RTX Video Super Resolution node ships four of the seventeen levels in
+`nvvfx.effects.QualityLevel`. This offers the nine that WORK.
+
+Which nine was settled by running each one against `effects.VideoSuperRes`, not
+by reading the enum:
+
+    LOW MEDIUM HIGH ULTRA        the originals
+    BICUBIC                      plain interpolation, a baseline
+    HIGHBITRATE_LOW..ULTRA       for sources that are already clean
+
+    DENOISE_LOW..ULTRA           NvVFX_Run code -7, "invalid parameter value
+    DEBLUR_LOW..ULTRA            for this effect+selector"
+
+`QualityLevel` is shared across the whole VFX SDK but this wheel exposes exactly
+one effect, `VideoSuperRes`, so the denoise and deblur levels address effects
+NVIDIA has not shipped in it. They enumerate cleanly and fail at run time, which
+is the worst way to offer a setting, so the patch excludes them by name. If a
+later wheel ships those effects, add the names to `_VERIFIED`.
+
+HIGHBITRATE is the interesting one for H3 work: a freshly decoded render has no
+compression artifacts, so a level that sharpens instead of spending its budget
+on repair is arguably the better match than plain ULTRA. Untested as output
+quality -- it runs, and which looks better is CJ's eye.
+
+The list is still enumerated from the SDK rather than hardcoded, so a level this
+build lacks cannot leave a dead dropdown entry. ULTRA stays the default and the
+original four stay first, so saved workflows keep their value and its meaning.
