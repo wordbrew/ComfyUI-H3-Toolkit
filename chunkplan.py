@@ -93,6 +93,75 @@ def snap_context(frames):
     return 0
 
 
+LEGAL_RUNS = tuple(17 * k + 5 for k in range(0, 40))
+# legal AND exact on the 40 Hz audio grid (frames * 40 / 24 is a whole number)
+AV_EXACT_RUNS = tuple(r for r in LEGAL_RUNS if (r * 40) % 24 == 0)
+
+
+def total_for_count(chunk_frames, chunk_count, context):
+    """Frames delivered by `chunk_count` chunks of `chunk_frames`, carrying `context`.
+
+    THE ASYMMETRY IS ARITHMETIC, NOT A BUG. Chunk 1 keeps everything it renders;
+    every later chunk drops the carried handle. So the delivered lengths are
+    `chunk_frames` then `chunk_frames - context`, and they can NEVER be equal:
+    that would need `A = B - C` with all three on the 17n+5 grid, and every legal
+    run is 5 mod 17, so B-C is 0 mod 17 and A is 5. No solutions. Report it
+    rather than pretending otherwise.
+    """
+    cf, n, ctx = int(chunk_frames), max(1, int(chunk_count)), int(context)
+    return cf + (n - 1) * max(1, cf - ctx)
+
+
+def count_plan(chunk_frames, chunk_count, context):
+    """-> (total_frames, first_delivered, rest_delivered, notes)
+
+    The single authority for "how long will this be". The NODE calls it and the
+    /chunk/plan HTTP route calls it, so a front end previewing a take and the
+    graph rendering it cannot disagree -- two implementations of one rule is the
+    failure this pack keeps paying for.
+    """
+    cf, n, ctx = int(chunk_frames), max(1, int(chunk_count)), int(context)
+    notes = []
+    if cf not in LEGAL_RUNS:
+        near = min(LEGAL_RUNS, key=lambda x: abs(x - cf))
+        notes.append(f"chunk_frames {cf} is not a legal run (17n+5); nearest is {near}")
+    if ctx and ctx not in LEGAL_RUNS:
+        notes.append(f"context {ctx} is not a legal run (17n+5) — the carry moves "
+                     f"content between clips and only 17n+5 lands in phase")
+    if ctx >= cf:
+        notes.append(f"context {ctx} is not smaller than chunk_frames {cf}; "
+                     f"nothing new would be generated")
+    if cf not in AV_EXACT_RUNS:
+        notes.append(f"{cf} frames is {cf * 40 / 24:.2f} audio ticks — off the "
+                     f"40 Hz grid. Exact sizes: "
+                     f"{', '.join(str(r) for r in AV_EXACT_RUNS if 39 <= r <= 400)}")
+    first = cf
+    rest = max(1, cf - ctx)
+    return total_for_count(cf, n, ctx), first, rest, notes
+
+
+def describe_count_plan(chunk_frames, chunk_count, context, fps=24.0):
+    """The human-readable answer to 'how long will this be', before anything runs."""
+    total, first, rest, notes = count_plan(chunk_frames, chunk_count, context)
+    n = max(1, int(chunk_count))
+    L = [f"{n} chunk(s) x {int(chunk_frames)} frames, carrying {int(context)}"]
+    if n > 1:
+        L.append(f"  chunk 1 delivers {first} ({first / fps:.2f}s), "
+                 f"chunks 2-{n} deliver {rest} ({rest / fps:.2f}s) each")
+    L.append(f"  TOTAL {total} frames = {total / fps:.2f}s")
+    L.append(f"  write {n} beat(s) — one per chunk")
+    alts = []
+    for cand in LEGAL_RUNS:
+        if cand == int(chunk_frames) or not (39 <= cand <= 400):
+            continue
+        t = total_for_count(cand, n, context)
+        alts.append((abs(t - total), cand, t))
+    for _, cand, t in sorted(alts)[:2]:
+        L.append(f"  alternative: {cand} frames -> {t} total = {t / fps:.2f}s")
+    L += [f"  {x}" for x in notes]
+    return "\n".join(L)
+
+
 def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
          context=0, grow_tail=False, *, generated_audio=False):
     """-> (chunks, info)
