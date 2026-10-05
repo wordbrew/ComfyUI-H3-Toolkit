@@ -83,7 +83,12 @@ class H3ChunkCheckpoint:
                      "a resume against an edited plan is refused rather than "
                      "producing a seam nobody can explain."}),
             "audio": ("AUDIO",),
-            "enabled": ("BOOLEAN", {"default": True}),
+            "enabled": ("BOOLEAN", {"default": True,
+                        "tooltip": "OFF passes the latent through and writes "
+                                   "nothing, so a finished take can stop paying "
+                                   "for checkpoints without being rewired. The "
+                                   "`latent` output is the same either way — this "
+                                   "only controls whether the carry hits disk."}),
         }}
 
     RETURN_TYPES = ("LATENT", "STRING")
@@ -121,7 +126,12 @@ class H3ChunkResume:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "take": ("STRING", {"default": "take", "multiline": False}),
+            "take": ("STRING", {"default": "take", "multiline": False,
+                     "tooltip": "The folder under output/h3_takes to resume FROM. "
+                                "It must match the name H3 Chunk Checkpoint wrote "
+                                "under, character for character after sanitising "
+                                "— a typo here reads as an empty take rather than "
+                                "an error, and the chunk starts unanchored."}),
             "from_chunk": ("INT", {"default": 0, "min": 0, "max": 4096,
                            "tooltip": "The chunk to START at. Its carry comes "
                                       "from the checkpoint written by the chunk "

@@ -39,10 +39,18 @@ class H3Assemble:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "link_1": ("IMAGE",),
+                "link_1": ("IMAGE", {"tooltip": "The FIRST rendered link, as a "
+                            "frame batch. Links are joined in slot order, 1 "
+                            "through 8, and the first gap ends the take — wiring "
+                            "1, 2 and 4 assembles two links, not three."}),
             },
             "optional": {
-                **{f"link_{i}": ("IMAGE",) for i in range(2, 9)},
+                **{f"link_{i}": ("IMAGE", {"tooltip":
+                     f"Rendered link {i}, joined after link {i - 1}. Leave it "
+                     f"unwired to end the take at link {i - 1}; the first empty "
+                     f"slot stops the join, so slots cannot be skipped. Every "
+                     f"link must be the same width and height."})
+                   for i in range(2, 9)},
                 "audio": ("AUDIO", {"tooltip": "One track for the WHOLE take. Trimmed or "
                                                "padded to the assembled length."}),
                 "trim_frames": ("INT", {"default": 0, "min": 0, "max": 64,
@@ -166,7 +174,14 @@ class H3Take:
         return {
             "required": {
                 "base_seed": ("INT", {"default": 2024, "min": 0,
-                                      "max": 0xffffffffffffffff}),
+                                      "max": 0xffffffffffffffff,
+                              "tooltip": "The take-1 seed, and the base every "
+                                         "later take is derived from. Change this "
+                                         "to move the whole SERIES of takes "
+                                         "somewhere else; change `take` to re-roll "
+                                         "within the series. Holding it fixed is "
+                                         "what makes take 3 reproducible "
+                                         "tomorrow."}),
                 "take": ("INT", {"default": 1, "min": 1, "max": 999,
                          "tooltip": "Bump this to re-roll. The seed changes between takes "
                                     "but stays IDENTICAL across the links within a take, "
@@ -201,11 +216,34 @@ class H3Resolution:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "preset": (RESOLUTIONS, {"default": RESOLUTIONS[0]}),
+                "preset": (RESOLUTIONS, {"default": RESOLUTIONS[0],
+                            "tooltip": "A measured canvas, with what it measured "
+                                       "in the label. 640x1120 is the chain "
+                                       "default because it joined cleanly; "
+                                       "768x1152 produced CUTS in chains with "
+                                       "everything else held equal; 768x1344 is "
+                                       "the documented cap and was no better. "
+                                       "Pick `custom...` to use the two width and "
+                                       "height widgets below, which are IGNORED "
+                                       "for every other preset."}),
                 "custom_width": ("INT", {"default": 640, "min": 32, "max": 4096,
-                                         "step": 32}),
+                                         "step": 32,
+                                 "tooltip": "Width in pixels, used ONLY when "
+                                            "`preset` is a custom option — "
+                                            "otherwise ignored. Steps by 32 "
+                                            "because H3 needs both dimensions on "
+                                            "a 32-px grid; an off-grid value is "
+                                            "snapped. Cost goes as AREA, so check "
+                                            "`info` against the 1.03 MP cap."}),
                 "custom_height": ("INT", {"default": 1120, "min": 32, "max": 4096,
-                                          "step": 32}),
+                                          "step": 32,
+                                  "tooltip": "Height in pixels, used ONLY when "
+                                             "`preset` is a custom option. Snapped "
+                                             "to 32 like the width. The open "
+                                             "weights are 768p-class, so a short "
+                                             "edge far past 768 buys resolution "
+                                             "the model was not trained to "
+                                             "fill."}),
             }
         }
 
@@ -277,7 +315,12 @@ class H3Canvas:
                 "aspect_w": ("INT", {"default": 9, "min": 1, "max": 4096,
                              "tooltip": "Ratio, not pixels. 9:16 portrait, "
                                         "16:9 landscape, 1:1 square."}),
-                "aspect_h": ("INT", {"default": 16, "min": 1, "max": 4096}),
+                "aspect_h": ("INT", {"default": 16, "min": 1, "max": 4096,
+                             "tooltip": "The second half of the ratio — the 16 in "
+                                        "9:16. Ratio, not pixels: the node solves "
+                                        "for the pixel size that hits your "
+                                        "megapixel budget at this shape. Aspect is "
+                                        "nearly free, since cost goes as AREA."}),
             },
             "optional": {
                 "like_image": ("IMAGE", {"tooltip": "Take the aspect ratio from "
@@ -358,7 +401,12 @@ class H3AudioLock:
     def INPUT_TYPES(cls):
         return {"required": {
             "latent": ("LATENT",),
-            "audio_vae": ("VAE",),
+            "audio_vae": ("VAE", {"tooltip": "H3's AUDIO VAE "
+                           "(minimax_h3_audio_vae_fp32), not the video one. The "
+                           "track has to be encoded to audio latent rows before "
+                           "it can be pinned into the AV latent, and the two VAEs "
+                           "are not interchangeable — the video VAE here fails or "
+                           "produces noise."}),
             "audio": ("AUDIO",),
             "offset_seconds": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 3600.0,
                                          "step": 0.01,

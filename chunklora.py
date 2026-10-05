@@ -154,12 +154,25 @@ class H3ChunkLora:
                                     "slots are for schedules written by hand, "
                                     "where a dropdown beats typing a path."},),
         }, "optional": {
-            "chunk_plan": ("H3_CHUNK_PLAN",),
+            "chunk_plan": ("H3_CHUNK_PLAN", {"tooltip":
+                "The plan, so a schedule written in FINISHED-CLIP time can be "
+                "converted to this chunk's own frames. Without it the node has no "
+                "way to know where chunk 3 sits in the take, and a span like "
+                "00:15-00:19 cannot be resolved at all.\n\n"
+                "A span is included when it OVERLAPS the chunk at any point, not "
+                "when its midpoint falls inside — so a span crossing a chunk "
+                "boundary applies to BOTH chunks. Check the info output against "
+                "the plan's chunk times before trusting a tight span."}),
             "lora_1": (names, {"tooltip": "Only needed if the schedule says "
                                "'lora_1'. A schedule naming files directly "
                                "leaves this empty."}),
-            "lora_2": (names,),
-            "lora_3": (names,),
+            "lora_2": (names, {"tooltip": "Only needed if the schedule says "
+                               "'lora_2'. A schedule naming files directly leaves "
+                               "this empty."}),
+            "lora_3": (names, {"tooltip": "Only needed if the schedule says "
+                               "'lora_3'. Three pickers is not a limit on how "
+                               "many LoRAs a schedule can drive — naming "
+                               "filenames instead has no ceiling."}),
         }}
 
     RETURN_TYPES = ("MODEL", "STRING")

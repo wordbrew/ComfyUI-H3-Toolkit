@@ -295,7 +295,12 @@ class H3SubjectUncrop:
             "source_images": ("IMAGE", {"tooltip": "The full frames the crop came "
                                                    "from — same ones you fed "
                                                    "H3 Subject Crop."}),
-            "crop_data": ("H3_CROP",),
+            "crop_data": ("H3_CROP", {"tooltip": "From H3 Subject Crop — the "
+                           "rectangle and scale to reverse, so the render goes "
+                           "back exactly where it came from. It must come from "
+                           "the SAME crop node run that produced these frames; a "
+                           "re-run with different settings puts the paste in the "
+                           "wrong place."}),
             "feather": ("INT", {"default": 16, "min": 0, "max": 256,
                         "tooltip": "Pixels of blend at the crop border. The model "
                                    "cannot see past the crop, so its edge pixels "
@@ -527,13 +532,24 @@ class H3PreviewMaskCrop:
         return {"required": {
             "images": ("IMAGE",),
             "opacity": ("FLOAT", {"default": 0.45, "min": 0.0, "max": 1.0,
-                        "step": 0.05}),
+                        "step": 0.05,
+                        "tooltip": "How strongly the overlays tint the footage. "
+                                   "Lower to judge what is UNDER the mask — "
+                                   "whether the edge follows the subject — and "
+                                   "raise it to judge the mask's own shape. It "
+                                   "does not affect any render; this node only "
+                                   "draws."}),
         }, "optional": {
             "mask": ("MASK",),
             "mask_2": ("MASK", {"tooltip": "A second mask, drawn in blue. For seeing "
                                            "a forget mask against the subject mask "
                                            "on the same frames."}),
-            "crop_data": ("H3_CROP",),
+            "crop_data": ("H3_CROP", {"tooltip": "From H3 Subject Crop, so the "
+                           "chosen rectangle can be drawn per frame. Needed for "
+                           "`show_crop_box`; without it the other overlays still "
+                           "work. Wire the crop node's `crop_data` here and feed "
+                           "this node the UNCROPPED footage — the box is drawn in "
+                           "source coordinates."}),
             "show_mask": ("BOOLEAN", {"default": True,
                           "tooltip": "Your pixel mask, in green."}),
             "show_latent_mask": ("BOOLEAN", {"default": True,
@@ -541,7 +557,14 @@ class H3PreviewMaskCrop:
                                             "16px cells, unioned over each latent "
                                             "frame's group. Coarser than yours, and "
                                             "the difference is what bites."}),
-            "show_crop_box": ("BOOLEAN", {"default": True}),
+            "show_crop_box": ("BOOLEAN", {"default": True,
+                              "tooltip": "Draw H3 Subject Crop's chosen rectangle, "
+                                         "per frame, from `crop_data`. This is how "
+                                         "you see whether the box is too tight, "
+                                         "whether it drifts, and whether the "
+                                         "subject ever leaves it — the model cannot "
+                                         "see past that edge. Does nothing with no "
+                                         "crop_data wired."}),
             "dilate": ("INT", {"default": 0, "min": 0, "max": 16,
                        "tooltip": "Match H3 Mask Inpaint's dilate to see exactly what "
                                   "it will build."}),

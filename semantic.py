@@ -167,7 +167,17 @@ class H3SemanticBridge:
                        "tooltip": "The SAME prompt string the reference node "
                                   "was given. If it differs, the span is wrong "
                                   "and the wrong tokens get transformed."}),
-            "adapter": ((_adapters() or ["(none in models/semantic_bridge)"]),),
+            "adapter": ((_adapters() or ["(none in models/semantic_bridge)"]),
+                        {"tooltip": "The trained projection, read from "
+                                    "models/semantic_bridge. The list is built "
+                                    "when ComfyUI asks for node definitions, so a "
+                                    "newly downloaded adapter needs a browser "
+                                    "refresh.\n\n"
+                                    "An adapter is trained for a SPECIFIC encoder "
+                                    "and hidden size; the node checks the span it "
+                                    "was given against what the adapter expects "
+                                    "and refuses a mismatch rather than "
+                                    "transforming the wrong tokens."}),
             "alpha": ("FLOAT", {"default": 0.10, "min": 0.0, "max": 1.0,
                       "step": 0.01,
                       "tooltip": "Blend strength. 0.10 is the author's "
@@ -175,7 +185,21 @@ class H3SemanticBridge:
                                  "A/B examples used to make the difference "
                                  "visible. 0 is a no-op."}),
             "magnitude_match": (["per_token", "global", "none"],
-                                {"default": "per_token"}),
+                                {"default": "per_token",
+                                 "tooltip": "Rescales the projected tokens back to "
+                                            "the original's magnitude before "
+                                            "blending, so the adapter changes "
+                                            "DIRECTION without changing how loud "
+                                            "the conditioning is.\n\n"
+                                            "per_token matches each token's own "
+                                            "RMS — the default. `global` matches "
+                                            "one ratio across the whole span, "
+                                            "preserving relative emphasis between "
+                                            "tokens. `none` lets the adapter's own "
+                                            "scale through, which changes the "
+                                            "effective strength of the whole "
+                                            "prompt and is not what `alpha` is "
+                                            "for."}),
             "apply_to": (["prompt only", "everything"],
                          {"default": "prompt only",
                           "tooltip": "`prompt only` masks the blend to the "

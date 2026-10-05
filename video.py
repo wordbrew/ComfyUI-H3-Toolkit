@@ -455,15 +455,35 @@ class H3KeyframeTimeline:
             "length": ("INT", {"default": 141, "min": 5, "max": 3600, "step": 17,
                                "tooltip": "Must match the H3 conditioning node's length. "
                                           "141 = 5.875 s, an AV-aligned run."}),
-            "image_1": ("IMAGE",),
+            "image_1": ("IMAGE", {"tooltip": "The first keyframe. It is encoded "
+                          "at the TARGET's size and placed on the target's own "
+                          "timeline, which is what makes it a keyframe rather "
+                          "than a reference — same rows, different time "
+                          "coordinates.\n\n"
+                          "Run this node AFTER the reference node: it appends to "
+                          "the conditioning that node set, and keyframes have to "
+                          "precede references in the packed sequence."}),
             "time_1": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 150.0, "step": 0.1,
                                  "tooltip": "Seconds. 0 = first frame. -1 disables."}),
         }
         opt = {}
         for i in (2, 3, 4):
-            opt[f"image_{i}"] = ("IMAGE",)
+            opt[f"image_{i}"] = ("IMAGE", {"tooltip":
+                f"Keyframe {i}, placed at `time_{i}`. Ignored unless that time is "
+                f"0 or greater. Every keyframe is a full latent frame of "
+                f"conditioning rows on the target grid, so four of them cost four "
+                f"frames' worth on every step."})
             opt[f"time_{i}"] = ("FLOAT", {"default": -1.0, "min": -1.0, "max": 150.0,
-                                          "step": 0.1})
+                                          "step": 0.1,
+                "tooltip": f"WHERE keyframe {i} lands, in SECONDS, and the switch "
+                           f"that enables the slot — -1 disables it, which is why "
+                           f"it is the default.\n\n"
+                           f"Snapped to the frame grid: 0 is the first frame and "
+                           f"anything at or past the clip's end becomes the last "
+                           f"frame. Clean interior anchors sit on latent steps, "
+                           f"which fall at frame offsets 0, 1, 5, 9 and 13 inside "
+                           f"each 17-frame group — the info output says where it "
+                           f"actually landed."})
         # APPENDED, per the slot contract -- these go last so saved graphs keep
         # their wiring. See the class docstring for why they are not optional in
         # any meaningful sense.

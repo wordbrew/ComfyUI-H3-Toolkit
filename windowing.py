@@ -1178,9 +1178,33 @@ class H3ContextWindows:
                                           "seam."}),
         }, "optional": {
             "schedule": (["standard_static", "standard_uniform", "looped_uniform",
-                          "batched"], {"default": "standard_static"}),
+                          "batched"], {"default": "standard_static",
+                          "tooltip": "How window positions are chosen. LEAVE IT ON "
+                                     "standard_static.\n\n"
+                                     "The UNIFORM family re-derives every window's "
+                                     "position on every step, so no frame is "
+                                     "rendered by a window in a consistent place "
+                                     "— measured actively harmful on H3, where the "
+                                     "windows have to stay put. `looped_uniform` "
+                                     "also builds STRIDED index lists, which mean "
+                                     "nothing against a (1,4,4,4,4) frame grid; "
+                                     "for a loop use the `loop` toggle, which "
+                                     "wraps the STATIC schedule instead and "
+                                     "overrides this widget entirely. Anything "
+                                     "but standard_static prints a warning."}),
             "fuse_method": (["pyramid", "flat", "overlap-linear", "relative"],
-                            {"default": "pyramid"}),
+                            {"default": "pyramid",
+                             "tooltip": "How overlapping windows are weighted "
+                                        "where they meet. `pyramid` weights a "
+                                        "window's middle above its edges, so a "
+                                        "frame is mostly decided by the window "
+                                        "that saw the most context around it — the "
+                                        "default, and the one the seam measurements "
+                                        "were taken under. `flat` weights every "
+                                        "window equally, which makes a boundary "
+                                        "more visible on a still background. The "
+                                        "other two are core's and are UNTESTED "
+                                        "here."}),
             "freenoise": ("BOOLEAN", {"default": False,
                           "tooltip": "Noise shuffling to improve blending. "
                                      "UNTESTED on H3."}),

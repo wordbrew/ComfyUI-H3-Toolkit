@@ -75,10 +75,27 @@ class H3MaskInpaint:
             "invert": ("BOOLEAN", {"default": False,
                                    "tooltip": "ON = keep the subject, regenerate the "
                                               "surroundings instead."}),
-            "keep_audio": ("BOOLEAN", {"default": True}),
+            "keep_audio": ("BOOLEAN", {"default": True,
+                           "tooltip": "Pin the source's audio so only the PICTURE "
+                                      "is regenerated. Needs `audio_vae` and "
+                                      "`source_audio` wired; without them there is "
+                                      "nothing to pin and this does nothing.\n\n"
+                                      "OFF regenerates audio alongside the video, "
+                                      "which for an inpaint means losing the "
+                                      "original track and getting invented sound "
+                                      "for the whole clip, not just the masked "
+                                      "region."}),
         }, "optional": {
-            "audio_vae": ("VAE",),
-            "source_audio": ("AUDIO",),
+            "audio_vae": ("VAE", {"tooltip": "H3's AUDIO VAE "
+                           "(minimax_h3_audio_vae_fp32), not the video one — the "
+                           "two are not interchangeable. Only needed when "
+                           "`keep_audio` is on, to encode the track into audio "
+                           "latent rows that can be pinned."}),
+            "source_audio": ("AUDIO", {"tooltip": "The track to pin, normally the "
+                              "source clip's own. Only read when `keep_audio` is "
+                              "on. It is pinned at full strength as finished "
+                              "rows, so its length has to cover the clip — a "
+                              "shorter track leaves the remainder generated."}),
             "forget_mask": ("MASK", {
                 "tooltip": "Greyscale. How much each area FORGETS the source it started "
                            "from. Black = remember it fully (what happens with nothing "
@@ -1235,7 +1252,15 @@ class H3MatchSource:
                                         "downscale a big clip to something H3 can "
                                         "render — the short edge wants to be around "
                                         "768 and the area cap is 768x1344."}),
-            "target_height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32}),
+            "target_height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
+                              "tooltip": "0 = derive from the source. Set it "
+                                         "TOGETHER with target_width; one alone is "
+                                         "ignored. To keep the source's shape "
+                                         "while cutting the cost, use "
+                                         "target_megapixels instead — it derives "
+                                         "both from the source aspect, so there is "
+                                         "no aspect conflict and the conform mode "
+                                         "stops mattering."}),
             "target_megapixels": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 4.0,
                                   "step": 0.05,
                                   "tooltip": "0 = off. Sets a pixel BUDGET and keeps "

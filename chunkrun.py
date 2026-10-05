@@ -287,7 +287,16 @@ class H3ChunkOpen:
                                          "images. Leave unwired to build the "
                                          "mask INSIDE the body instead, which is "
                                          "what lets SAM3 track per chunk."}),
-            "source_audio": ("AUDIO",),
+            "source_audio": ("AUDIO", {"tooltip": "The source clip's "
+                              "own track, for a V2V pass. Each chunk gets "
+                              "the slice matching its frames, cut at exact "
+                              "sample boundaries, so the audio cannot walk "
+                              "away from the picture at a seam.\n\n"
+                              "Leave it unwired for fresh generation and "
+                              "H3 generates audio per chunk instead — which "
+                              "is why an off-grid chunk length accumulates "
+                              "a rounding at every join, and a real track "
+                              "sliced per chunk does not."}),
             # --- the review gate -------------------------------------------- #
             #
             # A chained take is ONE queue item from first frame to last, so

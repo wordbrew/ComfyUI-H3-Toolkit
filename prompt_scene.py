@@ -108,7 +108,15 @@ class H3ScenePrompt:
                                          "re-render the same action instead of "
                                          "continuing it."}),
                 "seconds": ("FLOAT", {"default": 8.0, "min": 1.0, "max": 120.0,
-                                      "step": 0.5}),
+                                      "step": 0.5,
+                              "tooltip": "Target duration. It sets the `length` "
+                                         "output, SNAPPED to the VAE's 17n+5 grid, "
+                                         "and it is also how the shot markers get "
+                                         "their timecodes — so a prompt written "
+                                         "for 8s and rendered at 5s has beats "
+                                         "pointing past the end of the clip. Wire "
+                                         "`length` to the conditioning node so "
+                                         "the two cannot disagree."}),
                 "style": ("STRING", {"multiline": True, "default":
                           "Realistic video, shallow depth of field, warm practical light",
                           "tooltip": "Opening sentence of detailed_description — the look, "
@@ -132,7 +140,13 @@ class H3ScenePrompt:
                                                   "shot description."}),
                 "language": (["English", "Chinese", "Japanese", "Korean", "Spanish",
                               "French", "German", "Portuguese", "Italian", "Russian"],
-                             {"default": "English"}),
+                             {"default": "English",
+                              "tooltip": "The language tag on dialogue blocks, "
+                                         "written as `<d>[English] ...</d>`. It "
+                                         "declares what the words already ARE — it "
+                                         "does not translate them, so it has to "
+                                         "match the dialogue you wrote. Irrelevant "
+                                         "to a prompt with no speech."}),
             },
             "optional": {
                 # typed OR wired. Wire H3 Character for a saved cast member, or just
@@ -150,13 +164,58 @@ class H3ScenePrompt:
                 "retention_1": ("STRING", {"multiline": True, "default": "",
                                 "tooltip": "Leave empty and it is written for you, bound "
                                            "to the SUBJECT rather than to <Picture N>."}),
-                "subject_def_2": ("STRING", {"multiline": True, "default": ""}),
-                "pictures_2": ("INT", {"default": 0, "min": 0, "max": 9}),
-                "retention_2": ("STRING", {"multiline": True, "default": ""}),
-                "subject_def_3": ("STRING", {"multiline": True, "default": ""}),
-                "pictures_3": ("INT", {"default": 0, "min": 0, "max": 9}),
-                "retention_3": ("STRING", {"multiline": True, "default": ""}),
-                "extra_direction": ("STRING", {"multiline": True, "default": ""}),
+                "subject_def_2": ("STRING", {"multiline": True, "default": "",
+                                  "tooltip": "A SECOND cast member, same rules as "
+                                             "`subject_def_1`: full wording "
+                                             "containing <Subject N>, or plain "
+                                             "prose that gets expanded for you. "
+                                             "Numbering follows the slot, so this "
+                                             "becomes <Subject 2>. Leave empty for "
+                                             "a one-character scene."}),
+                "pictures_2": ("INT", {"default": 0, "min": 0, "max": 9,
+                               "tooltip": "How many <Picture N> anchors subject 2 "
+                                          "has. Anchors are numbered ACROSS "
+                                          "subjects in slot order, so if subject 1 "
+                                          "has 3, subject 2's first is <Picture 4>. "
+                                          "Ignored when the text already contains "
+                                          "<Subject N>."}),
+                "retention_2": ("STRING", {"multiline": True, "default": "",
+                                "tooltip": "Retention wording for subject 2. Leave "
+                                           "empty and it is written for you, bound "
+                                           "to the SUBJECT rather than to "
+                                           "<Picture N> — naming the picture as the "
+                                           "retained thing makes the model render "
+                                           "the anchor as a shot."}),
+                "subject_def_3": ("STRING", {"multiline": True, "default": "",
+                                  "tooltip": "A THIRD cast member, becoming "
+                                             "<Subject 3>. Same rules as the other "
+                                             "two. Every subject's anchors are "
+                                             "reference tokens riding every step, "
+                                             "so a three-character scene spends a "
+                                             "lot of the conditioning budget on "
+                                             "identity — check H3 Ref Budget."}),
+                "pictures_3": ("INT", {"default": 0, "min": 0, "max": 9,
+                               "tooltip": "How many <Picture N> anchors subject 3 "
+                                          "has, numbered after subjects 1 and 2. "
+                                          "Ref2VA accepts 9 images total across "
+                                          "all subjects, and 12 files of any "
+                                          "kind."}),
+                "retention_3": ("STRING", {"multiline": True, "default": "",
+                                "tooltip": "Retention wording for subject 3. Leave "
+                                           "empty to have it written for you, "
+                                           "bound to the subject."}),
+                "extra_direction": ("STRING", {"multiline": True, "default": "",
+                                    "tooltip": "Appended verbatim to the end of "
+                                               "detailed_description, after the "
+                                               "shots. For a direction the fields "
+                                               "have no home for.\n\n"
+                                               "Do NOT put negatives here. Naming "
+                                               "a failure tends to produce it — "
+                                               "'no cuts, no camera movement' cut "
+                                               "twice, and the same setup without "
+                                               "those words was clean at two "
+                                               "seeds. Describe what you want to "
+                                               "see instead."}),
             },
         }
 

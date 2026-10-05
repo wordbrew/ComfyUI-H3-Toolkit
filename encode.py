@@ -102,7 +102,11 @@ class H3EncodeAV:
                                  "still snapped to the grid, and the clip is "
                                  "centre-cropped to their aspect rather than "
                                  "stretched."}),
-            "height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32}),
+            "height": ("INT", {"default": 0, "min": 0, "max": 4096, "step": 32,
+                       "tooltip": "0 = derive from megapixels. Only read when "
+                                  "`width` is also set: one of the pair alone is "
+                                  "ignored, because a single dimension does not "
+                                  "describe a canvas. Snapped to 32."}),
             "temporal_size": ("INT", {"default": 0, "min": 0, "max": 4096,
                               "step": 4,
                               "tooltip": "IGNORED BY THE H3 VAE. Kept because "

@@ -154,7 +154,21 @@ class H3LongFormLinks:
                                   "tooltip": "Wire H3 Character, or type the wording here. "
                                              "Leave empty for a plain single-string prompt "
                                              "with no reference sections."}),
-                "retention_1": ("STRING", {"multiline": True, "default": ""}),
+                "retention_1": ("STRING", {"multiline": True, "default": "",
+                                "tooltip": "Retention wording, repeated "
+                                           "BYTE-IDENTICALLY into every link — "
+                                           "which is the point, since each link is "
+                                           "generated independently and has "
+                                           "nothing else holding the character "
+                                           "together.\n\n"
+                                           "Leave empty and it is written for you, "
+                                           "bound to the SUBJECT. Never bind it to "
+                                           "<Picture N>: naming the picture as the "
+                                           "retained thing makes the model render "
+                                           "the anchor as a shot, measured as a "
+                                           "hard cut mid-clip. Wire H3 Character's "
+                                           "`retention` for a saved cast "
+                                           "member."}),
                 "expected_count": ("INT", {"default": 0, "min": 0, "max": 4096,
                                    "tooltip": "Wire H3 Chunk Open's chunk_count "
                                               "here. If it does not match the "
@@ -164,7 +178,19 @@ class H3LongFormLinks:
                                               "silently for every extra chunk. "
                                               "0 = no check."}),
                 "task_type": (["reference generation", "keyframe completion"],
-                              {"default": "keyframe completion"}),
+                              {"default": "keyframe completion",
+                               "tooltip": "Opens each link's `summary` section, "
+                                          "telling H3 what the conditioning IS.\n\n"
+                                          "keyframe completion — the default, and "
+                                          "right for a chain: every link after the "
+                                          "first is handed its predecessor's last "
+                                          "frame, so it is completing from a "
+                                          "keyframe.\n"
+                                          "reference generation — for a link built "
+                                          "from reference images with no preceding "
+                                          "frame, which in a chain is only link "
+                                          "1. It does not change the wiring, only "
+                                          "what the model is told."}),
                 # APPENDED, and they stay appended. widgets_values is positional.
                 "chunk_frames": ("INT", {"default": 0, "min": 0, "max": 3600,
                                  "step": 17,
