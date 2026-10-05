@@ -44,20 +44,29 @@ MAX_SLOTS = 5           # separate IMAGE outputs; ref2va accepts up to 9
 _CACHE = {}             # (path, mtime, size) -> tensor
 
 
-def characters_dir():
-    """models/h3_characters, created on demand."""
+def characters_dir(create=False):
+    """models/h3_characters. Only CREATES it when `create` is set.
+
+    It used to mkdir unconditionally, and `list_characters()` calls this to fill
+    the character dropdown -- which `INPUT_TYPES` calls, which ComfyUI calls on
+    every /object_info request. So opening the graph wrote to disk. Saving is the
+    only operation that needs the directory to exist.
+    """
     try:
         import folder_paths
         base = folder_paths.models_dir
     except Exception:
         base = os.path.join(os.path.dirname(__file__), "..", "..", "models")
     d = os.path.join(base, "h3_characters")
-    os.makedirs(d, exist_ok=True)
+    if create:
+        os.makedirs(d, exist_ok=True)
     return d
 
 
 def list_characters():
     d = characters_dir()
+    if not os.path.isdir(d):          # nothing saved yet, and nothing to create
+        return ["(no characters saved)"]
     out = [n for n in sorted(os.listdir(d)) if os.path.isdir(os.path.join(d, n))]
     return out or ["(no characters saved)"]
 
@@ -277,7 +286,7 @@ class H3CharacterSave:
         safe = "".join(c for c in name.strip() if c.isalnum() or c in "-_ ").strip()
         if not safe:
             raise ValueError("character name is empty after sanitising")
-        d = os.path.join(characters_dir(), safe)
+        d = os.path.join(characters_dir(create=True), safe)
         if os.path.isdir(d) and not overwrite:
             raise ValueError(f"'{safe}' already exists — tick overwrite to replace it")
         img_dir = os.path.join(d, "images")

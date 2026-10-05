@@ -330,6 +330,12 @@ class H3ChunkOpen:
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
+    # `go()` never reads these two, and that is correct: H3ChunkClose reaches
+    # into the dynprompt and reads their LINKS, forwarding them into the first
+    # cloned chunk (chunkrun.py, the `resume_images` / `resume_latent` branches).
+    # They exist on Open purely as the wiring point. Declared so audit_nodes.py
+    # does not report them as dead and nobody deletes them as unused.
+    AUDIT_UNREAD_OK = ("resume_latent", "resume_images")
     DESCRIPTION = ("Hands out one chunk of a long clip. Wire your chain from here "
                    "to H3 Chunk Close, which repeats it for every chunk.")
 
@@ -413,6 +419,12 @@ class H3ChunkClose:
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
+    # Same pattern as H3ChunkOpen's resume_* and for the same reason: `go()`
+    # reads these two as LINKS out of the dynprompt (`latent_link` / `mask_link`
+    # below), never as values, which is also why they are declared lazy -- the
+    # chain they point at is cloned per chunk, so evaluating them here would
+    # render the graph twice. Declared so audit_nodes.py does not call them dead.
+    AUDIT_UNREAD_OK = ("latent", "mask")
     DESCRIPTION = ("Repeat the chain between H3 Chunk Open and here for every "
                    "chunk in the plan, then join the results.")
 
