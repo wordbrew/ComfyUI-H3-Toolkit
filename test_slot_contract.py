@@ -76,12 +76,18 @@ CONTRACT = {
         ["window_frames", "overlap_frames", "mode", "total_frames", "windows",
          "loop"],
         ["length", "window_count", "info"]),
+    # `total_frames` -> `chunk_count`, 2026-10-05, deliberate and CJ-approved.
+    # Asking for a total meant guessing how many chunks it bought and therefore
+    # how many beats to write; the count is the thing an author actually knows.
+    # This REPLACES an input rather than appending one, so saved graphs come up
+    # with that widget stale -- which is the cost, paid once, with four graphs
+    # affected and only H3 50 live.
     "H3ChunkPlan": (
         "longform",
-        ["chunk_frames", "chunk_mode", "source_images", "total_frames",
+        ["chunk_frames", "chunk_mode", "source_images", "chunk_count",
          "scene_threshold", "min_chunk", "render_width", "render_height",
          "ref_tokens", "context", "cut_frames"],
-        ["plan", "chunk_count", "info"]),
+        ["plan", "chunk_count", "info", "total_frames"]),
     "H3LongFormLinks": (
         "prompt_links",
         ["head", "beats", "tail", "link_index", "seconds_per_link", "seed",

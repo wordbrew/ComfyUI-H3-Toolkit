@@ -182,6 +182,61 @@ def _register_routes():
             return web.json_response({"ok": False, "characters": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
 
+    @routes.post(ROUTE_PREFIX + "/chunk/plan")
+    async def _chunk_plan(request):
+        """How long will this be, and how many beats do I write?
+
+        THE SAME ARITHMETIC THE NODE USES, over HTTP, so a front end can show a
+        user the answer BEFORE queueing anything. Two implementations of one
+        rule is the failure this pack keeps paying for, so both call
+        `chunkplan.count_plan` and neither owns a copy.
+
+        POST {"chunk_frames": 141, "chunk_count": 4, "context": 39}
+          or {"chunk_seconds": 5, "chunk_count": 4}      (snapped, and told so)
+        """
+        from .chunkplan import (AV_EXACT_RUNS, LEGAL_RUNS, count_plan,
+                                describe_count_plan, total_for_count)
+        data = await _body(request)
+        try:
+            ctx = int(data.get("context", 39))
+            n = int(data.get("chunk_count", 4))
+            fps = float(data.get("fps", 24.0))
+            asked_s = data.get("chunk_seconds")
+            if data.get("chunk_frames") is not None:
+                cf = int(data["chunk_frames"])
+                snapped_from = None
+            elif asked_s is not None:
+                want = max(1, round(float(asked_s) * fps))
+                cf = min(LEGAL_RUNS, key=lambda x: (abs(x - want), x))
+                snapped_from = want
+            else:
+                return web.json_response({"ok": False,
+                    "error": "give chunk_frames or chunk_seconds"})
+            total, first, rest, notes = count_plan(cf, n, ctx)
+            return web.json_response({
+                "ok": True,
+                "chunk_frames": cf, "chunk_count": n, "context": ctx,
+                "total_frames": total, "total_seconds": round(total / fps, 3),
+                # the asymmetry is arithmetic and the caller has to render it
+                "first_chunk_frames": first,
+                "first_chunk_seconds": round(first / fps, 3),
+                "other_chunk_frames": rest,
+                "other_chunk_seconds": round(rest / fps, 3),
+                "beats_required": n,
+                "snapped_from_frames": snapped_from,
+                "legal_runs": [r for r in LEGAL_RUNS if 39 <= r <= 400],
+                "av_exact_runs": [r for r in AV_EXACT_RUNS if 39 <= r <= 400],
+                "alternatives": [
+                    {"chunk_frames": c, "total_frames": total_for_count(c, n, ctx),
+                     "total_seconds": round(total_for_count(c, n, ctx) / fps, 3)}
+                    for c in LEGAL_RUNS if 39 <= c <= 400 and c != cf],
+                "notes": notes,
+                "info": describe_count_plan(cf, n, ctx, fps),
+            })
+        except (TypeError, ValueError) as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
     @routes.post(ROUTE_PREFIX + "/script/parse")
     async def _script_parse(request):
         from .h3script import ScriptError, parse

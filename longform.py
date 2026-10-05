@@ -13,6 +13,7 @@ import torch
 from .avlatent import av
 from .chunkplan import describe as describe_plan
 from .chunkplan import find_cuts, plan as build_plan, tokens_per_frame
+from .chunkplan import describe_count_plan, total_for_count
 from .crop import H3_CANVAS_MP
 from .geometry import canvas_for_megapixels
 from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
@@ -482,17 +483,19 @@ class H3ChunkPlan:
                                         "total_frames instead — there is no "
                                         "source to slice, so chunks are just a "
                                         "schedule."}),
-            "total_frames": ("INT", {"default": 0, "min": 0, "max": 36000,
-                             "step": 1,
-                             "tooltip": "Fresh generation only: how long the "
-                                        "finished piece should be. Free-form — "
-                                        "the CHUNKS have to be legal runs, the "
-                                        "total does not (564 = 4x141 is not one "
-                                        "itself). A piece shorter than one chunk "
-                                        "is the exception: there the total IS the "
-                                        "run, and it grows up to the next legal "
-                                        "one. Ignored when source_images is "
-                                        "wired."}),
+            "chunk_count": ("INT", {"default": 4, "min": 1, "max": 64,
+                            "tooltip": "Fresh generation only: HOW MANY chunks "
+                                       "to render. The finished length follows "
+                                       "from this, the chunk size and the carry "
+                                       "— `total_frames` and `info` report it "
+                                       "BEFORE you run, so the number of beats "
+                                       "to write is never a guess.\n\nChunk 1 "
+                                       "delivers the full chunk; every later one "
+                                       "drops the carried handle. Those two can "
+                                       "never be equal — it would need A = B - C "
+                                       "with all three on the 17n+5 grid, and "
+                                       "there are no solutions. Ignored when "
+                                       "source_images is wired."}),
             "scene_threshold": ("FLOAT", {"default": 0.12, "min": 0.005, "max": 1.0,
                                 "step": 0.005,
                                 "tooltip": "Mean absolute frame difference that "
@@ -545,20 +548,28 @@ class H3ChunkPlan:
                                       "its own cuts."}),
         }}
 
-    RETURN_TYPES = ("H3_CHUNK_PLAN", "INT", "STRING")
-    RETURN_NAMES = ("plan", "chunk_count", "info")
+    # total_frames appended LAST: saved graphs store output slots by index
+    RETURN_TYPES = ("H3_CHUNK_PLAN", "INT", "STRING", "INT")
+    RETURN_NAMES = ("plan", "chunk_count", "info", "total_frames")
     FUNCTION = "go"
     CATEGORY = "MiniMax H3/long-form"
     DESCRIPTION = ("Plan where a long clip gets cut into chunks, aligned to scene "
                    "changes or to a fixed size. Reports the plan before you run it.")
 
-    def go(self, chunk_frames, chunk_mode, source_images=None, total_frames=0,
+    def go(self, chunk_frames, chunk_mode, source_images=None, chunk_count=4,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
            ref_tokens=0, context="22", cut_frames=""):
-        n = int(source_images.shape[0]) if source_images is not None else int(total_frames)
+        # LENGTH FOLLOWS FROM THE COUNT, not the other way round. Asking for a
+        # total meant guessing how many chunks it bought, and therefore how many
+        # beats to write. The arithmetic inverts exactly, so computing the total
+        # here and handing it to the same planner changes nothing downstream.
+        if source_images is not None:
+            n = int(source_images.shape[0])
+        else:
+            n = total_for_count(chunk_frames, chunk_count, context)
         if n <= 0:
             msg = ("Nothing to plan. Wire source_images for a V2V pass, or set "
-                   "total_frames for a fresh generation.")
+                   "chunk_count for a fresh generation.")
             return {"ui": {"h3char": [msg]},
                     "result": ({"chunks": [], "info": {}, "total_frames": 0}, 0, msg)}
 
@@ -616,10 +627,18 @@ class H3ChunkPlan:
             text += (f"\n  {generated} frames generated for {n} of content "
                      f"({100 * (generated / float(n) - 1):.1f}% padding)")
 
+        # SAY THE LENGTH BEFORE ANYTHING RUNS. For a fresh generation the count
+        # is the input and the duration is derived, so the one number the author
+        # needs -- how many beats to write, and how long the result will be --
+        # goes at the TOP of the report rather than being inferred from the
+        # chunk list.
+        if source_images is None:
+            text = (describe_count_plan(chunk_frames, chunk_count,
+                                        int(context)) + "\n" + text)
         logging.info("H3ChunkPlan: %s", text.splitlines()[0])
         payload = {"chunks": chunks, "info": info, "total_frames": n}
         return {"ui": {"h3char": [text]},
-                "result": (payload, len(chunks), text)}
+                "result": (payload, len(chunks), text, int(n))}
 
 
 class H3SeamCheck:
