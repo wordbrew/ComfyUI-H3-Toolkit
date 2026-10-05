@@ -1446,7 +1446,22 @@ class H3Script:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
-            "script": ("STRING", {"multiline": True, "default":
+            "script": ("STRING", {"multiline": True,
+                       "tooltip": "The whole take, written in NAMES — the compiler "
+                                  "does the numbering, so nothing here is a "
+                                  "<Subject 2> or a <Picture 4> that has to be "
+                                  "renumbered when the cast changes.\n\n"
+                                  "`@name = ...` declares a character or setting. "
+                                  "`style =` and `soundscape =` set the look and "
+                                  "the room once, for every shot. `shot |` starts "
+                                  "a shot, and its indented `note` / `say` / `do` "
+                                  "lines become staging, dialogue and action. A "
+                                  "`say` becomes a <d> block with a speaker tag — "
+                                  "only that text is vocalised.\n\n"
+                                  "The shots become the chunk prompts, so this is "
+                                  "where a long take's beats are authored. Check "
+                                  "the lint output before rendering.",
+                       "default":
                        "@ada  = character Ada\n"
                        "@man  = a man in his thirties, dark hair\n"
                        "@room = setting. a bedroom in warm low light\n"

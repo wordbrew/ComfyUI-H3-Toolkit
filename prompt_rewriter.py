@@ -98,20 +98,59 @@ class H3RewriterBrief:
                          "tooltip": "One or two lines. What happens — the LLM turns it into "
                                     "a shot list."}),
                 "seconds": ("FLOAT", {"default": 8.0, "min": 1.0, "max": 120.0,
-                                      "step": 0.5}),
+                                      "step": 0.5,
+                              "tooltip": "The duration the BRIEF asks the writer "
+                                         "to fill, so the shot markers it produces "
+                                         "span this long. It does not set a render "
+                                         "length — that comes out of H3 Rewriter "
+                                         "Parse, which must be given the same "
+                                         "number or the beats will not match the "
+                                         "clip."}),
                 "task_type": (["reference generation", "keyframe completion",
                                "video continuation", "video editing",
                                "audio reference", "audio reuse"],
-                              {"default": "reference generation"}),
+                              {"default": "reference generation",
+                               "tooltip": "What job the prompt is for. It opens "
+                                          "the `summary` section the writer "
+                                          "produces, which is how H3 is told what "
+                                          "the references are FOR.\n\n"
+                                          "reference generation — build a new clip "
+                                          "from reference images.\n"
+                                          "keyframe completion — a first and/or "
+                                          "last frame are given.\n"
+                                          "video continuation / editing — a source "
+                                          "clip is being extended or altered.\n"
+                                          "audio reference / reuse — the audio is "
+                                          "the point."}),
                 "shots": ("INT", {"default": 2, "min": 1, "max": 12,
                           "tooltip": "How many shots to ask for. One long take = 1."}),
                 "dialogue": ("BOOLEAN", {"default": False,
                              "tooltip": "Ask for spoken lines in <d> tags."}),
             },
             "optional": {
-                "subject_def_1": ("STRING", {"forceInput": True}),
-                "retention_1": ("STRING", {"forceInput": True}),
-                "style_note": ("STRING", {"multiline": True, "default": ""}),
+                "subject_def_1": ("STRING", {"forceInput": True,
+                                  "tooltip": "An EXISTING subject definition to "
+                                             "hand the writer, so it describes "
+                                             "your character instead of inventing "
+                                             "one. Wire H3 Character's "
+                                             "`subject_def`. Input-only: there is "
+                                             "no widget, because hand-typing this "
+                                             "is what H3 Scene Prompt is for."}),
+                "retention_1": ("STRING", {"forceInput": True,
+                                "tooltip": "Existing retention wording to preserve "
+                                           "verbatim, from H3 Character's "
+                                           "`retention`. Passing it in stops the "
+                                           "writer rephrasing retention into the "
+                                           "form that names <Picture N> as the "
+                                           "retained thing, which makes the model "
+                                           "render the anchor as a shot."}),
+                "style_note": ("STRING", {"multiline": True, "default": "",
+                               "tooltip": "A look to impose on the writer's first "
+                                          "line — lens, grade, light, grain. "
+                                          "Without one it picks its own, and a "
+                                          "general-purpose model tends to pick "
+                                          "'cinematic'. The LOOK only; staging and "
+                                          "action belong in the idea."}),
             },
         }
 
@@ -152,9 +191,25 @@ class H3RewriterParse:
         return {
             "required": {
                 "llm_output": ("STRING", {"multiline": True, "default": "",
-                               "forceInput": False}),
+                               "forceInput": False,
+                               "tooltip": "The writer's REPLY, pasted or wired "
+                                          "from whatever generated it. The six "
+                                          "sections are found by their labels and "
+                                          "normalised, so surrounding chatter and "
+                                          "a code fence are tolerated — but a "
+                                          "missing section cannot be invented, and "
+                                          "`ok` goes false with the lint saying "
+                                          "which. Nothing here reaches a model "
+                                          "unchecked."}),
                 "seconds": ("FLOAT", {"default": 8.0, "min": 1.0, "max": 120.0,
-                                      "step": 0.5}),
+                                      "step": 0.5,
+                              "tooltip": "The duration to snap the `length` output "
+                                         "to, on the 17n+5 grid. Set it to the "
+                                         "SAME value the brief used: the beats in "
+                                         "the text were written for that duration, "
+                                         "and parsing at a different one leaves "
+                                         "markers pointing past the end of the "
+                                         "clip."}),
             }
         }
 

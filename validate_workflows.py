@@ -96,7 +96,8 @@ def main(paths):
     # workflow whether or not the shell got to the argument first
     expanded = []
     for p in paths:
-        expanded.extend(sorted(glob.glob(p)) if any(c in p for c in "*?[") else [p])
+        expanded.extend(sorted(glob.glob(p, recursive=True))
+                        if any(c in p for c in "*?[") else [p])
     if not expanded:
         print("no workflows matched")
         return 1
@@ -114,4 +115,7 @@ def main(paths):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:] or ["workflows/*.json"]))
+    # RECURSIVE. `workflows/*.json` skipped workflows/legacy/ entirely, and one
+    # of the two files in there had rotted into stale link ids that nothing
+    # checked. A default that misses a directory is worse than no default.
+    sys.exit(main(sys.argv[1:] or ["workflows/**/*.json"]))

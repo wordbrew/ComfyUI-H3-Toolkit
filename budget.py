@@ -119,7 +119,14 @@ class H3RefBudget:
         req = {
             "width": ("INT", {"default": 640, "min": 32, "max": 4096, "step": 32,
                               "tooltip": "The generation width, not the reference's."}),
-            "height": ("INT", {"default": 1120, "min": 32, "max": 4096, "step": 32}),
+            "height": ("INT", {"default": 1120, "min": 32, "max": 4096, "step": 32,
+                       "tooltip": "The GENERATION height, not the reference's. "
+                                  "Together with width it sets the target's token "
+                                  "count per latent frame — (w/32)*(h/32) — which "
+                                  "is the denominator the reference share is "
+                                  "measured against. Feed it the same number the "
+                                  "reference node gets or the report describes a "
+                                  "render you are not doing."}),
             "length": ("INT", {"default": 294, "min": 5, "max": 3600, "step": 17,
                                "tooltip": "Frames at 24 fps. Snapped to the 17n+5 grid "
                                           "for the report, the same way the reference "

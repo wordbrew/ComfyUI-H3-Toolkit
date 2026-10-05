@@ -133,7 +133,14 @@ class H3Character:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "character": (list_characters(),),
+                "character": (list_characters(), {"tooltip":
+                               "A character saved by H3 Character Save, read from "
+                               "models/h3_characters. The list is built when "
+                               "ComfyUI asks for node definitions, so a character "
+                               "saved in this session needs a browser refresh to "
+                               "appear. Everything else on this node describes how "
+                               "to CITE it; the appearance and voice wording come "
+                               "from its card."}),
                 "anchors": ("INT", {"default": 3, "min": 1, "max": MAX_SLOTS,
                             "tooltip": "How many anchor images to output. 3 measurably "
                                        "beat 1 for identity; more costs per-step time "
@@ -241,7 +248,12 @@ class H3CharacterSave:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "name": ("STRING", {"default": "new_character"}),
+                "name": ("STRING", {"default": "new_character",
+                         "tooltip": "The library name, and the folder it is "
+                                    "written to. Sanitised to letters, digits, "
+                                    "spaces, - and _ , so a name that reduces to "
+                                    "nothing is rejected. Saving over an existing "
+                                    "name needs `overwrite`."}),
                 "description": ("STRING", {"multiline": True, "default":
                                 "a woman with curly copper-red hair, freckled fair skin "
                                 "and a curvy figure",
@@ -263,12 +275,50 @@ class H3CharacterSave:
                                     "thing keeps shape, colour and markings."}),
                 "retention": (["fully_preserved", "partially_preserved",
                                "attribute_transfer", "weak_reference"],
-                              {"default": "fully_preserved"}),
-                "overwrite": ("BOOLEAN", {"default": False}),
+                              {"default": "fully_preserved",
+                               "tooltip": "The retention_analysis MARKER stored "
+                                          "on the card, which H3 Character writes "
+                                          "into the prompt as "
+                                          "'<Subject N>: <marker> - preserve their "
+                                          "facial identity, hairstyle...'.\n\n"
+                                          "fully_preserved is the one the working "
+                                          "14-clip take used. The weaker three "
+                                          "ask the model to treat the anchors as "
+                                          "inspiration rather than identity, which "
+                                          "is what you want for a style or a "
+                                          "body-type reference and NOT for a "
+                                          "character who has to stay the same "
+                                          "person across links."}),
+                "overwrite": ("BOOLEAN", {"default": False,
+                               "tooltip": "Replace an existing character of this "
+                                          "name. OFF raises rather than "
+                                          "overwriting, so a re-queue cannot "
+                                          "quietly destroy a card. ON deletes the "
+                                          "stored images before writing the new "
+                                          "ones, so saving with fewer anchors "
+                                          "really does leave fewer."}),
             },
             "optional": {
-                **{f"image_{i + 1}": ("IMAGE",) for i in range(MAX_SLOTS)},
-                "voice": ("AUDIO",),
+                **{f"image_{i + 1}": ("IMAGE", {"tooltip":
+                     (f"Anchor image {i + 1} of {MAX_SLOTS}, written into the "
+                      f"character's images/ folder. Three anchors measurably beat "
+                      f"one for identity, and reference tokens ride EVERY step, so "
+                      f"more is not free. Vary angle and lighting; near-duplicate "
+                      f"frames spend tokens without adding information."
+                      if i == 0 else
+                      f"Anchor image {i + 1} of {MAX_SLOTS}. Slots are collected in "
+                      f"order and gaps are closed, so wiring 1, 2 and 4 saves three "
+                      f"anchors.")})
+                   for i in range(MAX_SLOTS)},
+                "voice": ("AUDIO", {"tooltip": "A clean voice SAMPLE to clone "
+                           "from, stored with the card and cited as <Audio N>. "
+                           "Ref2VA takes 2-15s per audio reference and an audio "
+                           "reference must be paired with an image or video.\n\n"
+                           "With a sample the prompt says timbre, accent and "
+                           "delivery are referenced and the words are new — the "
+                           "signal is not copied. Without one, "
+                           "`voice_description` carries the voice instead, and "
+                           "wording there outweighs the words being said."}),
             },
         }
 

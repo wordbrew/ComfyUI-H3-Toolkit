@@ -269,7 +269,18 @@ class H3AudioPrompt:
                             "tooltip": "Picking a preset fills the fields below so you edit "
                                        "rather than start blank. Set back to custom to keep "
                                        "your own text."}),
-                "mode": (["song", "speech", "instrumental"], {"default": "song"}),
+                "mode": (["song", "speech", "instrumental"], {"default": "song",
+                          "tooltip": "Which prompt SHAPE to build, which changes "
+                                     "what the other fields mean.\n\n"
+                                     "song — the script is lyrics, split across "
+                                     "timed sections.\n"
+                                     "speech — the script is dialogue; each line "
+                                     "becomes a <d> block with a speaker tag, and "
+                                     "gaps get an explicit 'nobody speaks' "
+                                     "direction so the model does not fill them.\n"
+                                     "instrumental — no voice at all, written as "
+                                     "one continuous take; `script`, `voice`, "
+                                     "`language` and `speaker` are unused."}),
                 "auto_fit_duration": ("BOOLEAN", {"default": True,
                             "tooltip": "Set the take length from the script itself, so there "
                                        "is no unclaimed time for the model to fill with "
@@ -282,7 +293,18 @@ class H3AudioPrompt:
                                                  "tiny canvas long audio is fine."}),
                 "style": ("STRING", {"multiline": True, "default":
                           "A sparse, slow, sultry acoustic ballad around 68 BPM, minor key, "
-                          "yearning and melancholy, with a lot of space between phrases"}),
+                          "yearning and melancholy, with a lot of space between phrases",
+                          "tooltip": "Genre, tempo, key and mood — spliced into "
+                                     "the performance description, so write it as "
+                                     "a FRAGMENT ('a sparse acoustic ballad around "
+                                     "68 BPM'), not a sentence. Its first letter "
+                                     "is lowercased for you.\n\n"
+                                     "Name the tempo and the SPACE you want: "
+                                     "without 'a lot of space between phrases' the "
+                                     "model fills every gap with drums and pads. "
+                                     "Instruments a performer plays are DIEGETIC "
+                                     "and belong here or in `instrumentation`, "
+                                     "never in a score field."}),
                 "instrumentation": ("STRING", {"multiline": True, "default":
                           "One softly fingerpicked nylon-string guitar and nothing else — no "
                           "drums, no percussion, no bass, no synth and no strings at any point",
@@ -296,15 +318,41 @@ class H3AudioPrompt:
                                      "the words themselves."}),
                 "room": ("STRING", {"multiline": True, "default":
                           "A small quiet room late at night: faint room tone, one distant car "
-                          "passing outside, breath and lip noise close to the microphone"}),
+                          "passing outside, breath and lip noise close to the microphone",
+                          "tooltip": "The SPACE this was recorded in — it becomes "
+                                     "the `overall_soundscape` field, which is a "
+                                     "separate section from the performance.\n\n"
+                                     "Describe the room and the microphone, not "
+                                     "the music: room tone, distance, what else "
+                                     "is audible through the wall. Naming breath "
+                                     "and lip noise close to the mic is what makes "
+                                     "a vocal sound present rather than mixed. "
+                                     "Score the characters cannot hear is "
+                                     "`non_diegetic_music`, not this."}),
                 "script": ("STRING", {"multiline": True, "default":
                           "[Intro]\n\n[Verse 1]\nHoney, the hour is late\nHoney, I hate to wait\n\n"
                           "[Chorus]\nOh, I want you\nMore than I want to\n\n[Outro]\n",
                           "tooltip": "SONG: [Section] headers, lines beneath. A header with no "
                                      "lines = instrumental passage.\nSPEECH: one line per beat, "
                                      "optionally '0:06 | line text' to pin timing."}),
-                "language": (LANGUAGES, {"default": "English"}),
-                "speaker": ("STRING", {"default": "S1"}),
+                "language": (LANGUAGES, {"default": "English",
+                              "tooltip": "The language tag inside each <d> block, "
+                                         "as `<d>[English] ...</d>`. It declares "
+                                         "what the words ARE, so it has to match "
+                                         "the script you wrote — tagging English "
+                                         "text as Chinese does not translate it, "
+                                         "it gives the model contradictory "
+                                         "instructions. Unused in instrumental "
+                                         "mode. H3 was trained on 11 languages."}),
+                "speaker": ("STRING", {"default": "S1",
+                             "tooltip": "The speaker id written before each spoken "
+                                        "line, as `(S1)`. One voice needs only "
+                                        "S1; a script whose lines are prefixed "
+                                        "`S1:` / `S2:` gets its ids from the "
+                                        "script instead and this is the fallback "
+                                        "for unprefixed lines. The tag is what "
+                                        "keeps two characters from drifting into "
+                                        "one voice."}),
                 "use_timed_shots": ("BOOLEAN", {"default": True,
                                  "tooltip": "Emit [Shot N] At 00:MM.SSS markers. This is the "
                                             "TRAINED way to place events in time — leaving it "
@@ -322,7 +370,19 @@ class H3AudioPrompt:
                                                "Use CLEAN 5-10s samples — longer references "
                                                "crowd out the target. Speakers map to "
                                                "ref_audio_1/2/3 IN ORDER."}),
-                "extra_direction": ("STRING", {"multiline": True, "default": ""}),
+                "extra_direction": ("STRING", {"multiline": True, "default": "",
+                                     "tooltip": "Appended verbatim to the end of "
+                                                "the performance description, "
+                                                "after everything this node "
+                                                "built. For a direction the "
+                                                "fields have no home for — an "
+                                                "ad-lib, a mix note, a "
+                                                "performance aside. It lands "
+                                                "INSIDE "
+                                                "integrated_multimodal_description, "
+                                                "so a room or score note belongs "
+                                                "in `room` instead, where it "
+                                                "reaches overall_soundscape."}),
             },
         }
 
@@ -545,7 +605,16 @@ class H3AudioLength:
     def INPUT_TYPES(cls):
         return {"required": {
             "seconds": ("FLOAT", {"default": 14.375, "min": 1.0, "max": 120.0,
-                                  "step": 0.5}),
+                                  "step": 0.5,
+                          "tooltip": "The duration you want. It is SNAPPED to the "
+                                     "video VAE's 17n+5 grid, so the length you "
+                                     "get back is rarely the one you asked for — "
+                                     "`actual_seconds` reports what it became. "
+                                     "The default 14.375 is 345 frames, the "
+                                     "longest run under 15s that lands on both "
+                                     "clocks. Audio length depends on DURATION, "
+                                     "not canvas, so a long track is cheap at "
+                                     "32x32."}),
             "av_aligned": ("BOOLEAN", {"default": True,
                            "tooltip": "Snap to a run that lands exactly on both clocks — "
                                       "24 fps video and the 40 Hz audio latent. "

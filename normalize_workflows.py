@@ -245,7 +245,8 @@ def main(argv):
         print("could not load the pack's node classes")
         return 1
     total, bad_types = 0, 0
-    for path in sorted(glob.glob("workflows/*.json")):
+    # recursive for the same reason validate_workflows is
+    for path in sorted(glob.glob("workflows/**/*.json", recursive=True)):
         notes, types_bad = fix(path, classes, write)
         if notes:
             total += len(notes)

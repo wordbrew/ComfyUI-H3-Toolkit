@@ -33,7 +33,9 @@ WHAT EACH CHECK IS FOR, and the bug that motivated it:
            exist. A stale name sends you hunting for a widget that was renamed.
   bare     Inputs with no tooltip at all. This pack's whole value proposition is
            the knowledge around the model, so an undocumented widget is a gap in
-           the product, not just in the comments.
+           the product, not just in the comments. Nodes marked DEPRECATED are
+           skipped: that flag hides them from the add-node menu, so nobody can
+           hover a widget that is never placed by hand.
   effects  Side effects in INPUT_TYPES. ComfyUI calls it on every /object_info,
            so a filesystem write there runs on every page load. H3Character's
            character list did an os.makedirs.
@@ -60,6 +62,8 @@ DOC_ALLOW = {
     "eta", "euler", "beta", "simple", "normal", "res_multistep", "er_sde",
     "sgm_uniform", "beta57", "match", "max", "min", "stretch", "fill", "cover",
     "contain", "ref", "refs", "reference", "references", "everything",
+    # H3Script's own script language, which its tooltip has to name
+    "note", "say", "shot", "style", "soundscape", "character", "setting",
 }
 # inputs whose meaning is carried by their type
 BARE_OK = {"model", "images", "image", "mask", "latent", "audio", "vae", "clip",
@@ -334,6 +338,11 @@ def check_docs(classes, _wf):
             every_in |= set(declared(spec))
         every_out |= {str(o) for o in (getattr(cls, "RETURN_NAMES", None) or
                                        getattr(cls, "RETURN_TYPES", ()) or ())}
+    # H3's six prompt sections are a real vocabulary that tooltips cite by name,
+    # and they are not inputs of anything.
+    sections = {"subject_definitions", "summary", "retention_analysis",
+                "detailed_description", "overall_soundscape", "non_diegetic_music",
+                "integrated_multimodal_description"}
     out = []
     for name, cls in sorted(classes.items()):
         spec = spec_of(cls)
@@ -342,6 +351,14 @@ def check_docs(classes, _wf):
         dec = declared(spec)
         own = set(dec) | {str(o) for o in (getattr(cls, "RETURN_NAMES", None) or
                                            getattr(cls, "RETURN_TYPES", ()) or ())}
+        # A node's own COMBO OPTIONS are legitimate things for its tooltips to
+        # name -- `pyramid`, `looped_uniform`, `per_token`. Without this the check
+        # fires on every tooltip that explains the choices it offers, which is the
+        # most useful kind of tooltip there is.
+        for _g, t, _c in dec.values():
+            if isinstance(t, (list, tuple)):
+                own |= {str(o).split()[0] for o in t if isinstance(o, str)}
+        own |= sections
         texts = []
         if getattr(cls, "DESCRIPTION", None):
             texts.append(("DESCRIPTION", cls.DESCRIPTION))
@@ -363,6 +380,13 @@ def check_docs(classes, _wf):
 def check_bare(classes, _wf):
     out = []
     for name, cls in sorted(classes.items()):
+        # DEPRECATED keeps a node OUT of the add-node menu, so nobody places one
+        # and nobody can hover its widgets. H3ChunkSlice is internal to
+        # H3ChunkClose and exists only to be cloned per chunk; tooltips there
+        # would be comments with extra steps, and the class docstring is the
+        # right place for what it does.
+        if getattr(cls, "DEPRECATED", False):
+            continue
         spec = spec_of(cls)
         if not spec or "__error__" in spec:
             continue

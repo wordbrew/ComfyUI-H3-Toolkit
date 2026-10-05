@@ -227,7 +227,13 @@ class VideoTrimLoad:
                       "tooltip": "0 = leave it alone. Set ONE axis and the "
                                  "other follows the source's aspect; setting "
                                  "both is how a clip gets stretched."}),
-            "height": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 8}),
+            "height": ("INT", {"default": 0, "min": 0, "max": 8192, "step": 8,
+                       "tooltip": "0 = leave it alone. Set this ALONE and the "
+                                  "width follows the source's aspect; setting "
+                                  "both is how a clip gets stretched. Steps by 8, "
+                                  "not 32 — these two loaders are "
+                                  "model-agnostic and do not enforce H3's grid, "
+                                  "which is H3 Match Source's job."}),
             "divisible_by": ("INT", {"default": 8, "min": 1, "max": 64,
                              "tooltip": "Round the resize to a multiple of "
                                         "this. Most video models want 8 or 32."}),
