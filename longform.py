@@ -14,6 +14,7 @@ from .avlatent import av
 from .chunkplan import describe as describe_plan
 from .chunkplan import find_cuts, plan as build_plan, tokens_per_frame
 from .chunkplan import describe_count_plan, total_for_count
+from .timing import is_av_aligned, snap_av_aligned
 from .crop import H3_CANVAS_MP
 from .geometry import canvas_for_megapixels
 from .timing import (FPS, align_frames, av_aligned_runs_through, describe,
@@ -465,14 +466,23 @@ class H3ChunkPlan:
             # min 5 with step 17 IS the legal-run grid (17n+5), so the arrows
             # can only land on one. A typed value still snaps in plan(), which
             # says so in `info` -- the step just stops it happening silently.
-            "chunk_frames": ("INT", {"default": 90, "min": 5, "max": 3600, "step": 17,
-                             "tooltip": "Target chunk size, a legal run (17n+5). "
-                                        "39/90/141/192/243/294/"
-                                        "345 land on BOTH clocks. Shorter chunks "
-                                        "also hold identity better — a reference "
-                                        "is a fixed token count while the target "
-                                        "grows, so its share falls as chunks get "
-                                        "longer."}),
+            # STAYS AN INT. Seven saved graphs drive this from a link, and an
+            # INT link into a COMBO is invalid -- a dropdown would have made the
+            # value unwireable, which also matters when a front end sets it over
+            # the API. The audio grid goes in the tooltip instead.
+            "chunk_frames": ("INT", {"default": 141, "min": 5, "max": 3600, "step": 17,
+                             "tooltip": "Target chunk size, a legal run (17n+5).\n\n"
+                                        "39 / 90 / 141 / 192 / 243 / 294 / 345 also "
+                                        "land exactly on the 40 Hz AUDIO grid. "
+                                        "Anything else rounds at every join and a "
+                                        "generated chain accumulates it — 141 is "
+                                        "5.88s and the nearest exact size to five "
+                                        "seconds, while 124 is nearer 5.00s and is "
+                                        "NOT exact. `av_aligned` snaps for you.\n\n"
+                                        "Shorter chunks also hold identity better — "
+                                        "a reference is a fixed token count while "
+                                        "the target grows, so its share falls as "
+                                        "chunks get longer."}),
             "chunk_mode": (["scene", "fixed"], {"default": "scene",
                             "tooltip": "scene: chunks end at cuts, so a prompt "
                                        "never describes two scenes. fixed: uniform "
@@ -525,7 +535,11 @@ class H3ChunkPlan:
             # so a widget inserted anywhere else shifts every one after it in
             # every saved workflow -- silently, into fields that still look
             # plausible.
-            "context": (["22", "39", "5", "1", "0"], {"default": "22",
+            # 39 IS THE DEFAULT, NOT 22. 22 is the only carry length off BOTH
+            # clocks -- 36.67 audio ticks -- so every join rounds and a generated
+            # chain accumulates it. It was the default for months, so anything
+            # that did not override it inherited the worst option.
+            "context": (["39", "22", "5", "1", "0"], {"default": "39",
                          "tooltip": "Frames each chunk carries from the previous "
                                     "one's finished output, to stop the seam "
                                     "restarting. Chunks OVERLAP by this much and "
@@ -546,6 +560,14 @@ class H3ChunkPlan:
                                       "carry measured across chunks stops with "
                                       "it. Ignored when a source clip supplies "
                                       "its own cuts."}),
+            "av_aligned": ("BOOLEAN", {"default": False,
+                            "tooltip": "Snap chunk_frames UP to the nearest size "
+                                       "landing on both clocks, and report what "
+                                       "it cost. OFF by default: 158 is a "
+                                       "legitimate choice when hitting a target "
+                                       "duration matters more than exact audio, "
+                                       "and silently moving a chosen chunk size "
+                                       "is worse than reporting it."}),
         }}
 
     # total_frames appended LAST: saved graphs store output slots by index
@@ -558,7 +580,16 @@ class H3ChunkPlan:
 
     def go(self, chunk_frames, chunk_mode, source_images=None, chunk_count=4,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
-           ref_tokens=0, context="22", cut_frames=""):
+           ref_tokens=0, context="39", cut_frames="", av_aligned=False):
+        chunk_frames = int(chunk_frames)
+        av_note = ""
+        if av_aligned and not is_av_aligned(chunk_frames):
+            snapped = snap_av_aligned(chunk_frames, "up")
+            av_note = (f"av_aligned: {chunk_frames} is "
+                       f"{chunk_frames * 40 / 24:.2f} audio ticks — snapped UP to "
+                       f"{snapped}, which lands on both clocks. Costs "
+                       f"{snapped - chunk_frames} frame(s) per chunk.")
+            chunk_frames = snapped
         # LENGTH FOLLOWS FROM THE COUNT, not the other way round. Asking for a
         # total meant guessing how many chunks it bought, and therefore how many
         # beats to write. The arithmetic inverts exactly, so computing the total
@@ -635,6 +666,8 @@ class H3ChunkPlan:
         if source_images is None:
             text = (describe_count_plan(chunk_frames, chunk_count,
                                         int(context)) + "\n" + text)
+        if av_note:
+            text = av_note + "\n" + text
         logging.info("H3ChunkPlan: %s", text.splitlines()[0])
         payload = {"chunks": chunks, "info": info, "total_frames": n}
         return {"ui": {"h3char": [text]},
