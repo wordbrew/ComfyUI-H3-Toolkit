@@ -42,7 +42,7 @@
           ]
         }
       ],
-      "title": "decoded frames — the NEXT chunk's keyframe",
+      "title": "decoded frames \u2014 the NEXT chunk's keyframe",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -465,7 +465,7 @@
           ]
         }
       ],
-      "title": "SEAM CHECK — look here first",
+      "title": "SEAM CHECK \u2014 look here first",
       "properties": {
         "Node name for S&R": "H3SeamCheck"
       },
@@ -508,7 +508,7 @@
           "links": null
         }
       ],
-      "title": "CLOSE — what gets cloned",
+      "title": "CLOSE \u2014 what gets cloned",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -734,7 +734,7 @@
           ]
         }
       ],
-      "title": "3b. LATENT PIN — BYPASSED (motion context carries instead)",
+      "title": "3b. LATENT PIN \u2014 BYPASSED (motion context carries instead)",
       "properties": {
         "Node name for S&R": "H3ChunkLatentContext"
       },
@@ -842,7 +842,7 @@
           "links": null
         }
       ],
-      "title": "SEAM STRIPS — the red line is the cut",
+      "title": "SEAM STRIPS \u2014 the red line is the cut",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -2047,11 +2047,11 @@
         6.4,
         2691,
         "fixed",
-        "<Subject 1> is the woman in <Picture 1>, <Picture 2> and <Picture 3>. She has an alt, punk look — dark hair, pale skin, tattoos and piercings — and she is nude.\n<Subject 2> is the setting: a dim bedroom at night, an unmade bed with rumpled pale sheets, one low warm lamp to the side and the rest of the room in shadow.\n<Subject 3> is her partner, a man of a similar age with dark hair and a lean build, nude, over her on the bed.",
+        "<Subject 1> is the woman in <Picture 1>, <Picture 2> and <Picture 3>. She has an alt, punk look \u2014 dark hair, pale skin, tattoos and piercings \u2014 and she is nude.\n<Subject 2> is the setting: a dim bedroom at night, an unmade bed with rumpled pale sheets, one low warm lamp to the side and the rest of the room in shadow.\n<Subject 3> is her partner, a man of a similar age with dark hair and a lean build, nude, over her on the bed.",
         "<Subject 1> (appears in [Shot 1]): fully_preserved - preserve her facial identity, hair, tattoos, piercings and build exactly as shown in <Picture 1>, <Picture 2> and <Picture 3>, while her expression, breathing and the movement of her body change freely.\n<Subject 2> (appears in [Shot 1]): partially_preserved - keep the bed, the sheets, the lamp and the direction of the light consistent.\n<Subject 3> (appears in [Shot 1]): partially_preserved - keep his hair, build and position over her consistent.",
         0,
         "reference generation",
-        192,
+        0,
         "A quiet bedroom at night: the bed frame and the mattress moving under them, sheets shifting, breathing close to the microphone, and no other sound in the room.",
         ""
       ],
@@ -2091,10 +2091,10 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "LONG-FORM WITH SHOTS — 14's carry, plus cuts\n\n56 seconds, 3 shots, 6 chunks. This is workflow 14's configuration — the\nonly one that has ever produced a good take here — with a shot list on\ntop of it.\n\nWHAT CARRIES CONTINUITY: the LATENT PIN, and nothing else.\n\n  H3 Chunk Latent Context writes the previous chunk's tail into this\n  chunk's latent and sets those positions to denoise mask 0, re-applied\n  at every sampling step. Those frames come out IDENTICAL to the ones\n  before them. It is a hard anchor, and it is why 14 holds.\n\n  Its `context_length` is wired from Chunk Open's `pin`, which the\n  planner sets to 0 at a shot boundary. So the pin carries within a shot\n  and carries nothing across a cut, on its own, with no second setting.\n\nWHAT IS DELIBERATELY OFF: motion context and the keyframe.\n\n  The reference node's `context_images` is UNWIRED and `context_frames`\n  is 0. Motion context places the previous tail as CONDITIONING rows at\n  pixel offsets 0..N-1 — the same span the pin already fixes exactly —\n  so in a pinned chain it guides nothing the pin is not already holding.\n  It also presents the previous chunk's last frame to the language model\n  as another <Picture n>, which feeds generated output back into the\n  identity channel once per chunk. It has never improved a take here.\n\n  Turn it on only to test it, and only as the single change from this\n  file, or the result will not mean anything.\n\nKNOWN OPEN PROBLEM: contrast build. Skin gets darker and more contrasted\nas the take runs, one step per seam. The pin is the carrier — measured\n+12/+7/+5% per chunk with it and +5/-1% without. A CUT sets pin to 0 and\nbreaks the chain, which is the thing this workflow exists to test: does\nthe ramp reset at 447 and 894, or carry straight through them?"
+        "LONG-FORM WITH SHOTS \u2014 14's carry, plus cuts\n\n56 seconds, 3 shots, 6 chunks. This is workflow 14's configuration \u2014 the\nonly one that has ever produced a good take here \u2014 with a shot list on\ntop of it.\n\nWHAT CARRIES CONTINUITY: the LATENT PIN, and nothing else.\n\n  H3 Chunk Latent Context writes the previous chunk's tail into this\n  chunk's latent and sets those positions to denoise mask 0, re-applied\n  at every sampling step. Those frames come out IDENTICAL to the ones\n  before them. It is a hard anchor, and it is why 14 holds.\n\n  Its `context_length` is wired from Chunk Open's `pin`, which the\n  planner sets to 0 at a shot boundary. So the pin carries within a shot\n  and carries nothing across a cut, on its own, with no second setting.\n\nWHAT IS DELIBERATELY OFF: motion context and the keyframe.\n\n  The reference node's `context_images` is UNWIRED and `context_frames`\n  is 0. Motion context places the previous tail as CONDITIONING rows at\n  pixel offsets 0..N-1 \u2014 the same span the pin already fixes exactly \u2014\n  so in a pinned chain it guides nothing the pin is not already holding.\n  It also presents the previous chunk's last frame to the language model\n  as another <Picture n>, which feeds generated output back into the\n  identity channel once per chunk. It has never improved a take here.\n\n  Turn it on only to test it, and only as the single change from this\n  file, or the result will not mean anything.\n\nKNOWN OPEN PROBLEM: contrast build. Skin gets darker and more contrasted\nas the take runs, one step per seam. The pin is the carrier \u2014 measured\n+12/+7/+5% per chunk with it and +5/-1% without. A CUT sets pin to 0 and\nbreaks the chain, which is the thing this workflow exists to test: does\nthe ramp reset at 447 and 894, or carry straight through them?"
       ],
       "widgets_values_named": {
-        "text": "CHUNKED LONG-FORM GENERATION — wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED — two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity — keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) — a free improvement\nto a proven recipe."
+        "text": "CHUNKED LONG-FORM GENERATION \u2014 wave 14's recipe, automated\n\nThis is the path that produced a 57.6s take with no hard cuts in any\nlink and no join above 3 sigma (096, 2026-08-11). What is new here is\nthat it runs in ONE queue instead of four hand-wired links, and each\nchunk gets its OWN clause.\n\nHOW CONTINUITY IS CARRIED \u2014 two things, and they do different jobs:\n\n  keyframe  the previous chunk's last DECODED FRAME. Pixel, never\n            latent. Feeding the last LATENT frame into the keyframe slot\n            roughly doubles error per link (wave 8a arm B): the video VAE\n            is temporal, so its final latent frame carries ~4 pixel\n            frames of motion plus conv state, where the slot expects a\n            single-image encode.\n\n  context   the previous chunk's TAIL. A still frame carries pose but\n            NOT velocity \u2014 keyframe-only chains eroded motion -19%\n            monotonically, where context-fed links held flat.\n\nPROMPTS: one clause per line in H3 Long-form Links, one clause per\nchunk. HEAD and TAIL repeat verbatim; only the clause changes. Wire\nchunk_count into expected_count or a mismatch silently repeats the last\nclause instead of erroring.\n\ncontext_frames 39 lands exactly on the audio grid. Wave 14 used 22,\nwhich is the worst legal value (36.667 audio steps) \u2014 a free improvement\nto a proven recipe."
       },
       "color": "#432",
       "bgcolor": "#653"
@@ -2242,7 +2242,7 @@
           ]
         }
       ],
-      "title": "1. schedule — no source wired, so chunks are just lengths",
+      "title": "1. schedule \u2014 no source wired, so chunks are just lengths",
       "properties": {
         "Node name for S&R": "H3ChunkPlan"
       },
@@ -2424,7 +2424,7 @@
           ]
         }
       ],
-      "title": "2. one chunk — no source wired",
+      "title": "2. one chunk \u2014 no source wired",
       "properties": {
         "Node name for S&R": "H3ChunkOpen"
       },
@@ -2465,7 +2465,7 @@
           "links": null
         }
       ],
-      "title": "PROMPT LINT — clause count checked here",
+      "title": "PROMPT LINT \u2014 clause count checked here",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -2504,7 +2504,7 @@
           "links": null
         }
       ],
-      "title": "CARRY — frames copied per chunk",
+      "title": "CARRY \u2014 frames copied per chunk",
       "properties": {
         "cnr_id": "comfy-core",
         "ver": "0.34.0",
@@ -2568,7 +2568,7 @@
         243,
         "39"
       ],
-      "title": "0. SHOT LIST — durations in, frame counts out"
+      "title": "0. SHOT LIST \u2014 durations in, frame counts out"
     },
     {
       "id": 45,
@@ -2596,7 +2596,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "SHOT LIST — what each shot rounded to"
+      "title": "SHOT LIST \u2014 what each shot rounded to"
     },
     {
       "id": 46,
@@ -2683,7 +2683,7 @@
         3.0,
         ""
       ],
-      "title": "3a. DIALOGUE — lines in, timed beats out"
+      "title": "3a. DIALOGUE \u2014 lines in, timed beats out"
     },
     {
       "id": 47,
@@ -2711,7 +2711,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "DIALOGUE — when each line is heard"
+      "title": "DIALOGUE \u2014 when each line is heard"
     },
     {
       "id": 48,
@@ -2739,7 +2739,7 @@
         "Node name for S&R": "PreviewAny"
       },
       "widgets_values": [],
-      "title": "DIALOGUE LINT — fits, gaps, empties"
+      "title": "DIALOGUE LINT \u2014 fits, gaps, empties"
     },
     {
       "id": 49,
@@ -2761,7 +2761,7 @@
         "text": ""
       },
       "widgets_values": [
-        "THE SHOT LIST DRIVES THE PLAN\n\nEach row is SECONDS | framing | action. The node emits total_frames and\ncut_frames, both wired into H3 Chunk Plan, whose chunk_mode is `scene`.\n\n18.625s = 447 frames, chosen rather than rounded to:\n  - 447 is a legal video run (17*26+5)\n  - 447 divides by 3, so it lands on the 40Hz audio clock too\n  - at chunk_frames 243 and context 39 it splits into exactly two full\n    243-frame chunks, so no chunk is a short tail\n\nThat gives 6 chunks: two per shot. Chunks 1, 3 and 5 START a shot and\ncarry nothing; 2, 4 and 6 continue one and carry a 39-frame pin. Both\npaths are exercised in one render, which four shots of one chunk each\nwould not do — there, every chunk is a cut and nothing ever carries.\n\nEVERY ROW MUST BE A DIFFERENT SETUP. A cut between two similar framings\nreads as a jump cut, not an edit, and the node cannot check that for you.\n\nThe per-chunk clause comes from H3 Dialogue's `actions`, one line per\nchunk, each naming its own framing. The shot list's own `beats` output\ncannot be used for that — it emits two lines per chunk (a # comment and\nthe action) and `actions` takes one."
+        "THE SHOT LIST DRIVES THE PLAN\n\nEach row is SECONDS | framing | action. The node emits total_frames and\ncut_frames, both wired into H3 Chunk Plan, whose chunk_mode is `scene`.\n\n18.625s = 447 frames, chosen rather than rounded to:\n  - 447 is a legal video run (17*26+5)\n  - 447 divides by 3, so it lands on the 40Hz audio clock too\n  - at chunk_frames 243 and context 39 it splits into exactly two full\n    243-frame chunks, so no chunk is a short tail\n\nThat gives 6 chunks: two per shot. Chunks 1, 3 and 5 START a shot and\ncarry nothing; 2, 4 and 6 continue one and carry a 39-frame pin. Both\npaths are exercised in one render, which four shots of one chunk each\nwould not do \u2014 there, every chunk is a cut and nothing ever carries.\n\nEVERY ROW MUST BE A DIFFERENT SETUP. A cut between two similar framings\nreads as a jump cut, not an edit, and the node cannot check that for you.\n\nThe per-chunk clause comes from H3 Dialogue's `actions`, one line per\nchunk, each naming its own framing. The shot list's own `beats` output\ncannot be used for that \u2014 it emits two lines per chunk (a # comment and\nthe action) and `actions` takes one."
       ]
     }
   ],
@@ -3222,7 +3222,7 @@
     },
     {
       "id": 2,
-      "title": "THE BODY — cloned once per chunk",
+      "title": "THE BODY \u2014 cloned once per chunk",
       "bounding": [
         880,
         -40,
