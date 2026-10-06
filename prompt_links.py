@@ -132,11 +132,15 @@ class H3LongFormLinks:
                                           "frame in as the keyframe."}),
                 "seconds_per_link": ("FLOAT", {"default": 15.0, "min": 1.0, "max": 15.5,
                                      "step": 0.5,
-                                     "tooltip": "IGNORED when `chunk_frames` is "
-                                                "wired — under chunking the plan "
-                                                "sets each chunk's length and the "
-                                                "tail is never the same as the "
-                                                "rest. For the manual chain "
+                                     "tooltip": "IGNORED whenever `chunk_plan` is "
+                                                "wired, and ignored again if "
+                                                "`chunk_frames` is set — the plan "
+                                                "knows each link's real run and "
+                                                "the tail is never the same as "
+                                                "the rest, so one duration cannot "
+                                                "describe the take. This is the "
+                                                "LAST fallback. For the manual "
+                                                "chain "
                                                 "workflow: 15.08s (362 frames) is "
                                                 "the top of the documented trained "
                                                 "range for VIDEO."}),
