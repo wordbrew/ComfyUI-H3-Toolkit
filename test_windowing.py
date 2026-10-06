@@ -136,10 +136,21 @@ MIRRORED_FUNCS = {"_h3_sampler_sample_wrapper": "_sampler_sample_wrapper"}
 
 
 def comfy_root():
-    # $COMFYUI_PATH, else three levels up -- this pack normally sits at
-    # <ComfyUI>/custom_nodes/ComfyUI-H3-Toolkit. No hardcoded machine paths:
-    # set COMFYUI_PATH if the pack lives somewhere else.
-    for p in (os.environ.get("COMFYUI_PATH"),
+    """The ComfyUI root, or None.
+
+    Order: $COMFYUI_PATH, then `.comfy-path` beside this file, then three levels
+    up (where this pack sits when deployed: <ComfyUI>/custom_nodes/...).
+
+    `.comfy-path` is GITIGNORED and exists because scrubbing the one hardcoded
+    path out of this file silently disabled the core-contract check in a repo
+    checkout -- it skipped, and the run still exited 0 saying all checks pass.
+    A local file keeps the coverage without publishing anybody's drive layout.
+    """
+    local = pathlib.Path(__file__).resolve().parent / ".comfy-path"
+    pinned = None
+    if local.is_file():
+        pinned = local.read_text(encoding="utf-8").strip() or None
+    for p in (os.environ.get("COMFYUI_PATH"), pinned,
               pathlib.Path(__file__).resolve().parents[2]):
         if not p:
             continue
@@ -192,10 +203,18 @@ def compare(label, mine, theirs):
         fails.append(f"{label} drops core's *args/**kwargs")
 
 
+skipped_core = False
 root = comfy_root()
 if root is None:
-    print("windowing: SKIPPED the core-contract check — no ComfyUI found. Set "
-          "COMFYUI_PATH to run it.")
+    # NOT a pass. This check is the only thing that notices core changing
+    # context_windows.py under our subclass, and a green run that quietly
+    # skipped it is worse than a red one.
+    skipped_core = True
+    print("windowing: SKIPPED the core-contract check — no ComfyUI found.\n"
+          "  This check diffs our H3ContextHandler against core's\n"
+          "  comfy/context_windows.py; without it a core change goes unnoticed.\n"
+          "  Fix: set COMFYUI_PATH, or write the path into .comfy-path beside\n"
+          "  this file (gitignored). Pass --allow-no-comfy to accept the skip.")
 else:
     core_text, origin = core_source(root)
     core = classes_in(ast.parse(core_text))
@@ -427,4 +446,11 @@ if fails:
     for f in fails:
         print("  " + f)
     sys.exit(1)
-print("windowing: all checks pass")
+if skipped_core and "--allow-no-comfy" not in sys.argv:
+    # A skipped check is not a passed check. Exiting 0 here is what let the
+    # scrub disable the core diff without anybody noticing.
+    print("windowing: the local checks pass, but the CORE-CONTRACT check was "
+          "skipped — see above. Not reporting a pass.")
+    sys.exit(2)
+print("windowing: all checks pass"
+      + ("  (core contract accepted as skipped)" if skipped_core else ""))
