@@ -9,6 +9,7 @@ cropplan, avlatent — carry the arithmetic the nodes share, and are kept torch-
 where possible so they can be tested without ComfyUI.
 """
 
+import pathlib
 from .audio import (NODE_CLASS_MAPPINGS as _AUDIO_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _AUDIO_NAMES, PRESETS)
 from .analysis import (NODE_CLASS_MAPPINGS as _ANALYSIS_CLASSES,
@@ -312,6 +313,25 @@ def _register_routes():
     # A TAKE AS ONE REQUEST. Three calls, so a front end never builds a
     # graph: ask what you will get, ask for it, ask whether it is done.
     # ------------------------------------------------------------------ #
+
+    @routes.get(ROUTE_PREFIX + "/ui")
+    async def _take_ui(request):
+        """The front end, served SAME-ORIGIN from ComfyUI itself.
+
+        Opening ui/index.html off disk would put it on file://, where a fetch to
+        127.0.0.1:8188 is a cross-origin request ComfyUI sends no CORS headers
+        for -- so every call fails and the page looks broken for a reason that
+        has nothing to do with the page. Served from here it shares an origin
+        with the API, /prompt and /view, and there is no CORS layer to configure
+        or forget.
+
+        http://127.0.0.1:8188/h3_toolkit/ui
+        """
+        page = pathlib.Path(__file__).resolve().parent / "ui" / "index.html"
+        if not page.is_file():
+            return web.Response(status=404, text="ui/index.html is missing")
+        return web.Response(body=page.read_bytes(),
+                            content_type="text/html", charset="utf-8")
 
     @routes.post(ROUTE_PREFIX + "/take/plan")
     async def _take_plan(request):
