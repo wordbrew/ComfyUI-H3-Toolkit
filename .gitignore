@@ -1,4 +1,7 @@
 __pycache__/
+# where YOUR ComfyUI lives, for the tests that diff against core.
+# Local by design: a hardcoded path here was published once already.
+.comfy-path
 *.py[cod]
 .claude/
 CLAUDE.md
