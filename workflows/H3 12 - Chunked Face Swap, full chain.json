@@ -176,11 +176,11 @@
         "Node name for S&R": "LoraLoaderModelOnly"
       },
       "widgets_values": [
-        "h3\\MysticXXX_MMH3-V2.safetensors",
+        "h3\\example_h3_lora.safetensors",
         1
       ],
       "widgets_values_named": {
-        "lora_name": "h3\\MysticXXX_MMH3-V2.safetensors",
+        "lora_name": "h3\\example_h3_lora.safetensors",
         "strength_model": 1
       }
     },
@@ -5637,7 +5637,7 @@
     },
     "frontendVersion": "1.49.6",
     "anomalous_hashes": {
-      "49_h3\\MysticXXX_MMH3-V2.safetensors": {
+      "49_h3\\example_h3_lora.safetensors": {
         "hash": "",
         "size": 172057936
       },

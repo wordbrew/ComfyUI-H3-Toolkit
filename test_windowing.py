@@ -136,9 +136,11 @@ MIRRORED_FUNCS = {"_h3_sampler_sample_wrapper": "_sampler_sample_wrapper"}
 
 
 def comfy_root():
+    # $COMFYUI_PATH, else three levels up -- this pack normally sits at
+    # <ComfyUI>/custom_nodes/ComfyUI-H3-Toolkit. No hardcoded machine paths:
+    # set COMFYUI_PATH if the pack lives somewhere else.
     for p in (os.environ.get("COMFYUI_PATH"),
-              pathlib.Path(__file__).resolve().parents[2],
-              "/mnt/c/SD/ComfyUI/Comfy-03-15-2026/ComfyUI"):
+              pathlib.Path(__file__).resolve().parents[2]):
         if not p:
             continue
         root = pathlib.Path(p)

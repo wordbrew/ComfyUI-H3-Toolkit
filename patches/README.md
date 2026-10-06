@@ -82,7 +82,7 @@ that "suddenly" broke a workflow that had always worked.
 
 **Fix:** `.contiguous()` after the `expand()`. Correct at every resolution.
 
-    cd "C:\SD\ComfyUI\Comfy-03-15-2026\ComfyUI\custom_nodes\ComfyUI-DepthAnythingV2"
+    cd "<ComfyUI>/custom_nodes/ComfyUI-DepthAnythingV2"
     git apply "<this repo>/patches/depthanythingv2-contiguous.patch"
 
 Revert with `git checkout -- nodes.py`.
@@ -198,7 +198,7 @@ The toolkit supplies the value: `H3ContextWindows` has an
 `window_start_frames` into the payload per window. With the toggle off nothing
 changes, so the patch is safe to leave applied.
 
-    cd "C:\SD\ComfyUI\Comfy-03-15-2026\ComfyUI"
+    cd "<ComfyUI>"
     git apply "<this repo>/patches/h3-window-absolute-positions.patch"
 
 Revert with `git checkout -- comfy/ldm/minimax/model.py`.

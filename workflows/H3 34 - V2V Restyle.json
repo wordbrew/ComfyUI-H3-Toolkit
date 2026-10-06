@@ -2067,7 +2067,7 @@
         "Node name for S&R": "LoraLoaderModelOnly"
       },
       "widgets_values": [
-        "h3\\InkRiot_style_h3_ep50.safetensors",
+        "h3\\example_style_lora.safetensors",
         1.0
       ],
       "widgets_values_named": {

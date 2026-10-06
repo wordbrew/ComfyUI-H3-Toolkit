@@ -1396,11 +1396,11 @@
         "Node name for S&R": "LoraLoaderModelOnly"
       },
       "widgets_values": [
-        "h3\\MysticXXX_MMH3-V4-ref2va.safetensors",
+        "h3\\example_h3_lora_ref2va.safetensors",
         1
       ],
       "widgets_values_named": {
-        "lora_name": "h3\\MysticXXX_MMH3-V4-ref2va.safetensors",
+        "lora_name": "h3\\example_h3_lora_ref2va.safetensors",
         "strength_model": 1
       }
     },

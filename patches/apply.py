@@ -16,12 +16,25 @@ twice. Run it after every ComfyUI update.
 """
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-DEFAULT_COMFY = pathlib.Path("/mnt/c/SD/ComfyUI/Comfy-03-15-2026/ComfyUI")
+
+
+def default_comfy():
+    """The ComfyUI root, discovered rather than hardcoded.
+
+    This pack normally lives at <ComfyUI>/custom_nodes/ComfyUI-H3-Toolkit, so
+    three levels up from patches/ is the root. $COMFYUI_PATH wins when set, and
+    --comfy overrides both. Same discovery order as test_windowing.py.
+    """
+    env = os.environ.get("COMFYUI_PATH")
+    if env:
+        return pathlib.Path(env)
+    return HERE.parents[2]
 
 # patch file -> the repo it applies inside, relative to the ComfyUI root
 PATCHES = {
@@ -89,7 +102,9 @@ def state(root, patch, rel):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--comfy", type=pathlib.Path, default=DEFAULT_COMFY)
+    ap.add_argument("--comfy", type=pathlib.Path, default=default_comfy(),
+                    help="the ComfyUI root; defaults to $COMFYUI_PATH, else "
+                         "three levels up from this file")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--revert", action="store_true")
     a = ap.parse_args()
