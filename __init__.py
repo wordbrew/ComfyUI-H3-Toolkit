@@ -308,6 +308,102 @@ def _register_routes():
                                       "error": f"{type(exc).__name__}: {exc}"})
 
 
+    # ------------------------------------------------------------------ #
+    # A TAKE AS ONE REQUEST. Three calls, so a front end never builds a
+    # graph: ask what you will get, ask for it, ask whether it is done.
+    # ------------------------------------------------------------------ #
+
+    @routes.post(ROUTE_PREFIX + "/take/plan")
+    async def _take_plan(request):
+        """What will this take be? Cheap enough to call on every keystroke.
+
+        POST {"chunk_frames": 192, "chunk_count": 3, "context": 39,
+              "beats": "line one\nline two\nline three"}
+
+        Returns the total, the per-chunk boundaries in seconds, which beat
+        lands in which chunk, and the lint. Builds no graph and touches no GPU.
+        """
+        from .chunkplan import count_plan
+        from .takeapi import TakeError, plan_fields
+        data = await _body(request)
+        try:
+            plan, lint = plan_fields(data, count_plan)
+            return web.json_response({"ok": True, "lint": lint, **plan})
+        except (TakeError, ValueError, TypeError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+
+    @routes.post(ROUTE_PREFIX + "/take/graph")
+    async def _take_graph(request):
+        """Compose a submittable API graph. -> {"ok": true, "graph": {...}}
+
+        Same body as /take/plan plus what a render needs: `models`
+        (unet / clip / vae / audio_vae / loras), `references`, the prompt
+        fields (head / beats / tail / subject_def_1 / retention_1 /
+        soundscape / music), `seed`, `lora_schedule`, `filename_prefix`.
+
+        THIS COMPOSES AND DOES NOT QUEUE, on purpose. Queueing means reproducing
+        core's /prompt contract -- validate_prompt's signature, the queue tuple,
+        the sensitive-key split, the node-replace pass -- and that contract
+        MOVES: the tuple gained a sixth element between the version this pack
+        documents and the one it runs on. A front end posts this graph to
+        ComfyUI's own /prompt, which is the stable public API, and gets core's
+        validation errors in core's format for free. `run_take.py` does exactly
+        that if you want one call from a shell.
+        """
+        from .takeapi import TakeError, build
+        data = await _body(request)
+        try:
+            graph = build(data)
+        except (TakeError, ValueError, TypeError, KeyError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        return web.json_response({"ok": True, "graph": graph,
+                                  "post_to": "/prompt"})
+
+    @routes.get(ROUTE_PREFIX + "/take/status")
+    async def _take_status(request):
+        """Is it done, and what did it write? -> state + output files.
+
+        GET /h3_toolkit/take/status?id=<prompt_id>
+
+        Core's /history already answers this; what it does not do is dig the
+        video out of whichever node happened to save it. This flattens that to
+        a list a front end can link straight to /view.
+        """
+        pid = request.rel_url.query.get("id")
+        if not pid:
+            return web.json_response({"ok": False,
+                                      "error": "pass ?id=<prompt_id>"})
+        q = PromptServer.instance.prompt_queue
+        try:
+            running, pending = q.get_current_queue()
+        except Exception:                                   # noqa: BLE001
+            running, pending = [], []
+        in_flight = any(i[1] == pid for i in running)
+        waiting = any(i[1] == pid for i in pending)
+        entry = (q.get_history(prompt_id=pid) or {}).get(pid)
+        if entry is None:
+            state = ("running" if in_flight else
+                     "queued" if waiting else "unknown")
+            return web.json_response({"ok": True, "prompt_id": pid,
+                                      "state": state, "outputs": []})
+        files = []
+        for out in (entry.get("outputs") or {}).values():
+            for key in ("images", "gifs", "video", "videos", "audio"):
+                for f in out.get(key) or []:
+                    if isinstance(f, dict) and f.get("filename"):
+                        files.append({"filename": f["filename"],
+                                      "subfolder": f.get("subfolder", ""),
+                                      "type": f.get("type", "output")})
+        status = entry.get("status") or {}
+        return web.json_response({
+            "ok": True,
+            "prompt_id": pid,
+            "state": status.get("status_str") or "done",
+            "outputs": files,
+            "messages": status.get("messages") or [],
+        })
+
+
 _register_routes()
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

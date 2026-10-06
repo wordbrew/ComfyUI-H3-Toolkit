@@ -1,0 +1,444 @@
+{
+  "8": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "h3.clip"
+    }
+  },
+  "9": {
+    "inputs": {
+      "vae_name": "H3/minimax_h3_video_vae_fp16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "h3.vae.video"
+    }
+  },
+  "10": {
+    "inputs": {
+      "vae_name": "H3/minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "h3.vae.audio"
+    }
+  },
+  "108": {
+    "inputs": {
+      "shift_video": 12,
+      "shift_audio": 6,
+      "model": [
+        "138",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3SigmaShift",
+    "_meta": {
+      "title": "ModelSamplingMiniMaxH3"
+    }
+  },
+  "109": {
+    "inputs": {
+      "model": [
+        "162",
+        0
+      ],
+      "conditioning": [
+        "155",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "Basic Guider"
+    }
+  },
+  "110": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "112": {
+    "inputs": {
+      "noise_seed": 309416657123748
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "h3.noise"
+    }
+  },
+  "113": {
+    "inputs": {
+      "noise": [
+        "112",
+        0
+      ],
+      "guider": [
+        "109",
+        0
+      ],
+      "sampler": [
+        "110",
+        0
+      ],
+      "sigmas": [
+        "141",
+        0
+      ],
+      "latent_image": [
+        "159",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "114": {
+    "inputs": {
+      "samples": [
+        "113",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "115": {
+    "inputs": {
+      "samples": [
+        "113",
+        0
+      ],
+      "vae": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeAudio",
+    "_meta": {
+      "title": "VAE Decode Audio"
+    }
+  },
+  "134": {
+    "inputs": {
+      "fps": 24,
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "codec": "none",
+      "images": [
+        "160",
+        0
+      ],
+      "audio": [
+        "160",
+        2
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "h3.video"
+    }
+  },
+  "135": {
+    "inputs": {
+      "filename_prefix": "H3/take",
+      "format": "mp4",
+      "format.codec": "h264",
+      "format.codec.encoding": "auto",
+      "codec": "auto",
+      "video-preview": "",
+      "video": [
+        "134",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "h3.save"
+    }
+  },
+  "136": {
+    "inputs": {
+      "unet_name": "H3/REPLACE_ME_diffusion_model.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "h3.unet"
+    }
+  },
+  "137": {
+    "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+        "136",
+        0
+      ]
+    },
+    "class_type": "ModelAttentionBackend",
+    "_meta": {
+      "title": "Model Attention Backend"
+    }
+  },
+  "138": {
+    "inputs": {
+      "lora_name": "h3/REPLACE_ME_lora.safetensors",
+      "strength_model": 0.8,
+      "model": [
+        "137",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "h3.lora.static"
+    }
+  },
+  "141": {
+    "inputs": {
+      "sigmas": "1.0, 0.9939097854, 0.9842874953, 0.9660637197, 0.9230769231, 0.8349423898, 0.6968520491, 0.4687533149, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "h3.sigmas"
+    }
+  },
+  "146": {
+    "inputs": {
+      "aspect_ratio": "2:3 (Portrait Photo)",
+      "megapixels": 1,
+      "multiple": 32
+    },
+    "class_type": "ResolutionSelector",
+    "_meta": {
+      "title": "h3.resolution"
+    }
+  },
+  "149": {
+    "inputs": {
+      "image": "REPLACE_ME_reference_0.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "h3.ref.0"
+    }
+  },
+  "152": {
+    "inputs": {
+      "image": "REPLACE_ME_reference_1.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "h3.ref.1"
+    }
+  },
+  "153": {
+    "inputs": {
+      "image": "REPLACE_ME_reference_2.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "h3.ref.2"
+    }
+  },
+  "155": {
+    "inputs": {
+      "prompt": [
+        "158",
+        0
+      ],
+      "width": [
+        "146",
+        0
+      ],
+      "height": [
+        "146",
+        1
+      ],
+      "length": [
+        "157",
+        3
+      ],
+      "ref_image_size": "match",
+      "clip": [
+        "8",
+        0
+      ],
+      "vae": [
+        "9",
+        0
+      ],
+      "audio_vae": [
+        "10",
+        0
+      ],
+      "ref_images.ref_image_0": [
+        "149",
+        0
+      ],
+      "ref_images.ref_image_1": [
+        "152",
+        0
+      ],
+      "ref_images.ref_image_2": [
+        "153",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "_meta": {
+      "title": "h3.conditioning"
+    }
+  },
+  "156": {
+    "inputs": {
+      "chunk_frames": 192,
+      "chunk_mode": "fixed",
+      "chunk_count": 3,
+      "scene_threshold": 0.12,
+      "min_chunk": 39,
+      "render_width": 0,
+      "render_height": 0,
+      "ref_tokens": 0,
+      "context": "39",
+      "cut_frames": "",
+      "av_aligned": false
+    },
+    "class_type": "H3ChunkPlan",
+    "_meta": {
+      "title": "h3.plan"
+    }
+  },
+  "157": {
+    "inputs": {
+      "context_frames": 39,
+      "first_chunk": 0,
+      "last_chunk": 0,
+      "plan": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "H3ChunkOpen",
+    "_meta": {
+      "title": "h3.chunk.open"
+    }
+  },
+  "158": {
+    "inputs": {
+      "head": "",
+      "beats": "",
+      "tail": "",
+      "link_index": [
+        "157",
+        4
+      ],
+      "seconds_per_link": 5.88,
+      "seed": 977573931686826,
+      "subject_def_1": "",
+      "retention_1": "",
+      "expected_count": [
+        "157",
+        7
+      ],
+      "task_type": "keyframe completion",
+      "chunk_frames": 0,
+      "soundscape": "",
+      "music": "",
+      "chunk_plan": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "H3LongFormLinks",
+    "_meta": {
+      "title": "h3.links"
+    }
+  },
+  "159": {
+    "inputs": {
+      "context_length": [
+        "157",
+        11
+      ],
+      "audio_feather_ticks": 0,
+      "latent": [
+        "155",
+        1
+      ],
+      "source_latent": [
+        "157",
+        12
+      ]
+    },
+    "class_type": "H3ChunkLatentContext",
+    "_meta": {
+      "title": "H3 Chunk Latent Context (chain generated chunks)"
+    }
+  },
+  "160": {
+    "inputs": {
+      "flow": [
+        "157",
+        5
+      ],
+      "images": [
+        "114",
+        0
+      ],
+      "audio": [
+        "115",
+        0
+      ],
+      "latent": [
+        "113",
+        0
+      ]
+    },
+    "class_type": "H3ChunkClose",
+    "_meta": {
+      "title": "h3.chunk.close"
+    }
+  },
+  "162": {
+    "inputs": {
+      "schedule": "# where | lora file or lora_1/2/3 | strength\n# A COLON MEANS TIME, NO COLON MEANS CHUNKS.\n",
+      "lora_1": "(none)",
+      "lora_2": "(none)",
+      "lora_3": "(none)",
+      "model": [
+        "108",
+        0
+      ],
+      "chunk_index": [
+        "157",
+        4
+      ],
+      "chunk_plan": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "H3ChunkLora",
+    "_meta": {
+      "title": "h3.lora.schedule"
+    }
+  }
+}

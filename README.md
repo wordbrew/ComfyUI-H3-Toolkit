@@ -188,6 +188,70 @@ against `duration x fps` here.
   Where a downscale is unavoidable — 1080p into a 768p-class model — `fill` loses
   edges, `stretch` distorts, `pad` adds bars the model paints into.
 
+## Driving a take over HTTP
+
+A long-form take is 27 wired nodes. A front end should not have to know that, so
+three routes answer the whole job and `run_take.py` does it from a shell.
+
+```
+POST /h3_toolkit/take/plan     what will this be?   (no graph, no GPU)
+POST /h3_toolkit/take/graph    compose it           -> post the graph to /prompt
+GET  /h3_toolkit/take/status   is it done?          -> state + output files
+```
+
+`/take/plan` takes `chunk_frames`, `chunk_count`, `context` and optionally
+`beats`, and returns the total duration, each chunk's start and end in seconds,
+which beat lands in which chunk, and the lint. It is cheap enough to call on
+every keystroke, and it is the same `chunkplan.count_plan` the node uses — one
+implementation of the arithmetic, which is the bug this pack keeps paying for.
+
+`/take/graph` adds what a render needs — `models`, `references`, the prompt
+fields, `seed`, `lora_schedule` — and returns a submittable graph.
+
+**It composes and does not queue, on purpose.** Queueing means reproducing
+core's `/prompt` contract: `validate_prompt`'s signature, the queue tuple, the
+sensitive-key split, the node-replace pass. That contract moves — the tuple
+gained a sixth element between the version this pack documents and the one it
+runs on. Posting the composed graph to ComfyUI's own `/prompt` uses the stable
+public API and returns core's validation errors in core's format.
+
+### Addressed by ROLE, not by node id
+
+`templates/longform_ref2va.json` is the canonical graph, and every node a
+request can reach carries a role in `_meta.title`:
+
+```
+h3.unet  h3.clip  h3.vae.video  h3.vae.audio  h3.lora.static
+h3.ref.0  h3.ref.1  h3.ref.2
+h3.plan  h3.links  h3.lora.schedule  h3.chunk.open  h3.chunk.close
+h3.noise  h3.sigmas  h3.resolution  h3.conditioning  h3.save  h3.video
+```
+
+An API graph addresses nodes by id, and those ids belong to whoever exported it
+— they move the moment that person rearranges anything, so a front end wired to
+node `156` breaks silently. Roles do not move, and a missing one is an error
+naming the role instead of a `KeyError` on an integer.
+
+The template's **model names are placeholders** (`REPLACE_ME_*`) because this
+repo is public. A request must supply them; a placeholder that reaches ComfyUI
+fails validation rather than rendering the wrong thing. Asking for more
+references or static LoRAs than the template wires is an error too, rather than
+a silent drop — three character references held motion in testing and a fourth
+broke it, so the limit is a finding, not an oversight.
+
+```
+python3 run_take.py take_API.json                      # validate only
+python3 run_take.py take_API.json --submit --watch     # run it and wait
+python3 run_take.py take_API.json --chunks 2 --submit  # the cheapest proof
+```
+
+`run_take.py` validates every COMBO value against the live `/object_info` before
+spending a queue slot, because a value the server will not accept fails at
+prompt validation with an error naming stale labels. `--chunks N` lowers
+`chunk_count`; it does not touch `H3ChunkOpen`'s gate, whose indices are 0-based
+with `last_chunk = 0` meaning "to the end" — so the gate cannot express "only
+the first chunk" and is for resuming a stopped take instead.
+
 ## Layout
 
 Modules are named for what they hold. Four carry no nodes at all:
