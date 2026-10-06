@@ -103,6 +103,16 @@ def widget_types(spec):
         t = decl[0] if isinstance(decl, (tuple, list)) and decl else decl
         opts = decl[1] if (isinstance(decl, (tuple, list)) and len(decl) > 1
                            and isinstance(decl[1], dict)) else {}
+        # forceInput MAKES IT A SOCKET. An otherwise-widget entry declared
+        # forceInput has no widget at all, so it takes NO slot in
+        # widgets_values and everything after it sits one position earlier
+        # than the declaration suggests. Five nodes do this --
+        # H3ChunkLora.chunk_index, H3ChunkCheckpoint.chunk_index,
+        # H3RewriterBrief.subject_def_1/retention_1, H3RefBudget.prompt --
+        # and without this the mapping is off by one on every one of them.
+        # test_workflow_widgets.py already had this right; this file did not.
+        if opts.get("forceInput"):
+            continue
         if isinstance(t, (list, tuple)):
             out.append((name, "COMBO"))            # a choice list -> a string
         elif t in ("INT", "FLOAT", "STRING", "BOOLEAN"):
