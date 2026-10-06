@@ -12,9 +12,14 @@ WHY THIS WORKS AT ALL, AND WHERE IT HAS TO SIT
   not descend from Open and every chunk silently gets chunk 0's LoRA.
 
 ADDRESSED BY CHUNK, OR BY TIME
-  BY CHUNK is usually what you mean: `chunk 2`, `chunk 2-4`, `chunk 2,5`,
-  `chunk 2+`, `chunk last`. A chunk reference stays a set of INDICES and matches
-  by identity, so it cannot bleed into a neighbour.
+  A COLON MEANS TIME, NO COLON MEANS CHUNKS -- that is the whole rule.
+
+      2    2-4    2,5    2+    last         chunks, 1-based
+      00:14-00:19    00:20                  seconds on the finished clip
+
+  The word `chunk` is accepted in front of the numbers and changes nothing; it
+  is there for a schedule somebody else has to read. A chunk reference stays a
+  set of INDICES and matches by identity, so it cannot bleed into a neighbour.
 
   BY TIME -- `00:14-00:19` -- is still here and still right for a cue that has
   to line up with something else on the clock: resolution goes through
@@ -24,7 +29,7 @@ ADDRESSED BY CHUNK, OR BY TIME
   THE TRADE, measured on a 4x141/39 plan where chunk 3 runs to 14.38s:
 
       00:14-00:19 | lora    applies to chunks 3 AND 4
-      chunk last  | lora    applies to chunk 4
+      last        | lora    applies to chunk 4
 
   A time span is matched by OVERLAP, and a boundary is a shared edge, so "from
   14 seconds" catches the chunk that is still running at 14 seconds. Worse,
@@ -69,24 +74,38 @@ def parse_time(text):
 
 
 def parse_chunks(text):
-    """`chunk 2` / `2-4` / `2,5` / `2+` / `last` -> a spec, or None.
+    """`2` / `2-4` / `2,5` / `2+` / `last` -> a spec, or None for a TIME.
+
+    A COLON MEANS TIME; NO COLON MEANS CHUNKS. That is the whole rule, and it is
+    why the numbers need no prefix -- `2` is chunk 2. The optional word `chunk`
+    is accepted because it reads well in a schedule somebody else has to
+    understand, not because the parser needs it.
+
+      2          2-4        2..4       2,5       2+        last
+      chunk 2    chunk 2-4  ...        same thing, spelled out
+
+    `00:02` is two seconds. A bare number USED to be seconds too, and nothing
+    ever wrote one -- H3 Script stamps MM:SS, and every default and saved
+    schedule in the repo used colons -- so the bare form is worth more as the
+    chunk reference people actually reach for.
 
     WHY THIS IS NOT CONVERTED TO A TIME SPAN
-      Resolving `chunk 2` to chunk 2's seconds and then matching by overlap puts
+      Resolving chunk 2 to chunk 2's seconds and then matching by overlap puts
       the bleed straight back: a boundary is a shared edge, and a span that
       touches it applies to BOTH neighbours. That is the whole complaint. A
       chunk reference stays a set of INDICES and matches by identity, so a row
       naming chunk 2 cannot reach chunk 3 wherever the boundary lands.
 
-    Indices are 1-BASED here, matching the `chunk N` the report prints.
+    Indices are 1-BASED, matching the `chunk N` the report prints.
     """
     s = str(text).strip().lower()
-    if not s.startswith("chunk"):
+    if ":" in s:                      # a timestamp, for parse_span
         return None
-    body = s[len("chunk"):].strip()
-    if not body:
+    if s.startswith("chunk"):         # the optional, self-documenting spelling
+        s = s[len("chunk"):].strip()
+    if not s:
         return None
-    parts = [b.strip() for b in body.split(",") if b.strip()]
+    parts = [b.strip() for b in s.replace(" to ", "-").split(",") if b.strip()]
     spec = []
     for b in parts:
         if b in ("last", "end", "-1"):
@@ -251,24 +270,28 @@ class H3ChunkLora:
                                        "LoRA and nothing says so."}),
             "schedule": ("STRING", {"multiline": True, "default":
                          "# where | lora_1/2/3 or a filename | strength\n"
-                         "# chunk 2-4   | lora_1 | 0.4-0.9\n"
-                         "# chunk last  | lora_2 | 0.8\n"
-                         "# 00:20       | lora_3 | 0.8\n",
-                         "tooltip": "One row per cue. The first field says WHERE, "
-                                    "by chunk or by time.\n\n"
-                                    "BY CHUNK, 1-based, and exact — it cannot "
-                                    "bleed into a neighbour:\n"
-                                    "  chunk 2      that chunk only\n"
-                                    "  chunk 2-4    those three, ramping\n"
-                                    "  chunk 2,5    two specific chunks\n"
-                                    "  chunk 2+     chunk 2 to the end\n"
-                                    "  chunk last   the final chunk\n\n"
-                                    "BY TIME, on the FINISHED clip — for a cue "
-                                    "that must match a dialogue line. Matched by "
-                                    "OVERLAP, so a span touching a boundary "
+                         "# 2-4     | lora_1 | 0.4-0.9\n"
+                         "# last    | lora_2 | 0.8\n"
+                         "# 00:20   | lora_3 | 0.8\n",
+                         "tooltip": "One row per cue. The first field says "
+                                    "WHERE: A COLON MEANS TIME, NO COLON MEANS "
+                                    "CHUNKS.\n\n"
+                                    "CHUNKS, 1-based, and exact — a chunk "
+                                    "reference cannot bleed into a neighbour:\n"
+                                    "  2        that chunk only\n"
+                                    "  2-4      those three, ramping\n"
+                                    "  2,5      two specific chunks\n"
+                                    "  2+       chunk 2 to the end\n"
+                                    "  last     the final chunk\n"
+                                    "You may write `chunk 2` instead — it means "
+                                    "the same thing and reads better in a "
+                                    "schedule someone else has to follow.\n\n"
+                                    "TIME, on the FINISHED clip — for a cue that "
+                                    "must line up with a dialogue line. Matched "
+                                    "by OVERLAP, so a span touching a boundary "
                                     "applies to BOTH chunks: on a 4x141/39 plan "
-                                    "chunk 3 runs to 14.38s, and 00:14-00:19 hits "
-                                    "chunks 3 and 4. Prefer `chunk last`.\n\n"
+                                    "chunk 3 runs to 14.38s, so 00:14-00:19 hits "
+                                    "chunks 3 and 4. Prefer `last`.\n\n"
                                     "A strength RANGE (0.4-0.9) ramps — across "
                                     "the named chunks, or across a time span by "
                                     "each chunk's midpoint.\n\n"

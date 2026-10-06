@@ -64,6 +64,8 @@ DOC_ALLOW = {
     "contain", "ref", "refs", "reference", "references", "everything",
     # H3Script's own script language, which its tooltip has to name
     "note", "say", "shot", "style", "soundscape", "character", "setting",
+    # H3ChunkLora's schedule keywords -- `last` is a chunk reference, not an input
+    "last", "end",
 }
 # inputs whose meaning is carried by their type
 BARE_OK = {"model", "images", "image", "mask", "latent", "audio", "vae", "clip",
