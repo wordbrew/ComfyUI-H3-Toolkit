@@ -69,8 +69,12 @@ check("nonsense is None", cl.parse_time("later"), None)
 
 print("spans, including a bare start meaning 'from here on'")
 check("00:00-00:12", cl.parse_span("00:00-00:12"), (0.0, 12.0))
-check("dotted form", cl.parse_span("3..9"), (3.0, 9.0))
-check("' to '", cl.parse_span("3 to 9"), (3.0, 9.0))
+# A COLON MEANS TIME, NO COLON MEANS CHUNKS, so the bare-number time forms are
+# deliberately gone -- `3..9` is chunks 3 to 4 now. Nothing ever wrote one: H3
+# Script stamps MM:SS and every saved schedule in the repo used colons.
+check("dotted form", cl.parse_span("00:03..00:09"), (3.0, 9.0))
+check("' to '", cl.parse_span("00:03 to 00:09"), (3.0, 9.0))
+ok("a bare number is NOT a time any more", cl.parse_chunks("3") == [3])
 ok("a bare time runs to the end", cl.parse_span("00:30")[1] == float("inf"))
 check("unreadable is None", cl.parse_span("whenever"), None)
 
@@ -174,16 +178,22 @@ ok("a bare filename is still accepted",
 # 4x141/39 plan below chunk 3 runs to 14.38s, so 00:14-00:19 hits 3 AND 4 -- and
 # every boundary moves when chunk_frames or chunk_count changes.
 print("a chunk reference parses")
-check("one chunk", cl.parse_chunks("chunk 2"), [2])
-check("a range", cl.parse_chunks("chunk 2-4"), [("range", 2, 4)])
-check("a list", cl.parse_chunks("chunk 2,5"), [2, 5])
-check("open ended", cl.parse_chunks("chunk 2+"), [("from", 2)])
-check("last", cl.parse_chunks("chunk last"), ["last"])
-check("-1 is last too", cl.parse_chunks("chunk -1"), ["last"])
-ok("a time span is NOT a chunk reference", cl.parse_chunks("00:00-00:12") is None)
-ok("junk is not either", cl.parse_chunks("chunk zz") is None)
-ok("a bare number is not, so times keep working",
-   cl.parse_chunks("00:14") is None)
+check("one chunk", cl.parse_chunks("2"), [2])
+check("a range", cl.parse_chunks("2-4"), [("range", 2, 4)])
+check("dotted range", cl.parse_chunks("2..4"), [("range", 2, 4)])
+check("' to ' range", cl.parse_chunks("2 to 4"), [("range", 2, 4)])
+check("a list", cl.parse_chunks("2,5"), [2, 5])
+check("open ended", cl.parse_chunks("2+"), [("from", 2)])
+check("last", cl.parse_chunks("last"), ["last"])
+check("-1 is last too", cl.parse_chunks("-1"), ["last"])
+# the prefix is accepted and means exactly the same thing
+for _bare, _spelled in (("2", "chunk 2"), ("2-4", "chunk 2-4"),
+                        ("last", "chunk last")):
+    check(f"`{_spelled}` == `{_bare}`", cl.parse_chunks(_spelled),
+          cl.parse_chunks(_bare))
+ok("a COLON makes it a time, not a chunk",
+   cl.parse_chunks("00:00-00:12") is None and cl.parse_chunks("00:14") is None)
+ok("junk is neither", cl.parse_chunks("zz") is None)
 
 print("and resolves against the plan's count")
 check("1-based in, 0-based out", cl.chunk_indices([2], 4), ({1}, []))
