@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Long Take</title>
+<style>
+  /* One scale, one palette, declared once. Dark is the default because this
+     sits beside ComfyUI, which is dark, and a tool that flashes white when you
+     alt-tab to it is a tool you stop opening. */
+  :root {
+    --ink:      #e8e6e1;
+    --ink-dim:  #9b968c;
+    --ink-faint:#6a665e;
+    --ground:   #15161a;
+    --panel:    #1c1e23;
+    --panel-2:  #23262c;
+    --line:     #2e3238;
+    --accent:   #d9a84a;   /* a tungsten key light, not a brand colour */
+    --accent-dim:#7a5f26;
+    --warn:     #d98a4a;
+    --bad:      #d9604a;
+    --good:     #6fa86a;
+    --r: 3px;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  :root[data-theme="light"] {
+    --ink:#20222a; --ink-dim:#5d6069; --ink-faint:#8d9099;
+    --ground:#f4f3f0; --panel:#fff; --panel-2:#eceae5; --line:#dcd9d3;
+    --accent:#9a6f12; --accent-dim:#e0cf9a; --warn:#a85c1e; --bad:#a83a28; --good:#4c7a47;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 14px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  header h1 {
+    margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .2px;
+  }
+  header .sub { color: var(--ink-faint); font-size: 12.5px; }
+  header .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); }
+  .dot.on { background: var(--good); }
+  .dot.off { background: var(--bad); }
+
+  main {
+    display: grid; grid-template-columns: minmax(0,1fr) 400px;
+    gap: 1px; background: var(--line); min-height: calc(100vh - 51px);
+  }
+  @media (max-width: 920px) { main { grid-template-columns: 1fr; } }
+  .col { background: var(--ground); padding: 18px 20px 40px; min-width: 0; }
+
+  h2 {
+    font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-faint);
+    margin: 22px 0 8px;
+  }
+  h2:first-child { margin-top: 0; }
+
+  label { display: block; font-size: 12px; color: var(--ink-dim); margin: 10px 0 4px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; background: var(--panel); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--r);
+    padding: 7px 9px; font: inherit;
+  }
+  textarea { resize: vertical; font: 13px/1.6 var(--sans); }
+  input:focus, textarea:focus, select:focus {
+    outline: 2px solid var(--accent-dim); outline-offset: -1px; border-color: var(--accent);
+  }
+  .hint { font-size: 11.5px; color: var(--ink-faint); margin-top: 4px; }
+  .row { display: grid; gap: 10px; }
+  .row.three { grid-template-columns: repeat(3, 1fr); }
+  .row.two { grid-template-columns: repeat(2, 1fr); }
+
+  /* THE TIMELINE IS THE POINT OF THE PAGE. Chunk 1 is always longer than the
+     rest and the bars say so by being wider, because a number in a table does
+     not make that land. */
+  .tl { display: flex; gap: 2px; margin: 10px 0 4px; }
+  .tl .seg {
+    position: relative; background: var(--panel-2);
+    border-top: 2px solid var(--accent-dim);
+    padding: 7px 8px 8px; min-width: 0; border-radius: 0 0 var(--r) var(--r);
+  }
+  .tl .seg:first-child { border-top-color: var(--accent); }
+  .tl .n { font: 600 10px/1 var(--mono); color: var(--ink-faint); letter-spacing: .06em; }
+  .tl .d { font: 12px/1.3 var(--mono); color: var(--ink); margin-top: 3px; }
+  .tl .b {
+    font-size: 11px; color: var(--ink-dim); margin-top: 5px;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+  .tl .b.none { color: var(--bad); font-style: italic; }
+  .total {
+    display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+    font: 13px/1 var(--mono); color: var(--ink-dim); margin-top: 8px;
+  }
+  .total b { font-size: 19px; color: var(--ink); font-weight: 600; }
+
+  .lint { margin: 10px 0 0; padding: 0; list-style: none; }
+  .lint li {
+    font-size: 12px; color: var(--warn); padding: 5px 0 5px 10px;
+    border-left: 2px solid var(--warn); margin-bottom: 4px;
+  }
+
+  button {
+    font: 500 13px var(--sans); padding: 8px 14px; cursor: pointer;
+    background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: var(--r);
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.go {
+    background: var(--accent); color: #17140c; border-color: var(--accent);
+    font-weight: 600;
+  }
+  .bar { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+
+  details { border: 1px solid var(--line); border-radius: var(--r); margin-top: 10px; }
+  details > summary {
+    cursor: pointer; padding: 8px 10px; font-size: 12px; color: var(--ink-dim);
+    user-select: none;
+  }
+  details[open] > summary { border-bottom: 1px solid var(--line); color: var(--ink); }
+  details .body { padding: 4px 10px 12px; }
+
+  .job { border: 1px solid var(--line); border-radius: var(--r); padding: 10px;
+         margin-top: 10px; background: var(--panel); }
+  .job .meta { font: 11.5px var(--mono); color: var(--ink-faint);
+               display: flex; gap: 10px; flex-wrap: wrap; }
+  .job video { width: 100%; margin-top: 8px; border-radius: var(--r);
+               background: #000; display: block; }
+  .state { font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .state.running { color: var(--accent); }
+  .state.done, .state.success { color: var(--good); }
+  .state.error, .state.failed { color: var(--bad); }
+  .err { color: var(--bad); font-size: 12.5px; margin-top: 8px; white-space: pre-wrap; }
+  .gutter { font: 11px/1.6 var(--mono); color: var(--ink-faint); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Long Take</h1>
+  <span class="sub">H3 long-form, one request</span>
+  <div class="right">
+    <span class="dot" id="dot"></span>
+    <span class="sub" id="conn">checking…</span>
+    <button id="theme" title="Light / dark">◐</button>
+  </div>
+</header>
+
+<main>
+  <section class="col">
+    <h2>The take</h2>
+
+    <label for="head">Head — repeated into every chunk, byte for byte</label>
+    <textarea id="head" rows="3" placeholder="Realistic video. A woman kneeling on an unmade bed, flat overcast daylight through a window at frame left."></textarea>
+    <p class="hint">Subject, wardrobe, set, lighting, camera. Every chunk is generated with no memory of the one before, so anything not restated here is re-invented — wardrobe especially, which nothing but the words holds.</p>
+
+    <label for="beats">Beats — one line per chunk</label>
+    <textarea id="beats" rows="7" placeholder="What changes in chunk 1&#10;What changes in chunk 2&#10;What changes in chunk 3"></textarea>
+    <p class="hint">One continuous moment per line. “And then…” inside a beat reads as a cut instruction. Changing wardrobe or attention costs nothing; changing the whole body pose makes each chunk fight its own carry.</p>
+
+    <label for="tail">Tail — also repeated verbatim</label>
+    <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
+    <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
+
+    <details>
+      <summary>Subject, retention and sound</summary>
+      <div class="body">
+        <label for="subject">subject_definitions</label>
+        <input type="text" id="subject" placeholder="&lt;Subject 1&gt; is the woman shown in &lt;Picture 1&gt;, &lt;Picture 2&gt; and &lt;Picture 3&gt;.">
+        <label for="retention">retention_analysis</label>
+        <input type="text" id="retention" placeholder="&lt;Subject 1&gt;: fully_preserved - preserve her facial identity, hair, skin…">
+        <p class="hint">Bind retention to the <em>subject</em>. Naming &lt;Picture N&gt; as the thing to preserve makes the model cut to the reference photo mid-clip.</p>
+        <label for="sound">overall_soundscape</label>
+        <input type="text" id="sound" placeholder="Close room tone in a small carpeted bedroom, faint traffic through glass.">
+        <label for="music">non_diegetic_music</label>
+        <input type="text" id="music" value="N/A">
+      </div>
+    </details>
+  </section>
+
+  <section class="col">
+    <h2>Plan</h2>
+    <div class="row three">
+      <div><label for="cf">Chunk frames</label><select id="cf"></select></div>
+      <div><label for="cc">Chunks</label><input type="number" id="cc" value="3" min="1" max="24"></div>
+      <div><label for="ctx">Carry</label><select id="ctx"></select></div>
+    </div>
+    <div id="tl" class="tl"></div>
+    <div class="total" id="total"></div>
+    <ul class="lint" id="lint"></ul>
+
+    <h2>Render</h2>
+    <details id="setup">
+      <summary>Models and references</summary>
+      <div class="body">
+        <label for="unet">Diffusion model</label><select id="unet"></select>
+        <p class="hint" id="modelwarn" hidden style="color:var(--bad)">This looks
+        like a beta3 / beta4 build. 10Eros's author states those are corrupted
+        test versions and only beta5 works.</p>
+        <label for="clip">Text encoder</label><select id="clip"></select>
+        <div class="row two">
+          <div><label for="vae">Video VAE</label><select id="vae"></select></div>
+          <div><label for="avae">Audio VAE</label><select id="avae"></select></div>
+        </div>
+        <div class="row two">
+          <div><label for="lora">Static LoRA</label><select id="lora"></select></div>
+          <div><label for="lstr">Strength</label><input type="number" id="lstr" value="0.8" step="0.05" min="0" max="2"></div>
+        </div>
+        <label>References — three held motion in testing; a fourth broke it</label>
+        <div class="row three">
+          <select id="ref0"></select><select id="ref1"></select><select id="ref2"></select>
+        </div>
+        <label for="sched">Per-chunk LoRA schedule</label>
+        <textarea id="sched" rows="3" placeholder="last | h3/some_lora.safetensors | 1.0"></textarea>
+        <p class="hint">A colon means time, no colon means chunks: <code>2</code>, <code>2-4</code>, <code>2,5</code>, <code>2+</code>, <code>last</code>. A range like <code>2-4 | file | 0.4-0.9</code> ramps across them.</p>
+        <div class="row two">
+          <div><label for="seed">Seed</label><input type="number" id="seed" value="977573931686826"></div>
+          <div><label for="prefix">Output prefix</label><input type="text" id="prefix" value="H3/longtake/take"></div>
+        </div>
+      </div>
+    </details>
+
+    <div class="bar">
+      <button class="go" id="render">Render</button>
+      <button id="dry">Inspect graph</button>
+      <span class="sub" id="cost"></span>
+    </div>
+    <div class="err" id="err" hidden></div>
+
+    <h2>Jobs</h2>
+    <div id="jobs"></div>
+  </section>
+</main>
+
+<script>
+const API = "/h3_toolkit";
+const $ = id => document.getElementById(id);
+const LS = "h3-longtake-v1";
+
+/* ---------------------------------------------------------------- plumbing */
+async function post(path, body) {
+  const r = await fetch(API + path, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + " -> " + r.status);
+  return r.json();
+}
+
+/* Model lists come from the SERVER, so a name can never be typed wrong. The
+   pack's own chunk grid comes from /take/plan's legal_runs equivalent, but the
+   plan route does not return it, so the frames list is built from 17n+5 here
+   and every value is verified by the server when the plan is fetched. */
+function legalRuns(min, max) {
+  const out = [];
+  for (let k = 0; 17 * k + 5 <= max; k++) {
+    const r = 17 * k + 5;
+    if (r >= min) out.push(r);
+  }
+  return out;
+}
+const AV_EXACT = new Set([39, 90, 141, 192, 243, 294, 345, 396]);
+
+function fill(sel, items, chosen) {
+  sel.innerHTML = "";
+  for (const it of items) {
+    const o = document.createElement("option");
+    o.value = typeof it === "string" ? it : it.v;
+    o.textContent = typeof it === "string" ? it : it.t;
+    sel.appendChild(o);
+  }
+  if (chosen && items.some(i => (typeof i === "string" ? i : i.v) === chosen))
+    sel.value = chosen;
+}
+
+async function optionsFor(cls, field) {
+  try {
+    const d = await getJSON(`/object_info/${cls}`);
+    const req = (d[cls] || {}).input || {};
+    const decl = (req.required || {})[field] || (req.optional || {})[field];
+    return Array.isArray(decl?.[0]) ? decl[0] : [];
+  } catch { return []; }
+}
+
+/* ------------------------------------------------------------------- state */
+function saved() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
+function save() {
+  const s = {};
+  for (const id of ["head","beats","tail","subject","retention","sound","music",
+                    "cf","cc","ctx","unet","clip","vae","avae","lora","lstr",
+                    "ref0","ref1","ref2","sched","seed","prefix"]) {
+    const el = $(id); if (el) s[id] = el.value;
+  }
+  s.theme = document.documentElement.dataset.theme || "";
+  try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
+}
+function restore() {
+  const s = saved();
+  for (const [k, v] of Object.entries(s)) {
+    if (k === "theme") continue;
+    const el = $(k); if (el && v !== undefined && v !== "") el.value = v;
+  }
+  if (s.theme) document.documentElement.dataset.theme = s.theme;
+}
+
+/* -------------------------------------------------------------------- plan */
+let lastPlan = null;
+async function refreshPlan() {
+  const body = {
+    chunk_frames: +$("cf").value || 192,
+    chunk_count: +$("cc").value || 1,
+    context: +$("ctx").value,
+    beats: $("beats").value,
+  };
+  let p;
+  try { p = await post("/take/plan", body); }
+  catch (e) { setConn(false); return; }
+  setConn(true);
+  if (!p.ok) { $("total").textContent = p.error || "plan failed"; return; }
+  lastPlan = p;
+
+  $("tl").innerHTML = "";
+  for (const c of p.chunks) {
+    const seg = document.createElement("div");
+    seg.className = "seg";
+    seg.style.flex = String(c.frames);
+    const dur = (c.end_seconds - c.start_seconds).toFixed(2);
+    seg.innerHTML =
+      `<div class="n">CHUNK ${c.number}</div>` +
+      `<div class="d">${dur}s</div>` +
+      `<div class="b${c.beat ? "" : " none"}">` +
+      (c.beat ? escapeHTML(c.beat) : "no beat written") + `</div>`;
+    seg.title = `${c.frames} frames · ${c.start_seconds}s → ${c.end_seconds}s`;
+    $("tl").appendChild(seg);
+  }
+  $("total").innerHTML =
+    `<b>${p.total_seconds}s</b> <span>${p.total_frames} frames</span>` +
+    `<span>${p.chunk_count} × ${p.chunk_frames} carrying ${p.context}</span>`;
+  $("lint").innerHTML = (p.lint || [])
+    .map(m => `<li>${escapeHTML(m)}</li>`).join("");
+
+  // 227s per chunk, measured headless on a 4090 at 8 steps / 832×1248
+  const mins = (p.chunk_count * 227) / 60;
+  $("cost").textContent = `≈ ${mins < 1 ? "<1" : mins.toFixed(0)} min to render`;
+  save();
+}
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function setConn(ok) {
+  $("dot").className = "dot " + (ok ? "on" : "off");
+  $("conn").textContent = ok ? "connected" : "no server";
+}
+
+/* ------------------------------------------------------------------ render */
+function request() {
+  const refs = ["ref0","ref1","ref2"].map(i => $(i).value).filter(Boolean);
+  const req = {
+    chunk_frames: +$("cf").value, chunk_count: +$("cc").value,
+    context: +$("ctx").value,
+    head: $("head").value, beats: $("beats").value, tail: $("tail").value,
+    soundscape: $("sound").value, music: $("music").value || "N/A",
+    seed: +$("seed").value, filename_prefix: $("prefix").value,
+    references: refs,
+    models: {
+      unet: $("unet").value, clip: $("clip").value,
+      vae: $("vae").value, audio_vae: $("avae").value,
+      loras: $("lora").value && $("lora").value !== "(none)"
+        ? [{ name: $("lora").value, strength: +$("lstr").value }] : [],
+    },
+  };
+  if ($("subject").value) req.subject_def_1 = $("subject").value;
+  if ($("retention").value) req.retention_1 = $("retention").value;
+  if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
+  return req;
+}
+
+function fail(msg) { $("err").hidden = false; $("err").textContent = msg; }
+
+async function compose() {
+  $("err").hidden = true;
+  const r = await post("/take/graph", request());
+  if (!r.ok) { fail(r.error || "could not compose the graph"); return null; }
+  return r.graph;
+}
+
+async function doRender() {
+  $("render").disabled = true;
+  try {
+    const graph = await compose();
+    if (!graph) return;
+    // POST to ComfyUI's OWN /prompt: core owns validation and queueing, so its
+    // errors arrive in its format and nothing here reimplements that contract.
+    const res = await fetch("/prompt", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: graph, client_id: "h3-longtake" }),
+    });
+    const out = await res.json();
+    if (!res.ok || !out.prompt_id) {
+      fail(typeof out.error === "string" ? out.error
+           : JSON.stringify(out.error || out, null, 2));
+      return;
+    }
+    addJob(out.prompt_id);
+  } catch (e) { fail(String(e)); }
+  finally { $("render").disabled = false; }
+}
+
+/* -------------------------------------------------------------------- jobs */
+const jobs = new Map();
+function addJob(id) {
+  const el = document.createElement("div");
+  el.className = "job";
+  el.innerHTML =
+    `<div class="meta"><span class="state running" data-s>queued</span>` +
+    `<span data-t>0s</span><span>${id.slice(0, 8)}</span></div><div data-v></div>`;
+  $("jobs").prepend(el);
+  jobs.set(id, { el, t0: Date.now() });
+  poll(id);
+}
+async function poll(id) {
+  const j = jobs.get(id); if (!j) return;
+  let s;
+  try { s = await getJSON(`${API}/take/status?id=${id}`); }
+  catch { setTimeout(() => poll(id), 4000); return; }
+  const secs = Math.round((Date.now() - j.t0) / 1000);
+  j.el.querySelector("[data-t]").textContent =
+    secs < 90 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  const st = j.el.querySelector("[data-s]");
+  st.textContent = s.state;
+  st.className = "state " + s.state;
+  if (s.outputs && s.outputs.length) {
+    const f = s.outputs[0];
+    const url = `/view?filename=${encodeURIComponent(f.filename)}` +
+                `&subfolder=${encodeURIComponent(f.subfolder || "")}` +
+                `&type=${f.type || "output"}`;
+    j.el.querySelector("[data-v]").innerHTML =
+      `<video src="${url}" controls preload="metadata"></video>`;
+    return;
+  }
+  if (s.state === "unknown" && secs > 20) {
+    st.textContent = "lost"; st.className = "state error"; return;
+  }
+  if (["error", "failed"].includes(s.state)) {
+    if (s.messages?.length) {
+      j.el.querySelector("[data-v]").innerHTML =
+        `<div class="err">${escapeHTML(JSON.stringify(s.messages.slice(-3)))}</div>`;
+    }
+    return;
+  }
+  setTimeout(() => poll(id), 4000);
+}
+
+/* -------------------------------------------------------------------- init */
+(async function init() {
+  fill($("cf"), legalRuns(39, 396).map(r => ({
+    v: r, t: `${r} — ${(r / 24).toFixed(2)}s${AV_EXACT.has(r) ? " · both clocks" : ""}`,
+  })), "192");
+  fill($("ctx"), [
+    { v: 39, t: "39 — both clocks" }, { v: 22, t: "22 — off the audio grid" },
+    { v: 5, t: "5" }, { v: 1, t: "1 — keyframe only" }, { v: 0, t: "0 — no carry" },
+  ], "39");
+
+  const [unets, clips, vaes, loras, images] = await Promise.all([
+    optionsFor("UNETLoader", "unet_name"),
+    optionsFor("CLIPLoader", "clip_name"),
+    optionsFor("VAELoader", "vae_name"),
+    optionsFor("LoraLoaderModelOnly", "lora_name"),
+    optionsFor("LoadImage", "image"),
+  ]);
+  /* ORDERING IS THE WHOLE POINT OF THESE DROPDOWNS. A list sorted by filename
+     puts a CORRUPTED checkpoint first: 10Eros's author states beta_3 and beta_4
+     are broken test builds and beta_5 is the only functional one, and "beta4"
+     sorts before "beta5". The same naive filter picked CLIP-ViT-H for the H3
+     text encoder and an unrelated LoRA for the H3 slot. So: rank, then demote
+     what is known bad, and never let alphabetical order choose. */
+  const rank = (a, good, bad = null) => {
+    const score = x => (bad && bad.test(x) ? 2 : good.test(x) ? 0 : 1);
+    return a.slice().sort((x, y) => score(x) - score(y));
+  };
+  const CORRUPT = /beta[_-]?[34]/i;
+  fill($("unet"), rank(unets, /minimax_h3|10eros/i, CORRUPT));
+  fill($("clip"), rank(clips, /qwen3vl.*minimax|minimax_h3/i));
+  fill($("vae"), rank(vaes, /minimax_h3_video|video_vae/i, /audio/i));
+  fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i));
+  fill($("lora"), ["(none)"].concat(rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
+  for (const i of ["ref0", "ref1", "ref2"]) fill($(i), [""].concat(images));
+
+  restore();
+  await refreshPlan();
+
+  for (const id of ["cf", "cc", "ctx"]) $(id).addEventListener("change", refreshPlan);
+  let t; $("beats").addEventListener("input", () => {
+    clearTimeout(t); t = setTimeout(refreshPlan, 250);
+  });
+  for (const id of ["head","tail","subject","retention","sound","music","unet",
+                    "clip","vae","avae","lora","lstr","ref0","ref1","ref2",
+                    "sched","seed","prefix"]) {
+    $(id).addEventListener("change", save);
+  }
+  function checkModel() {
+    const v = $("unet").value || "";
+    const bad = /beta[_-]?[34]/i.test(v);
+    $("modelwarn").hidden = !bad;
+  }
+  $("unet").addEventListener("change", checkModel);
+  checkModel();
+  $("render").addEventListener("click", doRender);
+  $("dry").addEventListener("click", async () => {
+    const g = await compose();
+    if (g) {
+      const w = window.open("", "_blank");
+      w.document.write("<pre style='font:12px ui-monospace;white-space:pre-wrap'>"
+        + escapeHTML(JSON.stringify(g, null, 2)) + "</pre>");
+    }
+  });
+  $("theme").addEventListener("click", () => {
+    const r = document.documentElement;
+    r.dataset.theme = r.dataset.theme === "light" ? "" : "light";
+    save();
+  });
+})();
+</script>
+</body>
+</html>
