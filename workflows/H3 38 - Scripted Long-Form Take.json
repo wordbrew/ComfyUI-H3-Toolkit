@@ -2784,9 +2784,9 @@
       },
       "widgets_values": [
         "",
-        "h3\\H3_Motion_BoosterV2.safetensors",
-        "h3\\InkRiot_style_h3_ep50.safetensors",
-        "h3\\H3_Motion_BoosterV2.safetensors"
+        "(none)",
+        "(none)",
+        "(none)"
       ],
       "title": "H3 Chunk Lora \u2014 set the pickers to what `info` names"
     },

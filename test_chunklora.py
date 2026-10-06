@@ -168,6 +168,71 @@ except ValueError as e:
 ok("a bare filename is still accepted",
    "lora_1" not in str(cl.parse_span("00:00-00:10")))
 
+# --- addressing by CHUNK ---------------------------------------------------- #
+# The reason this exists: a time span is matched by OVERLAP and a boundary is a
+# shared edge, so "from 14 seconds" catches the chunk still running at 14. On the
+# 4x141/39 plan below chunk 3 runs to 14.38s, so 00:14-00:19 hits 3 AND 4 -- and
+# every boundary moves when chunk_frames or chunk_count changes.
+print("a chunk reference parses")
+check("one chunk", cl.parse_chunks("chunk 2"), [2])
+check("a range", cl.parse_chunks("chunk 2-4"), [("range", 2, 4)])
+check("a list", cl.parse_chunks("chunk 2,5"), [2, 5])
+check("open ended", cl.parse_chunks("chunk 2+"), [("from", 2)])
+check("last", cl.parse_chunks("chunk last"), ["last"])
+check("-1 is last too", cl.parse_chunks("chunk -1"), ["last"])
+ok("a time span is NOT a chunk reference", cl.parse_chunks("00:00-00:12") is None)
+ok("junk is not either", cl.parse_chunks("chunk zz") is None)
+ok("a bare number is not, so times keep working",
+   cl.parse_chunks("00:14") is None)
+
+print("and resolves against the plan's count")
+check("1-based in, 0-based out", cl.chunk_indices([2], 4), ({1}, []))
+check("last needs the count", cl.chunk_indices(["last"], 4), ({3}, []))
+check("a range clamps and REPORTS", cl.chunk_indices([("range", 2, 9)], 4),
+      ({1, 2, 3}, ["2-9"]))
+check("past the end is named, not silently dropped",
+      cl.chunk_indices([7], 4), (set(), ["7"]))
+
+print("a chunk row cannot bleed into its neighbour")
+_cp = importlib.import_module("h3cl.chunkplan")
+_ch, _ = plan(_cp.total_for_count(141, 4, 39), 141, "fixed",
+              context=39, grow_tail=True)
+_spans = cl.chunk_spans(_ch)
+ok("chunk 3 really does run past 14s", _spans[2][1] > 14.0)
+_time = [("x", cl.parse_span("00:14-00:19"), (0.8, 0.8))]
+_hit_time = [bool(cl.resolve(_time, _spans[k], k, 4)) for k in range(4)]
+check("BY TIME it lands on two chunks", _hit_time,
+      [False, False, True, True])
+_chunk = [("x", ("chunks", cl.chunk_indices(["last"], 4)[0]), (0.8, 0.8))]
+_hit_chunk = [bool(cl.resolve(_chunk, _spans[k], k, 4)) for k in range(4)]
+check("BY CHUNK it lands on exactly one", _hit_chunk,
+      [False, False, False, True])
+
+print("a chunk ramp interpolates across the chunks it names, not off a clock")
+_ramp = [("x", ("chunks", {1, 2, 3}), (0.4, 0.9))]
+got = [dict(cl.resolve(_ramp, _spans[k], k, 4)).get("x") for k in range(4)]
+check("0.4 / 0.65 / 0.9 on the three named", got, [None, 0.4, 0.65, 0.9])
+_one = [("x", ("chunks", {1}), (0.4, 0.9))]
+check("a range on ONE chunk takes the low end",
+      dict(cl.resolve(_one, _spans[1], 1, 4)).get("x"), 0.4)
+
+print("a row naming a chunk the plan does not have RAISES")
+try:
+    cl.H3ChunkLora().go(sentinel, 0, "chunk 9 | a.safetensors | 0.8",
+                        chunk_plan={"chunks": _ch})
+    check("out of range raises", "no error", "ValueError")
+except ValueError as e:
+    ok("it names the count", "4 chunk" in str(e))
+    ok("and the bad reference", "9" in str(e))
+
+print("the pickers have a real empty state")
+_names = cl.H3ChunkLora.INPUT_TYPES()["optional"]["lora_1"]
+ok("(none) is an option", "(none)" in _names[0])
+check("and the default", _names[1].get("default"), "(none)")
+for _k in ("lora_1", "lora_2", "lora_3"):
+    _o = cl.H3ChunkLora.INPUT_TYPES()["optional"][_k]
+    ok(f"{_k} defaults to (none)", _o[1].get("default") == "(none)")
+
 print()
 if fails:
     print(f"{len(fails)} failure(s)")
