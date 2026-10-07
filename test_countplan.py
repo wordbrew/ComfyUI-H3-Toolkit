@@ -175,6 +175,41 @@ _ch3, _ = cp.plan(_t, 192, "fixed", context=39, grow_tail=True)
 check("no continuity at all behaves exactly as before",
       [c["pin"] for c in _ch3], [0, 39, 39, 39])
 
+print("\nscene_plan: every scene sets its own length")
+# count_plan answers "n chunks of one size", which is a continuous take. A
+# four-second insert and a twelve-second master belong in the same film, and
+# that needed a different planner rather than a bigger chunk_count.
+_sp = cp.scene_plan([
+    {"frames": 192, "beat": "master"},
+    {"frames": 90, "continuity": "carry", "beat": "she turns"},
+    {"frames": 141, "continuity": "cut", "beat": "new angle"},
+    {"frames": 56, "continuity": "audio_carry", "beat": "insert"},
+], context=39)
+check("each scene renders its own length",
+      [c["frames"] for c in _sp["scenes"]], [192, 90, 141, 56])
+check("a carry overlaps and delivers less",
+      [c["pin"] for c in _sp["scenes"]], [0, 39, 0, 0])
+check("so delivered is frames minus the pin",
+      [c["delivered"] for c in _sp["scenes"]], [192, 51, 141, 56])
+check("and the timeline is contiguous",
+      [(c["start"], c["end"]) for c in _sp["scenes"]],
+      [(0, 192), (192, 243), (243, 384), (384, 440)])
+check("total is the sum of what reaches the clip", _sp["total_frames"], 440)
+check("scene 1 has no transition in", _sp["scenes"][0]["continuity"], None)
+check("audio_carry keeps the sound across its cut",
+      [c["carry_audio"] for c in _sp["scenes"]], [False, True, False, True])
+
+print("and it refuses to lie about illegal lengths")
+_sp2 = cp.scene_plan([{"frames": 100}], context=39)
+check("100 is snapped to a legal run", _sp2["scenes"][0]["frames"], 107)
+ok("and says so", any("not a legal run" in n for n in _sp2["notes"]))
+_sp3 = cp.scene_plan([{"frames": 192}, {"frames": 22, "continuity": "carry"}],
+                     context=39)
+ok("a pin cannot eat a whole scene", _sp3["scenes"][1]["pin"] < 22)
+ok("off-grid scenes are named", any("audio grid" in n for n in
+                                    cp.scene_plan([{"frames": 56}],
+                                                  context=39)["notes"]))
+
 if fails:
     print(f"\nFAIL — {len(fails)} check(s)")
     sys.exit(1)

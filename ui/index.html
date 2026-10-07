@@ -171,6 +171,30 @@
   .err { color: var(--bad); font-size: 12.5px; margin-top: 8px; white-space: pre-wrap; }
   .gutter { font: 11px/1.6 var(--mono); color: var(--ink-faint); white-space: pre-wrap; }
 
+  /* SCENE ROWS — the list is the document. Clicking one opens the inspector,
+     which is where everything about that scene lives. Same model as the WAS
+     timeline's Scene tab. */
+  .scene { display: flex; align-items: center; gap: 9px; padding: 8px 10px;
+           border: 1px solid var(--line); border-left-width: 3px;
+           border-radius: var(--r); margin-bottom: 5px; background: var(--panel);
+           cursor: pointer; }
+  .scene:hover { border-color: var(--accent); }
+  .scene.on { border-color: var(--accent); background: var(--panel-2); }
+  .scene .no { font: 600 10px var(--mono); color: var(--ink-faint); min-width: 16px; }
+  .scene .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+               white-space: nowrap; font-size: 12.5px; }
+  .scene .tx.empty { color: var(--bad); font-style: italic; }
+  .scene .du { font: 11.5px var(--mono); color: var(--ink-dim); }
+  .scene .cn { font: 10px var(--mono); color: var(--ink-faint); min-width: 20px;
+               text-align: center; }
+  .scene[data-cut="1"] { border-left-color: var(--bad); }
+  .scene[data-cut="0"] { border-left-color: var(--accent); }
+
+  .insp { border: 1px solid var(--accent); border-radius: var(--r);
+          padding: 11px 12px; margin-top: 10px; background: var(--panel); }
+  .insp .insphd { display: flex; gap: 10px; align-items: baseline;
+                  margin-bottom: 6px; }
+
   /* A CAST ROW. The kind is a coloured spine rather than a dropdown, because a
      person and a place retain different things and that is worth seeing at a
      glance rather than reading. */
@@ -275,9 +299,32 @@
     <textarea id="head" rows="3" placeholder="Realistic video. A woman kneeling on an unmade bed, flat overcast daylight through a window at frame left."></textarea>
     <p class="hint">Subject, wardrobe, set, lighting, camera. Every chunk is generated with no memory of the one before, so anything not restated here is re-invented — wardrobe especially, which nothing but the words holds.</p>
 
-    <label for="beats">Beats — one line per chunk</label>
-    <textarea id="beats" rows="7" placeholder="What changes in chunk 1&#10;What changes in chunk 2&#10;What changes in chunk 3"></textarea>
-    <p class="hint">One continuous moment per line. “And then…” inside a beat reads as a cut instruction. Changing wardrobe or attention costs nothing; changing the whole body pose makes each chunk fight its own carry.</p>
+    <label>Scenes — click one to edit it</label>
+    <div id="scenelist"></div>
+    <div class="bar">
+      <button id="addscene">+ Scene</button>
+      <button id="dupscene">Duplicate</button>
+      <span class="sub" id="scenesum"></span>
+    </div>
+    <textarea id="beats" hidden></textarea>
+
+    <div id="inspector" class="insp" hidden>
+      <div class="insphd">
+        <strong id="insptitle">Scene</strong>
+        <span class="sub" id="inspwhen"></span>
+        <button id="inspdel" style="margin-left:auto">Delete scene</button>
+      </div>
+      <label for="i_beat">What happens in this scene</label>
+      <textarea id="i_beat" rows="4" placeholder="She turns toward the window and the light catches her face."></textarea>
+      <p class="hint">One continuous moment. “And then…” reads as a cut
+      instruction — if two things happen in sequence, that is two scenes.</p>
+      <div class="row three">
+        <div><label for="i_len">Length</label><select id="i_len"></select></div>
+        <div><label for="i_cont">Transition in</label><select id="i_cont"></select></div>
+        <div><label for="i_seed">Seed offset</label><input type="number" id="i_seed" value="0" min="0"></div>
+      </div>
+      <p class="hint" id="i_contwhat"></p>
+    </div>
 
     <label for="tail">Tail — also repeated verbatim</label>
     <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
@@ -525,6 +572,7 @@ function save() {
   s.cast = CAST;                 // the cast is the document, so it persists too
   s.refs = REFS;
   s.cont = CONT;
+  s.scenes = SCENES;
   try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
 }
 function restore() {
@@ -537,6 +585,7 @@ function restore() {
   if (Array.isArray(s.cast)) CAST = s.cast;
   if (Array.isArray(s.refs)) REFS = s.refs;
   if (Array.isArray(s.cont)) CONT = s.cont;
+  if (Array.isArray(s.scenes)) SCENES = s.scenes;
   if (typeof drawRefSlots === "function") drawRefSlots();
 }
 
@@ -594,7 +643,13 @@ function openTransMenu(anchorEl, joinIndex) {
     b.innerHTML = `${GLYPH[t.id]}&nbsp; ${escapeHTML(t.label)}` +
                   `<small>${escapeHTML(t.hint)}</small>`;
     b.onclick = () => {
-      CONT[joinIndex] = t.id;
+      if (SCENES.length > joinIndex + 1) {
+        SCENES[joinIndex + 1].continuity = t.id;
+        SEL = joinIndex + 1;
+        drawScenes();
+      } else {
+        CONT[joinIndex] = t.id;
+      }
       m.remove();
       refreshPlan();
     };
@@ -610,9 +665,120 @@ function openTransMenu(anchorEl, joinIndex) {
   setTimeout(() => document.addEventListener("mousedown", away), 0);
 }
 
+/* ------------------------------------------------------------------ scenes
+   THE SCENE LIST IS THE DOCUMENT. Each scene has its own length and its own
+   transition in, so a four-second insert and a twelve-second master belong in
+   the same take. Clicking one opens the inspector; the timeline above is a
+   view of the same array. */
+let SCENES = [];
+let SEL = 0;
+
+function newScene(seed = {}) {
+  return { frames: seed.frames || 192, beat: seed.beat || "",
+           continuity: seed.continuity || "carry", seed_offset: seed.seed_offset || 0 };
+}
+function addScene(copyFrom = null) {
+  const src = copyFrom != null ? SCENES[copyFrom] : null;
+  SCENES.push(src ? { ...src } : newScene(
+    SCENES.length ? { frames: SCENES[SCENES.length - 1].frames } : {}));
+  SEL = SCENES.length - 1;
+  drawScenes(); refreshPlan();
+}
+function delScene(i) {
+  SCENES.splice(i, 1);
+  SEL = Math.max(0, Math.min(SEL, SCENES.length - 1));
+  drawScenes(); refreshPlan();
+}
+
+function drawScenes() {
+  const host = $("scenelist");
+  host.innerHTML = "";
+  if (!SCENES.length) {
+    host.innerHTML = `<p class="hint">No scenes yet. “+ Scene” adds the first.</p>`;
+    $("inspector").hidden = true;
+    return;
+  }
+  SCENES.forEach((sc, i) => {
+    const el = document.createElement("div");
+    el.className = "scene" + (i === SEL ? " on" : "");
+    const t = TRANSITIONS.find(x => x.id === sc.continuity) || TRANSITIONS[0];
+    el.dataset.cut = i === 0 ? "" : (t.id === "carry" ? "0" : "1");
+    el.innerHTML =
+      `<span class="no">${i + 1}</span>` +
+      `<span class="cn" title="${i ? escapeHTML(t.label) : "opens the take"}">` +
+      `${i ? (GLYPH[sc.continuity] || "→") : "▶"}</span>` +
+      `<span class="tx${sc.beat ? "" : " empty"}">` +
+      (sc.beat ? escapeHTML(sc.beat) : "nothing written yet") + `</span>` +
+      `<span class="du">${(sc.frames / 24).toFixed(2)}s</span>`;
+    el.onclick = () => { SEL = i; drawScenes(); };
+    host.appendChild(el);
+  });
+  drawInspector();
+  // the beats textarea stays the thing the graph receives, one line per scene
+  $("beats").value = SCENES.map(s => (s.beat || "").replace(/\n/g, " ")).join("\n");
+}
+
+function drawInspector() {
+  const sc = SCENES[SEL];
+  if (!sc) { $("inspector").hidden = true; return; }
+  $("inspector").hidden = false;
+  $("insptitle").textContent = `Scene ${SEL + 1} of ${SCENES.length}`;
+  $("i_beat").value = sc.beat || "";
+  fill($("i_len"), legalRuns(39, 396).map(r => ({
+    v: r, t: `${(r / 24).toFixed(2)}s — ${r}f${AV_EXACT.has(r) ? " · both clocks" : ""}`,
+  })), String(sc.frames));
+  fill($("i_cont"), TRANSITIONS.map(t => ({ v: t.id, t: t.label })), sc.continuity);
+  $("i_cont").disabled = SEL === 0;
+  $("i_seed").value = sc.seed_offset || 0;
+  const t = TRANSITIONS.find(x => x.id === sc.continuity) || TRANSITIONS[0];
+  $("i_contwhat").textContent = SEL === 0
+    ? "The first scene opens the take, so it has no transition in."
+    : `${t.label} — ${t.hint}`;
+  const p = lastScenePlan && lastScenePlan[SEL];
+  $("inspwhen").textContent = p
+    ? `${p.start_seconds.toFixed(2)}s → ${p.end_seconds.toFixed(2)}s · renders ` +
+      `${p.frames}f, ${p.pin} pinned, delivers ${p.delivered}f`
+    : "";
+}
+
 /* -------------------------------------------------------------------- plan */
 let lastPlan = null;
+let lastScenePlan = null;
 async function refreshPlan() {
+  // SCENES ARE THE DOCUMENT when there are any; the uniform count form stays
+  // for a plain continuous take.
+  let p;
+  if (SCENES.length) {
+    try {
+      const r = await post("/take/scenes", {
+        scenes: SCENES.map(s => ({ frames: s.frames, continuity: s.continuity,
+                                   beat: s.beat })),
+        context: +$("ctx").value,
+      });
+      setConn(true);
+      if (!r.ok) { $("total").textContent = r.error; return; }
+      lastScenePlan = r.scenes;
+      p = {
+        ok: true, chunk_count: r.scenes.length, context: +$("ctx").value,
+        chunk_frames: SCENES[0].frames,
+        total_frames: r.total_frames, total_seconds: r.total_seconds,
+        beats_required: r.scenes.length, lint: r.lint || [],
+        chunks: r.scenes.map(c => ({
+          index: c.index, number: c.number, frames: c.delivered,
+          start_seconds: c.start_seconds, end_seconds: c.end_seconds,
+          beat: c.beat, continuity: c.continuity,
+          continuity_wired: c.continuity_wired, carry_audio: c.carry_audio,
+        })),
+      };
+      CONT = SCENES.slice(1).map(s => s.continuity);
+      $("scenesum").textContent =
+        `${r.scenes.length} scene(s) · ${r.total_seconds}s`;
+    } catch { setConn(false); return; }
+    renderPlan(p);
+    drawInspector();
+    save();
+    return;
+  }
   const body = {
     chunk_frames: +$("cf").value || 192,
     chunk_count: +$("cc").value || 1,
@@ -620,13 +786,17 @@ async function refreshPlan() {
     beats: $("beats").value,
     continuity: CONT,
   };
-  let p;
   try { p = await post("/take/plan", body); }
   catch (e) { setConn(false); return; }
   setConn(true);
   if (!p.ok) { $("total").textContent = p.error || "plan failed"; return; }
-  lastPlan = p;
+  renderPlan(p);
+  save();
+}
 
+/* The timeline, drawn from whichever planner produced it. */
+function renderPlan(p) {
+  lastPlan = p;
   $("tl").innerHTML = "";
   p.chunks.forEach((c, i) => {
     if (i > 0) $("tl").appendChild(joinButton(i - 1, c));
@@ -652,9 +822,9 @@ async function refreshPlan() {
     .map(m => `<li>${escapeHTML(m)}</li>`).join("");
 
   // 227s per chunk, measured headless on a 4090 at 8 steps / 832×1248
+  // 227s per chunk, measured headless on a 4090 at 8 steps / 832x1248
   const mins = (p.chunk_count * 227) / 60;
   $("cost").textContent = `≈ ${mins < 1 ? "<1" : mins.toFixed(0)} min to render`;
-  save();
 }
 function escapeHTML(s) {
   return String(s).replace(/[&<>"]/g, c =>
@@ -1060,6 +1230,15 @@ function request() {
   };
   const rows = CAST.filter(r => r.from_library || r.describe || r.setting);
   if (rows.length) req.cast = rows;
+  if (SCENES.length) {
+    // the scene list IS the take: beats one per scene, and the plan's own
+    // chunk_frames/count follow from it
+    req.beats = SCENES.map(x => (x.beat || "").replace(/\n/g, " ")).join("\n");
+    req.chunk_count = SCENES.length;
+    req.chunk_frames = SCENES[0].frames;
+    req.scenes = SCENES.map(x => ({ frames: x.frames, continuity: x.continuity,
+                                    beat: x.beat }));
+  }
   if (CONT.length) req.continuity = CONT.join("\n");
   if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
   return req;
@@ -1270,6 +1449,29 @@ async function poll(id) {
   });
   await loadLibrary();
   if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
+  $("addscene").onclick = () => addScene();
+  $("dupscene").onclick = () => SCENES.length && addScene(SEL);
+  $("inspdel").onclick = () => SCENES.length && delScene(SEL);
+  $("i_beat").addEventListener("input", () => {
+    if (!SCENES[SEL]) return;
+    SCENES[SEL].beat = $("i_beat").value;
+    clearTimeout(window._sb);
+    window._sb = setTimeout(() => { drawScenes(); refreshPlan(); }, 300);
+  });
+  $("i_len").addEventListener("change", () => {
+    if (!SCENES[SEL]) return;
+    SCENES[SEL].frames = +$("i_len").value;
+    drawScenes(); refreshPlan();
+  });
+  $("i_cont").addEventListener("change", () => {
+    if (!SCENES[SEL]) return;
+    SCENES[SEL].continuity = $("i_cont").value;
+    drawScenes(); refreshPlan();
+  });
+  $("i_seed").addEventListener("change", () => {
+    if (SCENES[SEL]) SCENES[SEL].seed_offset = +$("i_seed").value;
+    save();
+  });
   $("addref").onclick = addRefSlot;
   $("newsubj").onclick = () => openEditor(null);
   $("reloadlib").onclick = loadLibrary;
@@ -1278,6 +1480,7 @@ async function poll(id) {
   $("e_cancel").onclick = () => { $("editor").open = false; };
 
   restore();
+  drawScenes();
   drawCast();
   await refreshPlan();
 
