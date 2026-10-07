@@ -211,6 +211,20 @@ def build(req, template=None):
                        ("chunk_count", "chunk_count")):
         if key in req:
             _set(graph, "h3.plan", field, int(req[key]))
+
+    # CONTINUITY HAS TO REACH THE PLAN, and it did not. Every transition set in
+    # the editor drove the readout and nothing else: the graph got a uniform
+    # plan with no transitions, so every chunk fell back to `carry` whatever the
+    # timeline showed. The scenes a caller sends are the authority on this --
+    # one entry per JOIN, so scene 2's transition is the first.
+    conts = req.get("continuity")
+    if not conts and req.get("scenes"):
+        conts = [sc.get("continuity") or "carry"
+                 for sc in req["scenes"][1:]]
+    if conts:
+        if isinstance(conts, (list, tuple)):
+            conts = "\n".join(str(c or "carry") for c in conts)
+        _set(graph, "h3.plan", "continuity", str(conts))
     if "context" in req:
         # a COMBO on the plan, an INT on Open; both have to agree or the carry
         # the plan describes is not the carry Open hands out

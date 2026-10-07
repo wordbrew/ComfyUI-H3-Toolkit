@@ -324,11 +324,24 @@ class H3LongFormLinks:
         # indexed by SHOT, never by link. Every link of one shot gets the same
         # entry, a new entry begins only where a cut does, and fewer entries than
         # shots reuses the last.
+        # THE SHOT INDEX IS DERIVED, not wired. The plan already records each
+        # chunk's transition, so counting the cut-like ones up to this link
+        # gives the shot -- and a number computed from the plan cannot disagree
+        # with the plan, which a second wire could.
+        shot_here = int(shot_index or 0)
+        if not shot_index:
+            _cs = ((chunk_plan or {}).get("chunks")) or []
+            if _cs:
+                from .chunkplan import CUT_LIKE as _CUT
+                _upto = min(int(link_index), len(_cs) - 1)
+                shot_here = sum(1 for k in range(1, _upto + 1)
+                                if (_cs[k].get("continuity") in _CUT))
+
         def _per_shot(blob, fallback):
             parts = [b.strip() for b in str(blob or "").split("\n\n") if b.strip()]
             if not parts:
                 return fallback.strip(), False
-            k = max(0, min(int(shot_index or 0), len(parts) - 1))
+            k = max(0, min(shot_here, len(parts) - 1))
             return parts[k], True
 
         h, used_heads = _per_shot(heads, head)
