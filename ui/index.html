@@ -138,16 +138,20 @@
   .tl .seg { cursor: grab; }
   .tl .seg.drag { opacity: .45; }
   .tl .seg.over { box-shadow: inset 3px 0 0 var(--accent); }
+  /* THE HANDLE HAS TO BE VISIBLE. This was a 9px strip at opacity 0 that only
+     appeared once you were already hovering it — an affordance you cannot see
+     does not exist, and CJ went looking for a drag that was there all along. */
   .tl .seg .grip {
-    position: absolute; inset: 0 -3px 0 auto; width: 9px; cursor: col-resize;
-    z-index: 4;
+    position: absolute; inset: 0 -4px 0 auto; width: 14px; cursor: col-resize;
+    z-index: 4; display: flex; align-items: center; justify-content: center;
   }
   .tl .seg .grip::after {
-    content: ""; position: absolute; inset: 6px 3px auto 3px; height: 14px;
-    border-left: 1px solid var(--ink-faint); border-right: 1px solid var(--ink-faint);
-    opacity: 0; transition: opacity .1s;
+    content: "⋮"; font: 13px/1 var(--mono); color: var(--ink);
+    background: var(--accent); border-radius: 2px;
+    padding: 5px 1px; opacity: .55; transition: opacity .12s, padding .12s;
+    color: #17140c;
   }
-  .tl .seg .grip:hover::after { opacity: 1; }
+  .tl .seg .grip:hover::after { opacity: 1; padding: 9px 2px; }
   .tl .seg.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
   .dragnote { font: 11px var(--mono); color: var(--accent); min-height: 14px; }
 
@@ -484,6 +488,11 @@
     <div id="ruler" class="ruler"></div>
     <div id="tl" class="tl"></div>
     <div class="dragnote" id="dragnote"></div>
+    <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
+    segment's right edge to change that scene's length. Drag a segment itself to
+    reorder. Click the round button between two segments for the transition. The
+    inspector's <em>Length</em> dropdown does the same thing if you prefer
+    typing.</p>
     <div class="total" id="total"></div>
     <ul class="lint" id="lint"></ul>
 
@@ -1036,6 +1045,7 @@ function renderPlan(p) {
     $("tl").appendChild(seg);
   });
   drawRuler(p);
+  $("tlhint").hidden = !SCENES.length;
   // keep the continuity list the same length as the joins
   CONT = CONT.slice(0, Math.max(0, p.chunks.length - 1));
   while (CONT.length < p.chunks.length - 1) CONT.push("carry");
