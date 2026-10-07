@@ -498,6 +498,62 @@ def test_latent_context_node():
           "NODE_CLASS_MAPPINGS" in src, False)
 
 
+def test_ref_sample():
+    """reference_sample: the cast crosses a cut, the motion does not."""
+    print("H3 Chunk Ref Sample fires only where the plan asks")
+
+    class Frames:
+        # indexing returns the INDICES, so a test can assert which frames were
+        # sampled rather than only how many
+        def __init__(self, n):
+            self.shape = (n, 8, 8, 3)
+
+        def __getitem__(self, idx):
+            return list(idx) if isinstance(idx, list) else idx
+
+    RS = chunkrun.NODE_CLASS_MAPPINGS["H3ChunkRefSample"]
+    total = chunkplan.total_for_count(192, 4, 39)
+    ch, _ = chunkplan.plan(total, 192, "fixed", context=39, grow_tail=True,
+                           continuity=["carry", "reference_sample", "cut"])
+    plan = {"chunks": ch}
+
+    counts = [RS().go(plan, i, samples=4, prev_frames=Frames(192))["result"][1]
+              for i in range(4)]
+    check("only the reference_sample chunk samples", counts, [0, 0, 4, 0])
+
+    print("the stills span the WHOLE previous chunk, not its tail")
+    # the tail is the most motion-adjacent part of a chunk, and sampling only
+    # there would reintroduce exactly what a cut is for
+    idx = RS().go(plan, 2, samples=4, prev_frames=Frames(192))["result"][0]
+    # 191/3 = 63.67, so the inner two land on 64 and 127 — not the 128 a
+    # quick guess gives. The expectation was wrong here before the code was.
+    check("four evenly spaced, ends included", idx, [0, 64, 127, 191])
+    check("one still takes the middle",
+          RS().go(plan, 2, samples=1, prev_frames=Frames(192))["result"][0], [96])
+    check("more stills than frames is clamped",
+          RS().go(plan, 2, samples=9, prev_frames=Frames(3))["result"][1], 3)
+
+    print("and it degrades honestly")
+    r = RS().go(plan, 2, samples=4, prev_frames=None)["result"]
+    check("no frames -> no stills", r[1], 0)
+    check("and it says to wire prev_frames", "prev_frames" in r[2], True)
+    r = RS().go(plan, 0, samples=4, prev_frames=None)["result"]
+    check("chunk 1 says nothing precedes it", "nothing precedes" in r[2], True)
+    check("`always` overrides the plan, for testing what stills do",
+          RS().go(plan, 1, samples=2, prev_frames=Frames(192),
+                  always=True)["result"][1], 2)
+
+    # Close remaps links from Open onto Slice BY OUTPUT INDEX, so the two
+    # must stay identical or every clone rewires silently
+    print("Open and Slice still mirror each other, which Close depends on")
+    check("same output names",
+          list(chunkrun.NODE_CLASS_MAPPINGS["H3ChunkOpen"].RETURN_NAMES),
+          list(chunkrun.NODE_CLASS_MAPPINGS["H3ChunkSlice"].RETURN_NAMES))
+    check("prev_frames is LAST on both",
+          chunkrun.NODE_CLASS_MAPPINGS["H3ChunkOpen"].RETURN_NAMES[-1],
+          "prev_frames")
+
+
 def test_audio_join():
     print("audio is cut on the same boundaries as the picture, then joined")
     dp = DynPrompt({
@@ -600,7 +656,7 @@ def main():
                test_context_node,
                test_lazy_images, test_latent_chaining,
                test_latent_context_node, test_audio_join,
-               test_refuses_bad_wiring):
+               test_ref_sample, test_refuses_bad_wiring):
         fn()
     print()
     if FAILED:
@@ -612,3 +668,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

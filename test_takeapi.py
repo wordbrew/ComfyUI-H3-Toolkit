@@ -156,19 +156,26 @@ print("\nasking for wiring the template does not have is an ERROR, not a drop")
 # references held. That is guidance about what a reference should contain, not a
 # ceiling on how many there are -- `ref_images` is an autogrow input with no
 # declared maximum. Loaders are minted and pruned to match the request.
+# The template also wires H3ChunkRefSample into a slot of its own, permanently
+# -- it emits None except at a `reference_sample` join, so it costs nothing on
+# other chunks, but it means the slot count is references PLUS one.
 for _n in (0, 1, 4, 9):
     _g = ta.build(dict(REQ, references=[f"r{_i}.png" for _i in range(_n)]))
     _cond = ta._one(_g, "h3.conditioning")
     _wired = [k for k in _g[_cond]["inputs"] if k.startswith("ref_images.ref_image_")]
     _loaders = [k for k, v in _g.items() if v["class_type"] == "LoadImage"]
-    check(f"{_n} reference(s) wire {_n} slot(s)", len(_wired), _n)
+    _samp = ta._one(_g, "h3.refsample", required=False)
+    check(f"{_n} reference(s) wire {_n} loader slot(s) + the sampler",
+          len(_wired), _n + (1 if _samp else 0))
     check(f"  and exactly {_n} loader(s) survive", len(_loaders), _n)
+    ok(f"  the sampler keeps the slot after them",
+       _g[_cond]["inputs"].get(f"ref_images.ref_image_{_n}") == [_samp, 0])
     ok(f"  no placeholder left at {_n}", ta.placeholders_in(_g) == [])
 _g = ta.build(dict(REQ, references=["a.png", "b.png", "c.png", "d.png", "e.png"]))
 _cond = ta._one(_g, "h3.conditioning")
-check("references are numbered from zero, contiguously",
+check("references are numbered from zero, contiguously (5 + the sampler)",
       sorted(int(k.rsplit("_", 1)[1]) for k in _g[_cond]["inputs"]
-             if k.startswith("ref_images.ref_image_")), [0, 1, 2, 3, 4])
+             if k.startswith("ref_images.ref_image_")), [0, 1, 2, 3, 4, 5])
 raises("two static loras", lambda: ta.build(
     dict(REQ, models=dict(REQ["models"], loras=[{"name": "1"}, {"name": "2"}]))),
     "static LoRA")

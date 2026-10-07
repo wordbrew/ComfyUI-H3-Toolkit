@@ -66,6 +66,9 @@ DOC_ALLOW = {
     "note", "say", "shot", "style", "soundscape", "character", "setting",
     # H3ChunkLora's schedule keywords -- `last` is a chunk reference, not an input
     "last", "end",
+    # the continuity vocabulary: transition names, not input names
+    "reference_sample", "reference_video", "audio_carry", "audio_reference",
+    "handoff", "refresh",
 }
 # inputs whose meaning is carried by their type
 BARE_OK = {"model", "images", "image", "mask", "latent", "audio", "vae", "clip",

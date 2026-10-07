@@ -130,12 +130,15 @@ CONTINUITY = {
                         "why": "the tail has to enter as a reference VIDEO, not "
                                "a pin; motion and appearance are the same tokens "
                                "on a ref video, which is its own measured trap"},
-    "reference_sample":{"pin": 0,          "audio": "fresh", "ok": False,
-                        "what": "a new shot referencing stills from the whole clip",
-                        "why": "needs stills sampled from the finished clip fed "
-                               "back as reference images -- the cheapest of the "
-                               "three to add, and it keeps the cast across a cut "
-                               "WITHOUT carrying motion"},
+    # WIRED. H3ChunkRefSample takes evenly spaced stills from the previous
+    # chunk's decoded output and hands them to a reference slot, firing only
+    # where a plan asks for it. Appearance crosses the cut; motion does not.
+    "reference_sample":{"pin": 0,          "audio": "fresh", "ok": True,
+                        "what": "a new shot referencing stills from the clip "
+                                "before it — the cast crosses the cut, the "
+                                "motion does not",
+                        "needs": "H3 Chunk Ref Sample wired from H3 Chunk Open's "
+                                 "`prev_frames` into a reference slot"},
     "audio_reference": {"pin": 0,          "audio": "carry", "ok": False,
                         "what": "sound continues and the last frames are referenced",
                         "why": "reference_video plus audio_carry"},
