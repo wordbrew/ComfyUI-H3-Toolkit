@@ -476,9 +476,10 @@
     <div style="position:relative">
       <img id="preview" hidden
            style="width:100%;border-radius:var(--r);background:#000;display:block">
-      <p class="hint" id="previewnote">Each chunk appears here as it samples,
-      decoded by core's <code>taeh3</code> previewer. Requested per job, so it
-      needs no launch flag.</p>
+      <p class="hint" id="previewnote">Each chunk appears here as it samples.
+      Requested per job, so it needs no launch flag. Coarse colour — it is
+      core's <code>latent2rgb</code>, because the <code>taeh3</code> decoder
+      path crashes the sampler on ComfyUI 0.39.1.</p>
     </div>
     <div class="total" style="margin-top:6px"><span id="progress"></span></div>
 
@@ -1270,13 +1271,23 @@ async function doRender() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt: graph, client_id: CLIENT_ID,
-        // PER-QUEUE PREVIEW OVERRIDE (core PR #11261): ask for the taesd
-        // previewer on THIS job only, so live preview works without changing
-        // how ComfyUI was launched. `taeh3` is in core's VIDEO_TAES list and
-        // the decoder is already in models/vae_approx, so H3 previews decode
-        // properly rather than falling back to the Latent2RGB smear that
-        // --preview-method auto gives you.
-        extra_data: { preview_method: "taesd" },
+        // PER-QUEUE PREVIEW OVERRIDE (core PR #11261), set to latent2rgb and
+        // NOT taesd.
+        //
+        // taesd LOOKS right -- `taeh3` is in core's VIDEO_TAES list and the
+        // decoder sits in models/vae_approx -- and it CRASHES THE RENDER on
+        // 0.39.1. latent_preview.py:108 builds a VAE from the taeh3 file and
+        // line 109 immediately sets taesd.first_stage_model.show_progress_bar,
+        // which is None for that path:
+        //
+        //   AttributeError: 'NoneType' object has no attribute
+        //   'show_progress_bar'
+        //
+        // It dies in the sampler, so the whole take fails. latent2rgb needs no
+        // decoder, cannot fail, and still streams a frame per step -- coarser
+        // colour, same timing information. Worth revisiting if core fixes that
+        // line.
+        extra_data: { preview_method: "latent2rgb" },
       }),
     });
     const out = await res.json();
