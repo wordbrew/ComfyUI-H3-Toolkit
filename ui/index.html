@@ -892,6 +892,8 @@ function drawSceneLoras() {
 }
 
 function compileSchedule() {
+  // Rows are generated FROM the scene list, so they cannot point past it --
+  // which is the stale-reference the node used to die on and now only skips.
   const lines = ["# built from the scenes — edit them, not this"];
   SCENES.forEach((sc, i) => {
     for (const l of (sc.loras || [])) {

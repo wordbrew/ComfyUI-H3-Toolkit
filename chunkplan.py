@@ -223,15 +223,32 @@ def scene_plan(scenes, context=39, fps=24.0):
         opens = (i == 0) or (name in CUT_LIKE)
         if opens and i:
             shot += 1
+        # THE RUNNER'S OWN SHAPE. H3ChunkOpen / slice_chunk read start, end, run,
+        # length, keep_from, pin, cut, both_clocks and seed_mask, so a scene plan
+        # has to produce those and not a parallel vocabulary -- otherwise the
+        # editor can express a take the runner cannot execute, which is the
+        # state this was in.
+        #
+        #   keep_from  where this chunk's NEW content begins, i.e. everything
+        #              delivered before it
+        #   start      keep_from minus the pin, because the pin is reproduced
+        #   end        start + run
+        keep_from = at
+        start = keep_from - pin
         out.append({
             "index": i, "number": i + 1,
             # which shot this scene belongs to, and whether it STARTS it --
             # the only scenes that may set their own head and tail
             "shot": shot, "opens_shot": opens,
             "frames": frames,                   # what the sampler renders
+            "run": frames, "length": frames,
             "pin": pin,                         # carried in from the scene before
+            "keep_from": keep_from,
+            "cut": bool(opens and i),
+            "part": None,
+            "seed_mask": pin > 0,
             "delivered": delivered,             # what reaches the finished clip
-            "start": at, "end": at + delivered,
+            "start": start, "end": start + frames,
             "start_seconds": round(at / fps, 3),
             "end_seconds": round((at + delivered) / fps, 3),
             "seconds": round(delivered / fps, 3),

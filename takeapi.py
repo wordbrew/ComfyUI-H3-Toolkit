@@ -225,6 +225,17 @@ def build(req, template=None):
         if isinstance(conts, (list, tuple)):
             conts = "\n".join(str(c or "carry") for c in conts)
         _set(graph, "h3.plan", "continuity", str(conts))
+
+    # PER-SCENE LENGTHS, which is what makes the editor's drag-to-resize real.
+    # Without this the graph took one chunk_frames for the whole take and every
+    # scene rendered the same size however the timeline was drawn.
+    if req.get("scenes"):
+        sizes = [int(sc["frames"]) for sc in req["scenes"]
+                 if str(sc.get("frames") or "").strip().isdigit()
+                 or isinstance(sc.get("frames"), int)]
+        if len(sizes) == len(req["scenes"]) and len(set(sizes)) > 1:
+            _set(graph, "h3.plan", "scene_frames",
+                 "\n".join(str(x) for x in sizes))
     if "context" in req:
         # a COMBO on the plan, an INT on Open; both have to agree or the carry
         # the plan describes is not the carry Open hands out

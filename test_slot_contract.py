@@ -86,7 +86,8 @@ CONTRACT = {
         "longform",
         ["chunk_frames", "chunk_mode", "source_images", "chunk_count",
          "scene_threshold", "min_chunk", "render_width", "render_height",
-         "ref_tokens", "context", "cut_frames", "av_aligned", "continuity"],
+         "ref_tokens", "context", "cut_frames", "av_aligned", "continuity",
+         "scene_frames"],
         ["plan", "chunk_count", "info", "total_frames"]),
     "H3LongFormLinks": (
         "prompt_links",

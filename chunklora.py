@@ -401,14 +401,17 @@ class H3ChunkLora:
                     continue
             rows.append((r[1], target,
                          parse_strength(r[2] if len(r) > 2 else "1.0")))
+        # A STALE CHUNK REFERENCE MUST NOT KILL THE RENDER. This used to raise,
+        # on the reasoning that a take rendering without its LoRA and looking
+        # fine is the worse outcome. In practice the opposite: it threw mid-run
+        # and destroyed a whole take over one row, and because the schedule is
+        # now GENERATED from the scene list, a stale reference is a bug in the
+        # generator rather than something the author typed. So: drop the row,
+        # say so loudly in `info`, and let the take finish.
+        stale = []
         if bad_chunks:
-            detail = "; ".join(f"{src!r} names chunk(s) {', '.join(oor)}"
-                               for src, oor in bad_chunks)
-            raise ValueError(
-                f"H3 Chunk LoRA: the plan has {total} chunk(s), but {detail}. "
-                f"Either the plan changed under the schedule or the schedule is "
-                f"wrong — both are worth stopping for, because the alternative "
-                f"is a take that renders without the LoRA and looks fine.")
+            stale = [f"{src!r} names chunk(s) {', '.join(oor)}"
+                     for src, oor in bad_chunks]
         slots = {"lora_1": lora_1, "lora_2": lora_2, "lora_3": lora_3}
         resolved = []
         for name, span, st in rows:
@@ -425,9 +428,17 @@ class H3ChunkLora:
         rows = resolved
 
         if not rows:
-            return {"ui": {"h3char": ["H3 CHUNK LORA — no rows, model passed "
-                                      "through unchanged"]},
-                    "result": (model, "no rows; model unchanged")}
+            # a schedule whose every row was stale still has to SAY so -- this
+            # path used to report "no rows" as though none had been written
+            why = ("H3 CHUNK LORA — no rows, model passed through unchanged"
+                   if not stale else
+                   f"H3 CHUNK LORA — every row SKIPPED, model unchanged.\n"
+                   f"  the plan has {total} chunk(s): " + "; ".join(stale) +
+                   "\n  the take still renders — fix the row or the plan")
+            if stale:
+                logging.warning("H3ChunkLora: all rows stale: %s",
+                                "; ".join(stale))
+            return {"ui": {"h3char": [why]}, "result": (model, why)}
 
         i = max(0, min(int(chunk_index), total - 1))
         spans = chunk_spans(chunks)
@@ -435,6 +446,12 @@ class H3ChunkLora:
 
         lines = [f"H3 CHUNK LORA — chunk {i + 1} of {len(chunks)}, "
                  f"{spans[i][0]:.2f}s to {spans[i][1]:.2f}s on the finished clip"]
+        if stale:
+            lines.append(f"  SKIPPED, the plan has {total} chunk(s): "
+                         + "; ".join(stale))
+            lines.append("  the take still renders — fix the row or the plan")
+            logging.warning("H3ChunkLora: skipped stale row(s): %s",
+                            "; ".join(stale))
         out = model
         for name, strength in hits:
             if abs(strength) < 1e-4:
@@ -564,10 +581,12 @@ class H3ChunkStrength:
             rows.append(("dial", target,
                          parse_strength(r[1] if len(r) > 1 else
                                         str(default_strength))))
-        if bad:
-            raise ValueError("H3 Chunk Strength: " + "; ".join(bad))
+        # Same reasoning as H3ChunkLora: a stale row is reported and dropped,
+        # never thrown, because throwing costs the whole take.
+        stale = list(bad)
         if not rows:
-            info = ("H3 CHUNK STRENGTH: nothing scheduled — off everywhere")
+            info = ("H3 CHUNK STRENGTH: nothing scheduled — off everywhere"
+                    + (("\n  SKIPPED: " + "; ".join(stale)) if stale else ""))
             return {"ui": {"h3char": [info]},
                     "result": (float(off_strength), False, info)}
         if not chunks:
@@ -587,6 +606,8 @@ class H3ChunkStrength:
         strength = float(hits[-1][1])
         lines = [f"H3 CHUNK STRENGTH: chunk {i + 1} of {total} — ON at "
                  f"{strength:.4g}"]
+        if stale:
+            lines.append("  SKIPPED: " + "; ".join(stale))
         if len(hits) > 1:
             lines.append(f"  {len(hits)} rows matched; the last one wins")
         lines.append("  across the take:")

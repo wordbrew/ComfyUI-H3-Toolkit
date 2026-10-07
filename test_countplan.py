@@ -243,9 +243,18 @@ check("a carry overlaps and delivers less",
       [c["pin"] for c in _sp["scenes"]], [0, 39, 0, 0])
 check("so delivered is frames minus the pin",
       [c["delivered"] for c in _sp["scenes"]], [192, 51, 141, 56])
-check("and the timeline is contiguous",
+# TWO DIFFERENT SPANS, and conflating them is how a pin gets lost. `start`/`end`
+# is what the sampler RENDERS, which reaches back over the pin; keep_from is
+# where that chunk's new content begins, and the delivered timeline runs
+# keep_from to keep_from. The runner needs the first; a viewer sees the second.
+check("the RENDER spans reach back over the pin",
       [(c["start"], c["end"]) for c in _sp["scenes"]],
-      [(0, 192), (192, 243), (243, 384), (384, 440)])
+      [(0, 192), (153, 243), (243, 384), (384, 440)])
+check("while the DELIVERED timeline is contiguous",
+      [c["keep_from"] for c in _sp["scenes"]] + [_sp["total_frames"]],
+      [0, 192, 243, 384, 440])
+ok("and every render span is exactly its run",
+   all(c["end"] - c["start"] == c["run"] for c in _sp["scenes"]))
 check("total is the sum of what reaches the clip", _sp["total_frames"], 440)
 check("scene 1 has no transition in", _sp["scenes"][0]["continuity"], None)
 check("audio_carry keeps the sound across its cut",
