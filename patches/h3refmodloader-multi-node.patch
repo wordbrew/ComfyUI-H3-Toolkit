@@ -1,0 +1,191 @@
+diff --git a/__init__.py b/__init__.py
+index d10e76b..3343146 100644
+--- a/__init__.py
++++ b/__init__.py
+@@ -1,7 +1,10 @@
+ # ComfyUI-H3RefModLoader/__init__.py
+-"""Register one basic H3 RefMod node without external custom-node dependencies."""
++"""Register the H3 RefMod nodes without external custom-node dependencies."""
+ from .nodes import H3SimpleRefModLoader
++from .nodes_multi import H3MultiRefModLoader
+ 
+-NODE_CLASS_MAPPINGS = {"H3SimpleRefModLoader": H3SimpleRefModLoader}
+-NODE_DISPLAY_NAME_MAPPINGS = {"H3SimpleRefModLoader": "H3 RefMod Loader (Simple)"}
++NODE_CLASS_MAPPINGS = {"H3SimpleRefModLoader": H3SimpleRefModLoader,
++                       "H3MultiRefModLoader": H3MultiRefModLoader}
++NODE_DISPLAY_NAME_MAPPINGS = {"H3SimpleRefModLoader": "H3 RefMod Loader (Simple)",
++                              "H3MultiRefModLoader": "H3 RefMod Loader (Multi)"}
+ __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+diff --git a/nodes_multi.py b/nodes_multi.py
+new file mode 100755
+index 0000000..ac8aef0
+--- /dev/null
++++ b/nodes_multi.py
+@@ -0,0 +1,167 @@
++# ComfyUI-H3RefModLoader/nodes_multi.py
++"""Load several saved H3 RefMods onto one model line.
++
++WHY THIS EXISTS
++  The Simple loader takes one RefMod and refuses a second, and that refusal is
++  correct: ``continuum_bridge.attach`` calls ``remove_wrappers_with_key`` before
++  installing its own hook, so two chained loaders would not accumulate -- the
++  second would silently discard the first. The guard turns a silent loss into an
++  error.
++
++  But the bridge itself already takes a LIST of blocks, and core already takes a
++  list of reference latents: ``model_base.py`` builds ``cond_video_latents`` and
++  ``cond_audio_latents`` by comprehension over ``minimax_refs``, and the model
++  iterates both. So "one RefMod per model line" was only ever a property of the
++  node. This node passes every block in a single attach call, which is the one
++  shape the bridge supports.
++
++WHAT MULTIPLE MODS DO AND DO NOT BUY YOU
++  Reference blocks are laid out on a shared cursor, and the two kinds cost very
++  different amounts of it (``model.py``, the position builder):
++
++      image   cursor += 1.0                 one slot, whatever its resolution
++      audio   cursor += ref_audio_t         its ENTIRE length in latent steps
++
++  So twenty image refs sit at cursor 0..19 -- compact, individually addressable,
++  which is what makes a pooled "contact sheet" of references work at all. Three
++  ten-second audio refs land at 0-400, 400-800, 800-1200, which is positionally
++  IDENTICAL to one thirty-second file. Loading audio separately therefore does
++  not give the model three distinct examples; it gives it the same timeline with
++  cleaner seams, because each clip is VAE-encoded on its own instead of letting
++  the encoder's temporal receptive field blend across a splice.
++
++  Slot order is coordinate order. The cursor advances in the order blocks are
++  passed, so these slots are not interchangeable.
++
++BUDGET
++  Every reference token rides every sampling step, so the total matters more
++  than any single mod. The node reports the sum and the per-mod split rather
++  than leaving you to add up what the console printed one line at a time.
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++
++import torch
++from comfy.patcher_extension import WrappersMP
++
++from .h3_refmod_vendor import storage, continuum_bridge
++from .nodes import NONE, _validate_latent
++
++MAX_SLOTS = 6
++
++
++def _fingerprint_many(pairs):
++    """Resume identity over the whole stack, in slot order.
++
++    Mirrors the Simple loader's digest so a single-mod stack built here
++    fingerprints differently only by its slot count -- order is part of the
++    identity because the cursor layout depends on it.
++    """
++    digest = hashlib.sha256(b"showrunner-refmods-v1\0multi\0")
++    for mod, strength in pairs:
++        z = mod.latent.detach().cpu().contiguous()
++        meta = {"kind": mod.kind, "shape": list(z.shape), "dtype": str(z.dtype),
++                "strength": strength, "config": getattr(mod, "config", None)}
++        for data in (json.dumps(meta, sort_keys=True, separators=(",", ":"),
++                                allow_nan=False).encode("utf-8"),
++                     z.view(torch.uint8).numpy().tobytes()):
++            digest.update(len(data).to_bytes(8, "little"))
++            digest.update(data)
++    return digest.hexdigest()
++
++
++class H3MultiRefModLoader:
++    CATEGORY = "H3/RefMods"
++    FUNCTION = "apply"
++    RETURN_TYPES = ("MODEL", "STRING")
++    RETURN_NAMES = ("model", "info")
++    DESCRIPTION = ("Load up to six saved MiniMax H3 RefMods onto one model line. "
++                   "Slot order is reference order. Use this instead of chaining "
++                   "Simple loaders, which cannot stack.")
++
++    @classmethod
++    def INPUT_TYPES(cls):
++        names = [NONE] + storage._list_mod_names()
++        optional = {}
++        for i in range(1, MAX_SLOTS + 1):
++            optional[f"refmod_{i}"] = (names, {
++                "default": NONE,
++                "tooltip": f"Reference {i}. Slot order IS coordinate order, so slots "
++                           "are not interchangeable. (none) skips this slot."})
++            optional[f"strength_{i}"] = ("FLOAT", {
++                "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05,
++                "tooltip": "Start at 1. Below 1 blends this reference's detail toward "
++                           "a blurred latent -- not a LoRA weight. 0 skips the slot."})
++        return {"required": {"model": ("MODEL",)}, "optional": optional}
++
++    @classmethod
++    def IS_CHANGED(cls, model, **kw):
++        # Re-read the chosen files even when seeds and widgets are unchanged, as
++        # the Simple loader does: a RefMod can be re-created under its own name.
++        live = any(kw.get(f"refmod_{i}", NONE) != NONE and kw.get(f"strength_{i}", 1.0) != 0
++                   for i in range(1, MAX_SLOTS + 1))
++        return float("nan") if live else False
++
++    def apply(self, model, **kw):
++        required = ("clone", "get_wrappers", "add_wrapper_with_key", "remove_wrappers_with_key")
++        if any(not callable(getattr(model, name, None)) for name in required):
++            raise RuntimeError("H3 Multi RefMod Loader requires ComfyUI's model wrapper API. "
++                               "Connect a MODEL output from a current ComfyUI H3 loader.")
++
++        selected = []
++        for i in range(1, MAX_SLOTS + 1):
++            name = kw.get(f"refmod_{i}", NONE)
++            strength = kw.get(f"strength_{i}", 1.0)
++            if name == NONE or name is None:
++                continue
++            if (isinstance(strength, bool) or not isinstance(strength, (int, float))
++                    or not math.isfinite(strength) or not 0 <= strength <= 1):
++                raise ValueError(f"H3 Multi RefMod Loader: strength_{i} must be a finite "
++                                 "number between 0 and 1.")
++            if strength == 0:
++                continue
++            if not isinstance(name, str) or not name:
++                raise ValueError(f"H3 Multi RefMod Loader: refmod_{i} is not a valid selection.")
++            selected.append((i, name, float(strength)))
++
++        if not selected:
++            return (model, "no RefMods selected; model passed through unchanged")
++
++        if model.get_wrappers(WrappersMP.OUTER_SAMPLE, continuum_bridge.BRIDGE_KEY):
++            raise ValueError("This MODEL already has a RefMod bridge. Put ALL of its RefMods in "
++                             "this one node -- attach() clears the previous hook, so a second "
++                             "loader on the same line would discard the first. Turn Showrunner's "
++                             "native RefMods OFF when feeding it this node.")
++
++        blocks, pairs, lines, total = [], [], [], 0
++        for slot, name, strength in selected:
++            mod = storage._load_mod(name)
++            _validate_latent(mod)
++            block = mod.ref_block(strength, curve=None)
++            if block is None:          # strength <= 0 drops the block entirely
++                continue
++            block["refmod"] = True
++            blocks.append(block)
++            pairs.append((mod, strength))
++            tokens = int(mod.token_count)
++            total += tokens
++            # The cursor cost is the thing a token count does not show: an image
++            # occupies one time slot, audio occupies its whole length.
++            span = (f"{mod.latent_t} steps" if mod.kind == "audio"
++                    else f"{mod.latent_t} frame{'s' if mod.latent_t != 1 else ''}")
++            lines.append(f"  slot {slot}  {mod.name}  [{mod.kind}]  "
++                         f"strength {strength:g}  {tokens} tokens  ({span})")
++
++        if not blocks:
++            return (model, "every selected RefMod resolved to zero strength; model unchanged")
++
++        wrapped = continuum_bridge.attach(model, blocks)
++        wrapped.model_options = dict(wrapped.model_options)
++        wrapped.model_options["h3sr_refmods_v1"] = _fingerprint_many(pairs)
++
++        info = "\n".join([f"{len(blocks)} RefMod(s), {total} reference tokens total"] + lines)
++        print(f"[H3 Multi RefMod Loader] {info}", flush=True)
++        return (wrapped, info)

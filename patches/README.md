@@ -252,3 +252,42 @@ quality -- it runs, and which looks better is CJ's eye.
 The list is still enumerated from the SDK rather than hardcoded, so a level this
 build lacks cannot leave a dead dropdown entry. ULTRA stays the default and the
 original four stay first, so saved workflows keep their value and its meaning.
+
+## h3refmodloader-multi-node.patch -- ComfyUI-H3RefModLoader
+
+Adds `H3MultiRefModLoader`: up to six RefMods on one model line, in one node.
+
+WHY A NEW NODE AND NOT CHAINED LOADERS. `continuum_bridge.attach` calls
+`remove_wrappers_with_key` before installing its own hook, so two chained Simple
+loaders do NOT accumulate -- the second discards the first. The Simple loader's
+refusal to stack is therefore correct, and the fix is not to remove that guard
+but to pass every block in ONE attach call, which is the only shape the bridge
+supports. The guard is kept here, with a message that says where the RefMods
+should go instead.
+
+The capability was always in core: `model_base.py` builds `cond_video_latents`
+and `cond_audio_latents` by comprehension over `minimax_refs`, and the model
+iterates both. "One RefMod per model line" was a property of the node.
+
+WHAT IT DOES NOT DO. Reference blocks share one cursor, and the kinds cost
+different amounts of it:
+
+    image   cursor += 1.0             one slot, whatever the resolution
+    audio   cursor += ref_audio_t     its whole length in latent steps
+
+So twenty image refs sit at cursor 0..19 and are individually addressable --
+that is what makes a pooled contact sheet work. Three ten-second audio refs land
+at 0-400, 400-800, 800-1200, which is positionally IDENTICAL to one thirty-second
+file. Loading audio as separate mods does not give the model separate examples;
+it gives the same timeline with cleaner seams, because each clip is encoded on
+its own instead of letting the VAE blend across a splice. Slot order is
+coordinate order.
+
+Tested by `patches/test_refmod_multi.py` against the real RefMods on disk --
+19 checks, run from the ComfyUI root with its own interpreter:
+
+    cp patches/test_refmod_multi.py <comfy>/_t.py && venv/Scripts/python.exe _t.py
+
+The load-bearing one: a reference already on the conditioning from the ref2va
+node SURVIVES. The bridge appends, so `<Picture 1..3>` are not clobbered, and
+the guider's conds are restored after the call.
