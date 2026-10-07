@@ -150,8 +150,25 @@ check("the plan takes a string", field(g, "h3.plan", "context"), "39")
 check("Open takes an int", field(g, "h3.chunk.open", "context_frames"), 39)
 
 print("\nasking for wiring the template does not have is an ERROR, not a drop")
-raises("a fourth reference", lambda: ta.build(
-    dict(REQ, references=["a.png", "b.png", "c.png", "d.png"])), "reference")
+# REFERENCES ARE NOT CAPPED, and the earlier version of this test asserted a
+# limit that should never have existed: what was measured is that a fourth
+# reference FOR THE LOCATION wrecked subject motion, while three CHARACTER
+# references held. That is guidance about what a reference should contain, not a
+# ceiling on how many there are -- `ref_images` is an autogrow input with no
+# declared maximum. Loaders are minted and pruned to match the request.
+for _n in (0, 1, 4, 9):
+    _g = ta.build(dict(REQ, references=[f"r{_i}.png" for _i in range(_n)]))
+    _cond = ta._one(_g, "h3.conditioning")
+    _wired = [k for k in _g[_cond]["inputs"] if k.startswith("ref_images.ref_image_")]
+    _loaders = [k for k, v in _g.items() if v["class_type"] == "LoadImage"]
+    check(f"{_n} reference(s) wire {_n} slot(s)", len(_wired), _n)
+    check(f"  and exactly {_n} loader(s) survive", len(_loaders), _n)
+    ok(f"  no placeholder left at {_n}", ta.placeholders_in(_g) == [])
+_g = ta.build(dict(REQ, references=["a.png", "b.png", "c.png", "d.png", "e.png"]))
+_cond = ta._one(_g, "h3.conditioning")
+check("references are numbered from zero, contiguously",
+      sorted(int(k.rsplit("_", 1)[1]) for k in _g[_cond]["inputs"]
+             if k.startswith("ref_images.ref_image_")), [0, 1, 2, 3, 4])
 raises("two static loras", lambda: ta.build(
     dict(REQ, models=dict(REQ["models"], loras=[{"name": "1"}, {"name": "2"}]))),
     "static LoRA")
