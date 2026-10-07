@@ -546,8 +546,14 @@ function fill(sel, items, chosen) {
     o.textContent = typeof it === "string" ? it : it.t;
     sel.appendChild(o);
   }
-  if (chosen && items.some(i => (typeof i === "string" ? i : i.v) === chosen))
-    sel.value = chosen;
+  // COMPARE AS STRINGS. A DOM option value is always a string, and these lists
+  // carry `v` as a NUMBER for the frame counts -- so `192 === "192"` was false,
+  // the selection was never applied, and the dropdown fell back to showing its
+  // first option while the value behind it was correct. That looked like "the
+  // dropdown does not update" and was really a type mismatch here.
+  if (chosen === undefined || chosen === null || chosen === "") return;
+  const want = String(chosen);
+  if ([...sel.options].some(o => o.value === want)) sel.value = want;
 }
 
 async function optionsFor(cls, field) {
