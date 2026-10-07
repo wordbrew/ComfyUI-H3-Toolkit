@@ -180,6 +180,52 @@
              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lib .an { font: 11px var(--mono); color: var(--ink-faint); }
   .lib .use { padding: 3px 9px; font-size: 11.5px; }
+
+  /* ASSETS. You are picking a photograph of a face out of ~200 files, so the
+     thumbnail IS the identifier and the filename is the footnote. */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+           gap: 6px; margin-top: 8px; }
+  .tile { position: relative; aspect-ratio: 1; border: 1px solid var(--line);
+          border-radius: var(--r); overflow: hidden; cursor: pointer;
+          background: var(--panel-2); }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tile .cap { position: absolute; inset: auto 0 0 0; background: #000a;
+               color: #fff; font: 9.5px/1.3 var(--mono); padding: 2px 3px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile.sel .cap { background: var(--accent); color: #17140c; }
+
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .slot { aspect-ratio: 3/4; border: 1px dashed var(--line); border-radius: var(--r);
+          display: flex; align-items: center; justify-content: center;
+          position: relative; overflow: hidden; cursor: pointer;
+          color: var(--ink-faint); font-size: 11.5px; text-align: center;
+          background: var(--panel); }
+  .slot:hover { border-color: var(--accent); border-style: solid; }
+  .slot img { position: absolute; inset: 0; width: 100%; height: 100%;
+              object-fit: cover; }
+  .slot .clear { position: absolute; top: 3px; right: 3px; z-index: 2;
+                 padding: 1px 6px; font-size: 11px; line-height: 1.4; }
+
+  /* the picker is a dialog so Escape and the backdrop come for free */
+  dialog.picker { width: min(860px, 94vw); max-height: 86vh; padding: 0;
+                  border: 1px solid var(--line); border-radius: 5px;
+                  background: var(--ground); color: var(--ink); }
+  dialog.picker::backdrop { background: #000b; }
+  dialog.picker .hd { display: flex; gap: 8px; align-items: center;
+                      padding: 10px 12px; border-bottom: 1px solid var(--line);
+                      position: sticky; top: 0; background: var(--panel); z-index: 2; }
+  dialog.picker .bd { padding: 12px; overflow: auto; max-height: calc(86vh - 108px); }
+  dialog.picker .ft { display: flex; gap: 8px; align-items: center;
+                      padding: 10px 12px; border-top: 1px solid var(--line);
+                      background: var(--panel); }
+
+  /* the drop target is the whole dialog body, and it says so when you drag */
+  .dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .dz { border: 1px dashed var(--line); border-radius: var(--r); padding: 14px;
+        text-align: center; color: var(--ink-faint); font-size: 12px;
+        margin-top: 10px; }
+  .dz.dropping { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -262,8 +308,14 @@
           <div><label for="e_voicedesc">Voice description (people)</label>
                <input type="text" id="e_voicedesc" placeholder="low, breathy, unhurried"></div>
         </div>
-        <label for="e_imgs">Anchor images — from ComfyUI's input folder, ctrl-click for several</label>
-        <select id="e_imgs" multiple size="6"></select>
+        <label>Anchor images</label>
+        <select id="e_imgs" multiple hidden></select>
+        <div class="tiles" id="e_tiles"></div>
+        <div class="bar">
+          <button id="e_pick">Choose images…</button>
+          <span class="sub" id="e_picked"></span>
+        </div>
+        <div class="dz" id="e_dz">Drop image files here to upload them</div>
         <p class="hint">Three anchors measurably beat one for identity; a fourth
         reference broke subject motion in testing. Vary angle and lighting —
         near-duplicates spend tokens without adding information.</p>
@@ -318,9 +370,8 @@
         </div>
         <label>References — three held motion in testing; a fourth broke it</label>
         <p class="hint" id="refnote"></p>
-        <div class="row three">
-          <select id="ref0"></select><select id="ref1"></select><select id="ref2"></select>
-        </div>
+        <select id="ref0" hidden></select><select id="ref1" hidden></select><select id="ref2" hidden></select>
+        <div class="slots" id="refslots"></div>
         <label for="sched">Per-chunk LoRA schedule</label>
         <textarea id="sched" rows="3" placeholder="last | h3/some_lora.safetensors | 1.0"></textarea>
         <p class="hint">A colon means time, no colon means chunks: <code>2</code>, <code>2-4</code>, <code>2,5</code>, <code>2+</code>, <code>last</code>. A range like <code>2-4 | file | 0.4-0.9</code> ramps across them.</p>
@@ -342,6 +393,24 @@
     <div id="jobs"></div>
   </section>
 </main>
+
+<dialog class="picker" id="pick">
+  <div class="hd">
+    <strong id="pick_title">Choose images</strong>
+    <input type="text" id="pick_q" placeholder="filter by name…" style="flex:1">
+    <select id="pick_folder" style="width:auto"></select>
+    <button id="pick_close">Close</button>
+  </div>
+  <div class="bd" id="pick_body"><div class="tiles" id="pick_tiles"></div></div>
+  <div class="ft">
+    <span class="sub" id="pick_count"></span>
+    <label for="pick_sub" style="margin:0">Upload into</label>
+    <input type="text" id="pick_sub" placeholder="(input root) or a project name" style="width:200px">
+    <button id="pick_upload">Upload files…</button>
+    <input type="file" id="pick_file" accept="image/*" multiple hidden>
+    <button class="go" id="pick_ok" style="margin-left:auto">Use selection</button>
+  </div>
+</dialog>
 
 <script>
 const API = "/h3_toolkit";
@@ -418,6 +487,7 @@ function restore() {
   }
   if (s.theme) document.documentElement.dataset.theme = s.theme;
   if (Array.isArray(s.cast)) CAST = s.cast;
+  if (typeof drawRefSlots === "function") drawRefSlots();
 }
 
 /* -------------------------------------------------------------------- plan */
@@ -582,6 +652,118 @@ function refreshCast() {
   }, 250);
 }
 
+/* ------------------------------------------------------------------ assets
+   A thumbnail IS the identifier when what you are choosing is a photograph of a
+   person; the filename is the footnote. ComfyUI's /view already serves input
+   files, so this costs one <img> per asset and no new endpoint. Subfolders are
+   the bins -- /upload/image takes a `subfolder` and creates it -- so there is no
+   project metadata layer to invent.  */
+let ASSETS = [];                 // "name.png" or "project/name.png", from core
+
+/* PREVIEW, NOT THE ORIGINAL. /view hands back the source file unless asked
+   otherwise, and these are 2.2 MB PNGs -- 196 of them in a grid of 84px tiles
+   is ~440 MB of downloads to draw thumbnails. `preview=webp;40` re-encodes to
+   ~38 KB, which is 15-60x smaller and indistinguishable at tile size. Core
+   re-encodes without resizing, so quality is the only lever there is. */
+function assetURL(path, quality = 40) {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const sub = i < 0 ? "" : path.slice(0, i);
+  const file = i < 0 ? path : path.slice(i + 1);
+  return `/view?filename=${encodeURIComponent(file)}` +
+         `&subfolder=${encodeURIComponent(sub)}&type=input` +
+         `&preview=webp%3B${quality}`;
+}
+function folderOf(path) {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i < 0 ? "" : path.slice(0, i);
+}
+
+async function loadAssets() {
+  ASSETS = await optionsFor("LoadImage", "image");
+  const folders = [...new Set(ASSETS.map(folderOf))].sort();
+  fill($("pick_folder"), [{ v: "", t: `all (${ASSETS.length})` }].concat(
+    folders.filter(Boolean).map(f => ({ v: f, t: f }))));
+}
+
+/* The picker is one dialog serving two jobs: many anchors, or one reference. */
+let pickState = null;            // {multi, chosen:Set, done(paths)}
+
+function openPicker({ title, multi, chosen = [], done }) {
+  pickState = { multi, chosen: new Set(chosen), done };
+  $("pick_title").textContent = title;
+  $("pick_q").value = "";
+  drawPicker();
+  $("pick").showModal();
+}
+function drawPicker() {
+  const q = $("pick_q").value.trim().toLowerCase();
+  const folder = $("pick_folder").value;
+  const host = $("pick_tiles");
+  host.innerHTML = "";
+  const shown = ASSETS.filter(a =>
+    (!folder || folderOf(a) === folder) && (!q || a.toLowerCase().includes(q)));
+  if (!shown.length) {
+    host.innerHTML = `<p class="hint">Nothing matches. Upload files below.</p>`;
+  }
+  for (const a of shown.slice(0, 400)) {
+    const el = document.createElement("div");
+    el.className = "tile" + (pickState.chosen.has(a) ? " sel" : "");
+    el.innerHTML = `<img loading="lazy" src="${assetURL(a)}" alt="">` +
+                   `<span class="cap">${escapeHTML(a.split(/[\\/]/).pop())}</span>`;
+    el.onclick = () => {
+      if (pickState.multi) {
+        pickState.chosen.has(a) ? pickState.chosen.delete(a) : pickState.chosen.add(a);
+      } else {
+        pickState.chosen = new Set([a]);
+      }
+      drawPicker();
+    };
+    host.appendChild(el);
+  }
+  $("pick_count").textContent = pickState.multi
+    ? `${pickState.chosen.size} selected · ${shown.length} shown`
+    : `${shown.length} shown`;
+}
+
+async function uploadFiles(files, subfolder) {
+  let ok = 0, failed = [];
+  for (const f of files) {
+    const fd = new FormData();
+    fd.append("image", f, f.name);
+    fd.append("type", "input");
+    if (subfolder) fd.append("subfolder", subfolder);
+    fd.append("overwrite", "false");
+    try {
+      // core's own endpoint, which also CREATES the subfolder
+      const r = await fetch("/upload/image", { method: "POST", body: fd });
+      if (!r.ok) { failed.push(f.name); continue; }
+      const out = await r.json();
+      const path = out.subfolder ? `${out.subfolder}/${out.name}` : out.name;
+      if (!ASSETS.includes(path)) ASSETS.unshift(path);
+      if (pickState) pickState.chosen.add(path);
+      ok++;
+    } catch { failed.push(f.name); }
+  }
+  const folders = [...new Set(ASSETS.map(folderOf))].sort();
+  const keep = $("pick_folder").value;
+  fill($("pick_folder"), [{ v: "", t: `all (${ASSETS.length})` }].concat(
+    folders.filter(Boolean).map(f => ({ v: f, t: f }))), keep);
+  if (pickState) drawPicker();
+  return { ok, failed };
+}
+
+/* Drag and drop, on the picker body and on the editor's own zone. */
+function dropzone(el, onFiles) {
+  const stop = e => { e.preventDefault(); e.stopPropagation(); };
+  el.addEventListener("dragover", e => { stop(e); el.classList.add("dropping"); });
+  el.addEventListener("dragleave", e => { stop(e); el.classList.remove("dropping"); });
+  el.addEventListener("drop", async e => {
+    stop(e); el.classList.remove("dropping");
+    const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith("image/"));
+    if (files.length) await onFiles(files);
+  });
+}
+
 /* ----------------------------------------------------------------- library
    People, places and things, saved once and reused. The kind is not cosmetic:
    it decides the retention wording, and a saved PLACE used to come back asking
@@ -634,7 +816,7 @@ function openEditor(s) {
   $("e_desc").value = (s && s.description) || "";
   $("e_ret").value = (s && s.retention) || "fully_preserved";
   $("e_voicedesc").value = (s && s.voice) || "";
-  for (const o of $("e_imgs").options) o.selected = false;
+  setAnchorPaths([]);
   $("e_voice").value = "";
   $("e_msg").textContent = s
     ? `${s.anchors || 0} anchor(s) stored. Re-pick images to replace them; saving with none clears them.`
@@ -646,7 +828,7 @@ function openEditor(s) {
 async function saveSubject() {
   const name = $("e_name").value.trim();
   if (!name) { $("e_msg").textContent = "a name is required"; return; }
-  const imgs = [...$("e_imgs").selectedOptions].map(o => o.value);
+  const imgs = anchorPaths();
   const body = {
     name, kind: $("e_kind").value, description: $("e_desc").value,
     retention: $("e_ret").value, voice_description: $("e_voicedesc").value,
@@ -671,6 +853,60 @@ async function deleteSubject() {
   if (!r.ok) { $("e_msg").textContent = r.error || "delete failed"; return; }
   $("editor").open = false;
   await loadLibrary();
+}
+
+/* The hidden <select>s remain the source of truth so save(), restore() and
+   request() keep working exactly as before; the visuals only drive them. */
+function anchorPaths() { return [...$("e_imgs").selectedOptions].map(o => o.value); }
+function setAnchorPaths(paths) {
+  const sel = $("e_imgs");
+  sel.innerHTML = "";
+  for (const p of paths) {
+    const o = document.createElement("option");
+    o.value = p; o.textContent = p; o.selected = true;
+    sel.appendChild(o);
+  }
+  drawAnchorTiles();
+}
+function drawAnchorTiles() {
+  const paths = anchorPaths();
+  $("e_tiles").innerHTML = paths.map(p =>
+    `<div class="tile"><img src="${assetURL(p)}" alt="">` +
+    `<span class="cap">${escapeHTML(p.split(/[\\/]/).pop())}</span></div>`).join("");
+  $("e_picked").textContent = paths.length
+    ? `${paths.length} anchor${paths.length === 1 ? "" : "s"}`
+    : "none chosen — saving with none clears the stored anchors";
+}
+
+function drawRefSlots() {
+  const host = $("refslots");
+  host.innerHTML = "";
+  ["ref0", "ref1", "ref2"].forEach((id, i) => {
+    const v = $(id).value;
+    const el = document.createElement("div");
+    el.className = "slot";
+    el.innerHTML = v
+      ? `<img src="${assetURL(v, 75)}" alt=""><button class="clear">✕</button>`
+      : `Reference ${i + 1}<br>click to choose`;
+    el.onclick = () => openPicker({
+      title: `Reference ${i + 1}`, multi: false, chosen: v ? [v] : [],
+      done: paths => { setRef(id, paths[0] || ""); },
+    });
+    const x = el.querySelector(".clear");
+    if (x) x.onclick = e => { e.stopPropagation(); setRef(id, ""); };
+    host.appendChild(el);
+  });
+}
+function setRef(id, path) {
+  const sel = $(id);
+  if (path && ![...sel.options].some(o => o.value === path)) {
+    const o = document.createElement("option");
+    o.value = path; o.textContent = path;
+    sel.appendChild(o);
+  }
+  sel.value = path;
+  drawRefSlots();
+  save();
 }
 
 /* ------------------------------------------------------------------ render */
@@ -807,8 +1043,46 @@ async function poll(id) {
   fill($("lora"), ["(none)"].concat(rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
   for (const i of ["ref0", "ref1", "ref2"]) fill($(i), [""].concat(images));
 
-  fill($("e_imgs"), images);
+  await loadAssets();
   fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
+  drawRefSlots();
+  drawAnchorTiles();
+
+  $("e_pick").onclick = () => openPicker({
+    title: "Anchor images", multi: true, chosen: anchorPaths(),
+    done: setAnchorPaths,
+  });
+  $("pick_ok").onclick = () => {
+    const chosen = [...pickState.chosen];
+    $("pick").close();
+    pickState.done(chosen);
+    pickState = null;
+  };
+  $("pick_close").onclick = () => { $("pick").close(); pickState = null; };
+  $("pick_q").addEventListener("input", drawPicker);
+  $("pick_folder").addEventListener("change", drawPicker);
+  $("pick_file").addEventListener("change", async e => {
+    const r = await uploadFiles([...e.target.files], $("pick_sub").value.trim());
+    $("pick_count").textContent = `uploaded ${r.ok}` +
+      (r.failed.length ? `, failed: ${r.failed.join(", ")}` : "");
+    e.target.value = "";
+  });
+  $("pick_upload").onclick = () => $("pick_file").click();
+  dropzone($("pick_body"), async files => {
+    const r = await uploadFiles(files, $("pick_sub").value.trim());
+    $("pick_count").textContent = `uploaded ${r.ok}` +
+      (r.failed.length ? `, failed: ${r.failed.join(", ")}` : "");
+  });
+  // dropping straight onto the editor uploads AND selects, no dialog needed
+  dropzone($("e_dz"), async files => {
+    $("e_dz").textContent = `uploading ${files.length}…`;
+    const r = await uploadFiles(files, "");
+    setAnchorPaths(anchorPaths().concat(
+      ASSETS.filter(a => files.some(f => a.endsWith(f.name)))));
+    $("e_dz").textContent = r.failed.length
+      ? `uploaded ${r.ok}, failed: ${r.failed.join(", ")}`
+      : "Drop image files here to upload them";
+  });
   await loadLibrary();
   if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
   $("newsubj").onclick = () => openEditor(null);
