@@ -468,6 +468,11 @@
     <p class="hint">An instrument someone in the scene is playing is diegetic and
     belongs in the beat, not here — put it here and the model lays an unrelated
     backing track underneath.</p>
+    <p class="hint" id="soundwarn" hidden style="color:var(--bad)">Both fields
+    are empty, which asks the model for SILENCE. H3 generates audio in the same
+    pass as the picture, so with nothing described here the take comes back
+    quiet. Describe the room: close tone, what is audible through the wall,
+    breath near the microphone.</p>
   </section>
 
   <section class="col">
@@ -898,6 +903,12 @@ function drawSceneLoras() {
     };
     host.appendChild(el);
   });
+}
+
+function checkSound() {
+  const quiet = !$("sound").value.trim() &&
+                (!$("music").value.trim() || $("music").value.trim() === "N/A");
+  $("soundwarn").hidden = !quiet;
 }
 
 function compileSchedule() {
@@ -1898,6 +1909,9 @@ function wireControls() {
     if (!SCENES[SEL]) return;
     SCENES[SEL].continuity = $("i_cont").value;
   });
+  for (const id of ["sound", "music"]) {
+    $(id).addEventListener("input", checkSound);
+  }
   for (const [id, key] of [["i_head", "head"], ["i_tail", "tail"]]) {
     $(id).addEventListener("input", () => {
       if (!SCENES[SEL]) return;
@@ -1982,6 +1996,7 @@ function wireControls() {
   drawScenes();
   drawCast();
   compileSchedule();
+  checkSound();
 
   // ---- AND THE LOADING, WHICH MAY FAIL VISIBLY ------------------------- //
   try {

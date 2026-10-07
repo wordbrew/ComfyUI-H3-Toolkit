@@ -354,24 +354,41 @@ class H3LongFormLinks:
 
         body = f"{h} {clause} {t}".strip()
         defs, rets = subject_def_1.strip(), retention_1.strip()
+        # THE SOUND SECTIONS DO NOT DEPEND ON HAVING A SUBJECT. They used to:
+        # without a subject_definition this emitted the bare three-field form and
+        # DROPPED overall_soundscape entirely, so a take with no cast got no
+        # audio direction at all and came back silent. A landscape with wind has
+        # a soundscape and no subject; the two are unrelated.
+        sound = ""
+        if soundscape.strip() or music.strip():
+            sound = ("\n\noverall_soundscape: " + (soundscape.strip() or "N/A") +
+                     "\n\nnon_diegetic_music: " + (music.strip() or "N/A"))
         if defs:
             prompt = ("subject_definitions:\n" + defs + "\n\n"
                       "summary:\n"
                       f"[{task_type}] A single continuous take, link {idx + 1} of "
                       f"{len(clauses)}, using the listed references for identity.\n\n"
                       "retention_analysis:\n" + (rets or "N/A") + "\n\n"
-                      "detailed_description:\n" + body + "\n\n"
-                      "overall_soundscape: " + (soundscape.strip() or "N/A") +
-                      "\n\nnon_diegetic_music: " + (music.strip() or "N/A"))
+                      "detailed_description:\n" + body +
+                      (sound or "\n\noverall_soundscape: N/A"
+                                "\n\nnon_diegetic_music: N/A"))
+        elif sound:
+            # no cast, but the author described the room -- keep the labelled
+            # form so the sections are where the model expects them
+            prompt = "detailed_description:\n" + body + sound
         else:
             prompt = body
 
         # --- guidance, checked per part so the message points at the right box
         notes = []
-        if defs and not soundscape.strip() and not music.strip():
+        if not soundscape.strip() and not music.strip():
+            # fires with or without a cast now: the old condition meant a take
+            # with no subject was never warned that it had asked for silence
             notes.append("WARN audio: overall_soundscape and non_diegetic_music "
-                         "are both N/A, which asks for SILENCE. If you are "
-                         "decoding the audio, describe the room here.")
+                         "are both empty, which asks for SILENCE. If you are "
+                         "decoding the audio, describe the room here — close "
+                         "room tone, what is audible through the wall, breath "
+                         "near the microphone.")
         if _mismatch:
             notes.append(_mismatch)
         if chunks and len(chunks) != len(clauses):
