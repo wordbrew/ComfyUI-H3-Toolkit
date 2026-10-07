@@ -339,3 +339,12 @@ def set_references(graph, names):
     # that is a REPLACE_ME placeholder that fails validation for no good reason.
     for nid in loaders[len(names):]:
         graph.pop(nid, None)
+
+    # THE REFERENCE SAMPLER KEEPS A SLOT, after the request's own references.
+    # Clearing every ref_image_* above orphaned it -- the node stayed in the
+    # graph, executed, and fed nothing. It emits None except at a
+    # `reference_sample` join, so holding a slot permanently costs nothing on
+    # any other chunk.
+    sampler = _one(graph, "h3.refsample", required=False)
+    if sampler is not None:
+        ins[f"ref_images.ref_image_{len(names)}"] = [sampler, 0]

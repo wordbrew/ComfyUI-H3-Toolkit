@@ -300,6 +300,10 @@
       "ref_images.ref_image_2": [
         "153",
         0
+      ],
+      "ref_images.ref_image_3": [
+        "163",
+        0
       ]
     },
     "class_type": "MiniMaxH3ReferenceToVideo",
@@ -439,6 +443,28 @@
     "class_type": "H3ChunkLora",
     "_meta": {
       "title": "h3.lora.schedule"
+    }
+  },
+  "163": {
+    "class_type": "H3ChunkRefSample",
+    "inputs": {
+      "plan": [
+        "156",
+        0
+      ],
+      "chunk_index": [
+        "157",
+        4
+      ],
+      "prev_frames": [
+        "157",
+        14
+      ],
+      "samples": 4,
+      "always": false
+    },
+    "_meta": {
+      "title": "h3.refsample"
     }
   }
 }

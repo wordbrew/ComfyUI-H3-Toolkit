@@ -332,10 +332,10 @@ class H3ChunkOpen:
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
                     "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT",
-                    "MASK")
+                    "MASK", "IMAGE")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
                     "flow", "info", "chunk_count", "keyframe", "context",
-                    "extra", "pin", "prev_latent", "prev_mask")
+                    "extra", "pin", "prev_latent", "prev_mask", "prev_frames")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     EXPERIMENTAL = True
@@ -370,7 +370,10 @@ class H3ChunkOpen:
         # prev_latent and prev_mask are None on Open by definition: it stands in
         # for chunk 0, and chunk 0 has nothing before it. Close fills them in
         # for the clones.
-        return out[:6] + (out[6] + note,) + out[7:] + (None, None)
+        # prev_frames joins prev_latent and prev_mask as None here, and for the
+        # same reason: Open stands in for the first chunk that runs, and nothing
+        # precedes it. Close fills all three in for the clones.
+        return out[:6] + (out[6] + note,) + out[7:] + (None, None, None)
 
 
 class H3ChunkClose:
@@ -709,10 +712,10 @@ class H3ChunkSlice:
     # output goes on the end or every existing link silently shifts
     RETURN_TYPES = ("IMAGE", "MASK", "AUDIO", "INT", "INT", "H3_CHUNK_FLOW",
                     "STRING", "INT", "IMAGE", "IMAGE", "IMAGE", "INT", "LATENT",
-                    "MASK")
+                    "MASK", "IMAGE")
     RETURN_NAMES = ("images", "mask", "audio", "length", "chunk_index",
                     "flow", "info", "chunk_count", "keyframe", "context",
-                    "extra", "pin", "prev_latent", "prev_mask")
+                    "extra", "pin", "prev_latent", "prev_mask", "prev_frames")
     FUNCTION = "go"
     CATEGORY = CATEGORY
     DEPRECATED = True          # keeps it out of the node menu
@@ -741,9 +744,13 @@ class H3ChunkSlice:
             off = int(chunks[i]["start"]) - int(chunks[i - 1]["start"])
             off = max(0, min(off, int(prev_mask.shape[0]) - 1))
             seed = prev_mask[off:off + 1]
+        # prev_frames is handed on RAW -- slice_chunk deliberately refuses to
+        # use it across a cut, and `reference_sample` is a cut that still wants
+        # stills from it. Keeping it separate means that choice stays with the
+        # node that needs it.
         return slice_chunk(plan, chunk_index, source_images, mask, source_audio,
                            prev_images, context_frames,
-                           extra_images) + (prev_latent, seed)
+                           extra_images) + (prev_latent, seed, prev_images)
 
 
 class H3ChunkContext:
@@ -949,7 +956,121 @@ class H3ChunkLatentContext:
         return {"ui": {"h3char": [info]}, "result": (new_latent, int(trim), info)}
 
 
+class H3ChunkRefSample:
+    """Stills from the previous chunk, as references for a chunk that CUT.
+
+    WHAT IT IS FOR
+      `reference_sample` in the continuity vocabulary: keep the cast across a
+      cut WITHOUT carrying motion. A pin carries both -- the appearance and the
+      movement -- and across a cut the movement is exactly what you do not
+      want. A set of stills carries only appearance, which is the half worth
+      keeping when the shot changes.
+
+      This is the tension in the set-reference finding from the other side. A
+      reference for the LOCATION wrecked subject motion; references of the
+      SUBJECT held it. These are subject stills, pulled from footage that
+      already exists, so the character cannot drift at the cut and nothing
+      about the previous camera move comes with them.
+
+    WHERE THE STILLS COME FROM
+      The previous chunk's DECODED output, on `prev_frames` -- which Open emits
+      as None and Close fills in per clone. Not the context tail: the tail is
+      the frames nearest the join and therefore the most motion-adjacent, and
+      sampling only from it would reintroduce what a cut is for. Evenly spaced
+      across the whole of the previous chunk instead.
+
+      WAS Node Suite's equivalent samples the whole clip so far and takes four.
+      Only the previous chunk reaches a clone here, so that is what this uses --
+      an honest approximation, and `info` says so.
+
+    IT ONLY FIRES AT A reference_sample JOIN
+      Every other chunk gets None, so the slot it feeds simply has no reference
+      that chunk. Wire it to a reference slot on the conditioning node and leave
+      it; the plan decides when it does anything.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "plan": ("H3_CHUNK_PLAN", {"tooltip": "From H3 Chunk Plan. The "
+                     "plan's continuity decides whether this chunk samples at "
+                     "all — only a `reference_sample` join does."}),
+            "chunk_index": ("INT", {"default": 0, "min": 0, "max": 4096,
+                            "forceInput": True,
+                            "tooltip": "From H3 Chunk Open, which is also what "
+                                       "puts this node inside the per-chunk "
+                                       "body."}),
+            "samples": ("INT", {"default": 4, "min": 1, "max": 9,
+                        "tooltip": "How many stills to take. Four is what WAS "
+                                   "Node Suite's equivalent uses. They are "
+                                   "reference tokens like any other and ride "
+                                   "every step, so more is not free."}),
+        }, "optional": {
+            "prev_frames": ("IMAGE", {"tooltip": "The previous chunk's decoded "
+                            "output, from H3 Chunk Open's `prev_frames`. None "
+                            "on the first chunk, which has nothing behind it."}),
+            "always": ("BOOLEAN", {"default": False,
+                       "tooltip": "Sample on EVERY chunk, not only at a "
+                                  "`reference_sample` join. For testing what "
+                                  "the stills do; a continuous take already "
+                                  "carries appearance through its pin, so this "
+                                  "spends reference tokens on something the "
+                                  "carry is already doing."}),
+        }}
+
+    RETURN_TYPES = ("IMAGE", "INT", "STRING")
+    RETURN_NAMES = ("images", "count", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    EXPERIMENTAL = True
+    DESCRIPTION = ("Stills from the previous chunk as references, for a cut that "
+                   "should keep the cast without carrying the motion. Fires only "
+                   "where the plan says `reference_sample`.")
+
+    def go(self, plan, chunk_index, samples=4, prev_frames=None, always=False):
+        chunks = ((plan or {}).get("chunks")) or []
+        i = max(0, min(int(chunk_index), max(0, len(chunks) - 1)))
+        here = (chunks[i].get("continuity") if i < len(chunks) else None)
+        wanted = always or here == "reference_sample"
+
+        if not wanted:
+            why = (f"chunk {i + 1} is {here!r}" if here else
+                   "chunk 1 — nothing precedes it")
+            info = (f"H3 CHUNK REF SAMPLE: no stills ({why}). The reference "
+                    f"slot this feeds is simply empty for this chunk.")
+            return {"ui": {"h3char": [info]}, "result": (None, 0, info)}
+        if prev_frames is None or int(prev_frames.shape[0]) == 0:
+            info = ("H3 CHUNK REF SAMPLE: this chunk asks for "
+                    "`reference_sample` but prev_frames is empty — on chunk 1 "
+                    "that is expected; anywhere else, wire H3 Chunk Open's "
+                    "`prev_frames` here.")
+            logging.info("H3ChunkRefSample: %s", info)
+            return {"ui": {"h3char": [info]}, "result": (None, 0, info)}
+
+        avail = int(prev_frames.shape[0])
+        want = max(1, min(int(samples), avail))
+        # EVENLY SPACED, ends included. A linspace over the whole chunk rather
+        # than the tail: the point is appearance without the motion that led
+        # into the join.
+        if want == 1:
+            idx = [avail // 2]
+        else:
+            step = (avail - 1) / (want - 1)
+            idx = sorted({int(round(k * step)) for k in range(want)})
+        out = prev_frames[idx]
+        at = ", ".join(f"{k / 24.0:.2f}s" for k in idx)
+        info = (f"H3 CHUNK REF SAMPLE: {len(idx)} still(s) from the previous "
+                f"chunk's {avail} frames, at {at} into it, as references for "
+                f"chunk {i + 1}.\n"
+                f"  the cast crosses the cut; the motion does not\n"
+                f"  only the PREVIOUS chunk reaches a clone, so this samples it "
+                f"rather than the whole take")
+        logging.info("H3ChunkRefSample: chunk %d <- %d still(s)", i + 1, len(idx))
+        return {"ui": {"h3char": [info]}, "result": (out, len(idx), info)}
+
+
 NODE_CLASS_MAPPINGS = {"H3ChunkOpen": H3ChunkOpen, "H3ChunkClose": H3ChunkClose,
+                       "H3ChunkRefSample": H3ChunkRefSample,
                        "H3ChunkSlice": H3ChunkSlice,
                        "H3ChunkContext": H3ChunkContext,
                        "H3ChunkLatentContext": H3ChunkLatentContext}
@@ -958,4 +1079,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {"H3ChunkOpen": "H3 Chunk Open",
                               "H3ChunkSlice": "H3 Chunk Slice (internal)",
                               "H3ChunkContext": "H3 Chunk Context (carry the seam)",
                               "H3ChunkLatentContext":
-                                  "H3 Chunk Latent Context (chain generated chunks)"}
+                                  "H3 Chunk Latent Context (chain generated chunks)",
+                              "H3ChunkRefSample":
+                                  "H3 Chunk Ref Sample (keep the cast across a cut)"}

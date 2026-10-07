@@ -158,10 +158,19 @@ check("pins follow the transitions", [c["pin"] for c in _ch], [0, 39, 0, 0])
 check("and so does the soundtrack",
       [c["carry_audio"] for c in _ch], [False, True, False, True])
 check("chunk 1 has no transition into it", _ch[0]["continuity"], None)
+# reference_sample is WIRED now (H3ChunkRefSample), so it is no longer the
+# example of an unnamed-but-unbuilt kind. `refresh` still is: it needs a
+# fractional denoise mask on the carried rows, which 0.35+ turns into rows that
+# never finish denoising.
 _ch2, _info2 = cp.plan(_t, 192, "fixed", context=39, grow_tail=True,
-                       continuity=["reference_sample"])
+                       continuity=["refresh"])
 ok("an unwired kind is reported, not silently swapped",
    any("NOT WIRED" in n for n in _info2["notes"]))
+_ch3b, _info3b = cp.plan(_t, 192, "fixed", context=39, grow_tail=True,
+                         continuity=["reference_sample"])
+ok("reference_sample no longer warns, because it is wired",
+   not any("NOT WIRED" in n for n in _info3b["notes"]))
+check("and it plans as a cut for the picture", _ch3b[1]["pin"], 0)
 _ch3, _ = cp.plan(_t, 192, "fixed", context=39, grow_tail=True)
 check("no continuity at all behaves exactly as before",
       [c["pin"] for c in _ch3], [0, 39, 39, 39])
