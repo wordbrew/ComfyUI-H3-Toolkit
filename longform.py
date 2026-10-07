@@ -616,6 +616,26 @@ class H3ChunkPlan:
                                        "duration matters more than exact audio, "
                                        "and silently moving a chosen chunk size "
                                        "is worse than reporting it."}),
+            "continuity": ("STRING", {"default": "", "multiline": True,
+                           "tooltip": "How each chunk FOLLOWS the one before — "
+                                      "one per line, or comma separated, and the "
+                                      "first line is the transition into chunk "
+                                      "2. Empty means `carry` throughout, which "
+                                      "is what this planner always did.\n\n"
+                                      "carry — the shot goes on from its last "
+                                      "frames (the pin)\n"
+                                      "cut — a new scene, nothing carried\n"
+                                      "handoff — a new shot opening ON the last "
+                                      "frame\n"
+                                      "audio_carry — the PICTURE cuts and the "
+                                      "sound continues, which generated audio "
+                                      "otherwise restarts at every link\n\n"
+                                      "refresh, reference_video, "
+                                      "reference_sample and audio_reference are "
+                                      "named but NOT WIRED — a plan may ask for "
+                                      "them and `info` says plainly what it did "
+                                      "instead. Vocabulary adopted from WAS Node "
+                                      "Suite's H3 Conditioning (MIT)."}),
         }}
 
     # total_frames appended LAST: saved graphs store output slots by index
@@ -628,7 +648,8 @@ class H3ChunkPlan:
 
     def go(self, chunk_frames, chunk_mode, source_images=None, chunk_count=4,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
-           ref_tokens=0, context="39", cut_frames="", av_aligned=False):
+           ref_tokens=0, context="39", cut_frames="", av_aligned=False,
+           continuity=""):
         chunk_frames = int(chunk_frames)
         av_note = ""
         if av_aligned and not is_av_aligned(chunk_frames):
@@ -696,9 +717,14 @@ class H3ChunkPlan:
         # sample boundaries. Same trigger, different reason: kept as two flags so
         # the reason stays visible.
         fresh = source_images is None
+        # one per line, or comma separated -- whichever the author finds natural
+        conts = [c.strip() for c in
+                 str(continuity or "").replace(",", "\n").splitlines()
+                 if c.strip()] or None
         chunks, info = build_plan(n, int(chunk_frames), chunk_mode, cuts=cuts,
                                   min_chunk=int(min_chunk), context=int(context),
-                                  grow_tail=fresh, generated_audio=fresh)
+                                  grow_tail=fresh, generated_audio=fresh,
+                                  continuity=conts)
         # A V2V pass already knows its render size — it is the size of the clip
         # in hand, [T, H, W, C] — so asking for it again is a second copy that
         # can only be stale. Nobody filled the widgets in, so the token and
