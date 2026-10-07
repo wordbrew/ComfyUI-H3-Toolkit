@@ -358,6 +358,18 @@
       </div>
       <p class="hint" id="i_contwhat"></p>
       <input type="number" id="i_seed" value="0" hidden>
+      <div id="i_shotbox">
+        <label for="i_head">This shot's setting — subject, wardrobe, room, light, camera</label>
+        <textarea id="i_head" rows="3" placeholder="leave empty to use the take's Head"></textarea>
+        <label for="i_tail">This shot's closing direction</label>
+        <textarea id="i_tail" rows="2" placeholder="leave empty to use the take's Tail"></textarea>
+        <p class="hint">Repeated byte-identically into every scene of this shot.
+        Varying it <em>within</em> a shot dragged wardrobe and set description
+        along with whatever was being changed, so only a scene that starts a shot
+        can set it — the others inherit.</p>
+      </div>
+      <p class="hint" id="i_inherits" hidden></p>
+
       <label style="margin-top:10px">LoRAs for this scene only</label>
       <div id="i_loras"></div>
       <div class="bar"><button id="i_addlora">+ LoRA</button>
@@ -767,13 +779,32 @@ function drawScenes() {
       `${i ? (GLYPH[sc.continuity] || "→") : "▶"}</span>` +
       `<span class="tx${sc.beat ? "" : " empty"}">` +
       (sc.beat ? escapeHTML(sc.beat) : "nothing written yet") + `</span>` +
-      `<span class="du">${(sc.frames / 24).toFixed(2)}s</span>`;
+      `<span class="du">${(sc.frames / 24).toFixed(2)}s</span>` +
+      `<span class="cn" title="shot ${(shotOf(i) + 1)}">S${shotOf(i) + 1}</span>`;
     el.onclick = () => { SEL = i; drawScenes(); };
     host.appendChild(el);
   });
   drawInspector();
   // the beats textarea stays the thing the graph receives, one line per scene
   $("beats").value = SCENES.map(s => (s.beat || "").replace(/\n/g, " ")).join("\n");
+}
+
+/* SHOTS, computed the same way the planner does: a run from one cut to the
+   next. Head and tail belong to the SHOT, because varying them within a
+   continuing run drags wardrobe and set description along with the change. */
+function cutLike(id) {
+  const t = TRANSITIONS.find(x => x.id === id);
+  return !!t && t.id !== "carry" && t.id !== "refresh";
+}
+function shotOf(i) {
+  let shot = 0;
+  for (let k = 1; k <= i; k++) if (cutLike(SCENES[k]?.continuity)) shot++;
+  return shot;
+}
+function opensShot(i) { return i === 0 || cutLike(SCENES[i]?.continuity); }
+function shotOpener(i) {
+  for (let k = i; k >= 0; k--) if (opensShot(k)) return k;
+  return 0;
 }
 
 function drawInspector() {
@@ -798,6 +829,19 @@ function drawInspector() {
   $("i_contwhat").textContent = SEL === 0
     ? "The first scene opens the take, so it has no transition in."
     : `${t.label} — ${t.hint}`;
+  // head/tail only where a shot BEGINS; everywhere else say what is inherited
+  const opener = shotOpener(SEL);
+  const isOpener = opener === SEL;
+  $("i_shotbox").hidden = !isOpener;
+  $("i_inherits").hidden = isOpener;
+  if (isOpener) {
+    $("i_head").value = sc.head || "";
+    $("i_tail").value = sc.tail || "";
+  } else {
+    $("i_inherits").textContent =
+      `Continues shot ${shotOf(SEL) + 1}, so it uses scene ${opener + 1}'s ` +
+      `setting and closing direction. Cut here to give it its own.`;
+  }
   drawSceneLoras();
   const p = lastScenePlan && lastScenePlan[SEL];
   $("inspwhen").textContent = p
@@ -918,6 +962,19 @@ async function refreshPlan() {
   // SCENES ARE THE DOCUMENT when there are any; the uniform count form stays
   // for a plain continuous take.
   let p;
+  if (SCENES.length) {
+    // ONE ENTRY PER SHOT, blank-line separated, in shot order — which is what
+    // H3LongFormLinks indexes by shot_index. A shot whose opener wrote nothing
+    // falls back to the take-wide Head/Tail.
+    const heads = [], tails = [];
+    SCENES.forEach((x, i) => {
+      if (!opensShot(i)) return;
+      heads.push((x.head || $("head").value || "").trim());
+      tails.push((x.tail || $("tail").value || "").trim());
+    });
+    if (heads.some(Boolean)) req.heads = heads.join("\n\n");
+    if (tails.some(Boolean)) req.tails = tails.join("\n\n");
+  }
   if (SCENES.length) {
     try {
       const r = await post("/take/scenes", {
@@ -1855,6 +1912,14 @@ async function poll(id) {
     SCENES[SEL].continuity = $("i_cont").value;
     drawScenes(); refreshPlan();
   });
+  for (const [id, key] of [["i_head", "head"], ["i_tail", "tail"]]) {
+    $(id).addEventListener("input", () => {
+      if (!SCENES[SEL]) return;
+      SCENES[SEL][key] = $(id).value;
+      clearTimeout(window["_" + key]);
+      window["_" + key] = setTimeout(save, 400);
+    });
+  }
   $("i_pin").addEventListener("change", () => {
     if (!SCENES[SEL]) return;
     const v = $("i_pin").value;

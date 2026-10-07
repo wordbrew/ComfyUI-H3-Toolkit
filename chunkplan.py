@@ -193,6 +193,13 @@ def scene_plan(scenes, context=39, fps=24.0):
     ctx = int(context)
     out, notes = [], []
     at = 0
+    # A SHOT IS A RUN OF SCENES FROM ONE CUT TO THE NEXT, and head/tail belong to
+    # the SHOT rather than the scene. That is not tidiness: it is the measured
+    # rule that head and tail must be byte-identical across continuing links,
+    # because varying the head dragged wardrobe and set description along with
+    # the thing being varied. So a continuing scene INHERITS, and only a scene
+    # that opens a shot may carry its own.
+    shot = 0
     for i, sc in enumerate(scenes or []):
         want = int(sc.get("frames") or 0)
         frames = legal_run(want, "nearest") if want else legal_run(141, "nearest")
@@ -213,8 +220,14 @@ def scene_plan(scenes, context=39, fps=24.0):
         if not wired:
             notes.append(f"scene {i + 1}: {name!r} is named but not wired — "
                          f"{CONTINUITY[name].get('why', '')}")
+        opens = (i == 0) or (name in CUT_LIKE)
+        if opens and i:
+            shot += 1
         out.append({
             "index": i, "number": i + 1,
+            # which shot this scene belongs to, and whether it STARTS it --
+            # the only scenes that may set their own head and tail
+            "shot": shot, "opens_shot": opens,
             "frames": frames,                   # what the sampler renders
             "pin": pin,                         # carried in from the scene before
             "delivered": delivered,             # what reaches the finished clip
@@ -237,7 +250,17 @@ def scene_plan(scenes, context=39, fps=24.0):
                      f"audio grid, so each join there rounds the audio by up to "
                      f"half a tick; the exact runs are "
                      f"{', '.join(map(str, AV_EXACT_RUNS[:6]))}...")
-    return {"scenes": out, "total_frames": at,
+    shots = []
+    for c in out:
+        if c["opens_shot"]:
+            shots.append({"index": c["shot"], "opens_at": c["number"],
+                          "scenes": [c["number"]],
+                          "start_seconds": c["start_seconds"],
+                          "end_seconds": c["end_seconds"]})
+        elif shots:
+            shots[-1]["scenes"].append(c["number"])
+            shots[-1]["end_seconds"] = c["end_seconds"]
+    return {"scenes": out, "shots": shots, "total_frames": at,
             "total_seconds": round(at / fps, 3), "notes": notes}
 
 

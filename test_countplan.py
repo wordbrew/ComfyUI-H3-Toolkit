@@ -76,6 +76,37 @@ ok("how long will it be", "18.62s" in text)
 ok("how many beats do I write", "write 4 beat(s)" in text)
 ok("and it offers nearby sizes", "alternative:" in text)
 
+print("head and tail belong to a SHOT, not a scene")
+# The measured rule: head and tail must be byte-identical across CONTINUING
+# links, because varying the head per link dragged wardrobe and set description
+# along with whatever was being varied. So a shot is a run from one cut to the
+# next, and only the scene that OPENS one may carry its own text.
+_sh = cp.scene_plan([
+    {"frames": 192},
+    {"frames": 192, "continuity": "carry"},
+    {"frames": 141, "continuity": "cut"},
+    {"frames": 141, "continuity": "carry"},
+    {"frames": 90, "continuity": "reference_sample"},
+], context=39)
+check("scenes group into shots by the cuts",
+      [c["shot"] for c in _sh["scenes"]], [0, 0, 1, 1, 2])
+check("and only the first of each opens one",
+      [c["opens_shot"] for c in _sh["scenes"]],
+      [True, False, True, False, True])
+check("three shots are reported", len(_sh["shots"]), 3)
+check("with their scenes listed",
+      [sh["scenes"] for sh in _sh["shots"]], [[1, 2], [3, 4], [5]])
+# `refresh` CONTINUES, so it must not start a shot even though it is not `carry`
+_rf = cp.scene_plan([{"frames": 192}, {"frames": 192, "continuity": "refresh"}],
+                    context=39)
+check("refresh continues, so it opens no shot",
+      [c["opens_shot"] for c in _rf["scenes"]], [True, False])
+ok("every cut-like kind opens a shot",
+   all(k in cp.CUT_LIKE for k in ("cut", "handoff", "audio_carry",
+                                  "reference_sample")))
+ok("and carry/refresh are not cut-like",
+   "carry" not in cp.CUT_LIKE and "refresh" not in cp.CUT_LIKE)
+
 print("the UI cannot disagree with the vocabulary")
 # The transition list used to exist in BOTH chunkplan.py and ui/index.html, and
 # they drifted: reference_sample was wired here and still shown "not wired" in
