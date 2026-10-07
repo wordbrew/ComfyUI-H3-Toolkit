@@ -145,14 +145,20 @@ def build(req, template=None):
         if isinstance(spec, dict) and "strength" in spec:
             ins["strength_model"] = float(spec["strength"])
 
-    refs = req.get("references") or []
-    slots = sorted(r for r in roles_of(graph) if r.startswith("h3.ref."))
-    if len(refs) > len(slots):
-        raise TakeError(f"{len(refs)} reference(s) requested but the template "
-                        f"wires {len(slots)}. A fourth reference has also been "
-                        f"measured to break subject motion.")
-    for role, name in zip(slots, refs):
-        _set(graph, role, "image", name)
+    # REFERENCES ARE NOT CAPPED. `ref_images` is one autogrow input addressed as
+    # ref_image_0, ref_image_1 ... with no declared maximum, so the number of
+    # references is a property of the REQUEST, not of the template. This used to
+    # raise above three, which was me over-applying a narrow finding: what was
+    # measured is that a fourth reference FOR THE LOCATION wrecked subject
+    # motion. Three CHARACTER references held. That is a note about what to put
+    # in a reference, not a limit on how many exist, and it does not belong in
+    # the code as an error.
+    #
+    # So: reuse the template's loaders for the first few, mint more when asked,
+    # and PRUNE the leftovers -- an unused LoadImage still loads a file and
+    # still sends it to the model, which is the one way this can silently send
+    # a reference nobody asked for.
+    set_references(graph, req.get("references") or [])
 
     # A CAST BEATS TWO TEXT BOXES. When `cast` is given it is compiled through
     # h3script and OVERRIDES subject_def_1 / retention_1, so a caller never
@@ -276,3 +282,42 @@ def compile_cast(cast, parse, emit, lint=None):
         "index": out.get("index", {}),
         "lint": notes,
     }
+
+def set_references(graph, names):
+    """Wire exactly len(names) reference loaders, adding or pruning as needed."""
+    cond = _one(graph, "h3.conditioning", required=False)
+    if cond is None:
+        if names:
+            raise TakeError("the template has no h3.conditioning node, so "
+                            "references cannot be wired")
+        return
+    ins = graph[cond].setdefault("inputs", {})
+    existing = sorted((r for r in roles_of(graph) if r.startswith("h3.ref.")),
+                      key=lambda r: int(r.rsplit(".", 1)[1]))
+    loaders = [_one(graph, r) for r in existing]
+    template_loader = graph[loaders[0]] if loaders else None
+
+    # drop every ref_image_* wiring; it is rebuilt below
+    for key in [k for k in ins if k.startswith("ref_images.ref_image_")]:
+        del ins[key]
+
+    next_id = max((int(k) for k in graph if k.isdigit()), default=0) + 1
+    for i, name in enumerate(names):
+        if i < len(loaders):
+            nid = loaders[i]
+        else:
+            if template_loader is None:
+                raise TakeError("the template wires no reference loader to copy")
+            nid = str(next_id); next_id += 1
+            graph[nid] = {"class_type": template_loader["class_type"],
+                          "inputs": dict(template_loader.get("inputs") or {}),
+                          "_meta": {"title": f"h3.ref.{i}"}}
+        graph[nid].setdefault("inputs", {})["image"] = name
+        graph[nid]["_meta"] = {"title": f"h3.ref.{i}"}
+        ins[f"ref_images.ref_image_{i}"] = [nid, 0]
+
+    # PRUNE. A loader left in the graph with nothing citing it is not inert:
+    # ComfyUI executes it, it loads whatever file it holds, and on the template
+    # that is a REPLACE_ME placeholder that fails validation for no good reason.
+    for nid in loaders[len(names):]:
+        graph.pop(nid, None)

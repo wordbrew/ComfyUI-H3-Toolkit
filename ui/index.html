@@ -368,10 +368,18 @@
           <div><label for="lora">Static LoRA</label><select id="lora"></select></div>
           <div><label for="lstr">Strength</label><input type="number" id="lstr" value="0.8" step="0.05" min="0" max="2"></div>
         </div>
-        <label>References — three held motion in testing; a fourth broke it</label>
+        <label>References — the images the model actually receives</label>
+        <p class="hint">Cited in the prompt as &lt;Picture 1&gt;, &lt;Picture 2&gt;…
+        in this order. Add as many as the take needs. One note from testing, not
+        a limit: a reference for the <em>location</em> wrecked subject motion
+        however it was cited, while character references held — so reference who
+        is in the shot, and put the room in the words.</p>
         <p class="hint" id="refnote"></p>
-        <select id="ref0" hidden></select><select id="ref1" hidden></select><select id="ref2" hidden></select>
         <div class="slots" id="refslots"></div>
+        <div class="bar">
+          <button id="addref">+ Reference</button>
+          <span class="sub" id="refcount"></span>
+        </div>
         <label for="sched">Per-chunk LoRA schedule</label>
         <textarea id="sched" rows="3" placeholder="last | h3/some_lora.safetensors | 1.0"></textarea>
         <p class="hint">A colon means time, no colon means chunks: <code>2</code>, <code>2-4</code>, <code>2,5</code>, <code>2+</code>, <code>last</code>. A range like <code>2-4 | file | 0.4-0.9</code> ramps across them.</p>
@@ -472,11 +480,12 @@ function save() {
   const s = {};
   for (const id of ["head","beats","tail","sound","music",
                     "cf","cc","ctx","unet","clip","vae","avae","lora","lstr",
-                    "ref0","ref1","ref2","sched","seed","prefix"]) {
+                    "sched","seed","prefix"]) {
     const el = $(id); if (el) s[id] = el.value;
   }
   s.theme = document.documentElement.dataset.theme || "";
   s.cast = CAST;                 // the cast is the document, so it persists too
+  s.refs = REFS;
   try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
 }
 function restore() {
@@ -487,6 +496,7 @@ function restore() {
   }
   if (s.theme) document.documentElement.dataset.theme = s.theme;
   if (Array.isArray(s.cast)) CAST = s.cast;
+  if (Array.isArray(s.refs)) REFS = s.refs;
   if (typeof drawRefSlots === "function") drawRefSlots();
 }
 
@@ -645,8 +655,9 @@ function refreshCast() {
         (out.lint?.length ? "\n\n" + out.lint.join("\n") : "");
       const pics = (out.counts || {}).pictures || 0;
       $("refnote").textContent = pics
-        ? `${pics} anchor(s) come from the cast`
-        : "no anchors in the cast — wire references below by hand";
+        ? `the cast cites ${pics} anchor(s) — the references below are what is `
+          + `actually sent, so they should be those images in that order`
+        : "";
     } catch { /* offline; the plan strip already says so */ }
     save();
   }, 250);
@@ -878,40 +889,46 @@ function drawAnchorTiles() {
     : "none chosen — saving with none clears the stored anchors";
 }
 
+/* REFERENCES ARE A LIST, NOT THREE SLOTS. `ref_images` is an autogrow input
+   with no declared maximum and the builder mints a loader per reference, so the
+   count belongs to the take. An empty slot is simply dropped. */
+let REFS = [];
+
 function drawRefSlots() {
   const host = $("refslots");
   host.innerHTML = "";
-  ["ref0", "ref1", "ref2"].forEach((id, i) => {
-    const v = $(id).value;
+  REFS.forEach((v, i) => {
     const el = document.createElement("div");
     el.className = "slot";
     el.innerHTML = v
       ? `<img src="${assetURL(v, 75)}" alt=""><button class="clear">✕</button>`
-      : `Reference ${i + 1}<br>click to choose`;
+      : `&lt;Picture ${i + 1}&gt;<br>click to choose`;
     el.onclick = () => openPicker({
-      title: `Reference ${i + 1}`, multi: false, chosen: v ? [v] : [],
-      done: paths => { setRef(id, paths[0] || ""); },
+      title: `Picture ${i + 1}`, multi: false, chosen: v ? [v] : [],
+      done: paths => { REFS[i] = paths[0] || ""; drawRefSlots(); save(); },
     });
     const x = el.querySelector(".clear");
-    if (x) x.onclick = e => { e.stopPropagation(); setRef(id, ""); };
+    if (x) x.onclick = e => {
+      e.stopPropagation(); REFS.splice(i, 1); drawRefSlots(); save();
+    };
     host.appendChild(el);
   });
+  const n = REFS.filter(Boolean).length;
+  $("refcount").textContent = n
+    ? `${n} reference${n === 1 ? "" : "s"} → <Picture 1>…<Picture ${n}>`
+    : "none — the prompt will cite no pictures";
 }
-function setRef(id, path) {
-  const sel = $(id);
-  if (path && ![...sel.options].some(o => o.value === path)) {
-    const o = document.createElement("option");
-    o.value = path; o.textContent = path;
-    sel.appendChild(o);
-  }
-  sel.value = path;
-  drawRefSlots();
-  save();
+function addRefSlot() {
+  // open the picker straight away: an empty tile is a click nobody wants
+  openPicker({
+    title: `Picture ${REFS.length + 1}`, multi: true, chosen: [],
+    done: paths => { REFS.push(...paths.filter(Boolean)); drawRefSlots(); save(); },
+  });
 }
 
 /* ------------------------------------------------------------------ render */
 function request() {
-  const refs = ["ref0","ref1","ref2"].map(i => $(i).value).filter(Boolean);
+  const refs = REFS.filter(Boolean);
   const req = {
     chunk_frames: +$("cf").value, chunk_count: +$("cc").value,
     context: +$("ctx").value,
@@ -1018,12 +1035,12 @@ async function poll(id) {
     { v: 5, t: "5" }, { v: 1, t: "1 — keyframe only" }, { v: 0, t: "0 — no carry" },
   ], "39");
 
-  const [unets, clips, vaes, loras, images] = await Promise.all([
+  // loadAssets() fetches the image list into ASSETS, so it is not fetched here
+  const [unets, clips, vaes, loras] = await Promise.all([
     optionsFor("UNETLoader", "unet_name"),
     optionsFor("CLIPLoader", "clip_name"),
     optionsFor("VAELoader", "vae_name"),
     optionsFor("LoraLoaderModelOnly", "lora_name"),
-    optionsFor("LoadImage", "image"),
   ]);
   /* ORDERING IS THE WHOLE POINT OF THESE DROPDOWNS. A list sorted by filename
      puts a CORRUPTED checkpoint first: 10Eros's author states beta_3 and beta_4
@@ -1041,7 +1058,6 @@ async function poll(id) {
   fill($("vae"), rank(vaes, /minimax_h3_video|video_vae/i, /audio/i));
   fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i));
   fill($("lora"), ["(none)"].concat(rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
-  for (const i of ["ref0", "ref1", "ref2"]) fill($(i), [""].concat(images));
 
   await loadAssets();
   fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
@@ -1085,6 +1101,7 @@ async function poll(id) {
   });
   await loadLibrary();
   if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
+  $("addref").onclick = addRefSlot;
   $("newsubj").onclick = () => openEditor(null);
   $("reloadlib").onclick = loadLibrary;
   $("e_save").onclick = saveSubject;
@@ -1104,7 +1121,7 @@ async function poll(id) {
     clearTimeout(t); t = setTimeout(refreshPlan, 250);
   });
   for (const id of ["head","tail","sound","music","unet",
-                    "clip","vae","avae","lora","lstr","ref0","ref1","ref2",
+                    "clip","vae","avae","lora","lstr",
                     "sched","seed","prefix"]) {
     $(id).addEventListener("change", save);
   }
