@@ -528,6 +528,33 @@ def _register_routes():
         except (TakeError, ValueError, TypeError) as exc:
             return web.json_response({"ok": False, "error": str(exc)})
 
+    @routes.get(ROUTE_PREFIX + "/continuity")
+    async def _continuity(request):
+        """The transition vocabulary, from the ONE place it is defined.
+
+        The UI used to carry its own copy of this list, and the two drifted:
+        `reference_sample` was wired in the planner and still shown as "not
+        wired" in the menu, which is the drift this pack keeps paying for. The
+        menu is built from this response, so a kind cannot be wired in one place
+        and dead in the other.
+        """
+        from .chunkplan import CONTINUITY, CONTINUITY_ORDER, DEFAULT_CONTINUITY
+        order = [k for k in CONTINUITY_ORDER if k in CONTINUITY]
+        order += [k for k in CONTINUITY if k not in order]
+        return web.json_response({
+            "ok": True, "default": DEFAULT_CONTINUITY,
+            "kinds": [{
+                "id": k,
+                "label": CONTINUITY[k].get("label", k),
+                "what": CONTINUITY[k].get("what", ""),
+                "why_not": CONTINUITY[k].get("why", ""),
+                "needs": CONTINUITY[k].get("needs", ""),
+                "wired": bool(CONTINUITY[k]["ok"]),
+                "carries_picture": CONTINUITY[k]["pin"] == "context",
+                "carries_audio": CONTINUITY[k]["audio"] == "carry",
+            } for k in order],
+        })
+
     @routes.post(ROUTE_PREFIX + "/take/scenes")
     async def _take_scenes(request):
         """A LIST OF SCENES, each with its own length. -> the same shape as

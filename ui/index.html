@@ -652,24 +652,25 @@ function restore() {
    behind `carry`, `handoff` and `audio_carry` are this pack's own measured
    machinery. CONT is indexed by JOIN: entry 0 is the transition into chunk 2. */
 let CONT = [];
-const TRANSITIONS = [
-  { id: "carry",       label: "Continue the shot",
-    hint: "the shot goes on from its last frames — the pin", cls: "" },
-  { id: "handoff",     label: "Cut on the last frame",
-    hint: "a new shot opening ON the final frame, one frame pinned", cls: "soft" },
-  { id: "audio_carry", label: "Cut, keep the sound",
-    hint: "the picture cuts and the soundtrack continues across it", cls: "sound" },
-  { id: "cut",         label: "Hard cut",
-    hint: "a new scene, nothing carried", cls: "cut" },
-  { id: "refresh",     label: "Continue, refreshed",
-    hint: "carried frames re-noised — NOT WIRED", cls: "todo", todo: true },
-  { id: "reference_video", label: "Cut, reference last frames",
-    hint: "the tail enters as a reference video — NOT WIRED", cls: "todo", todo: true },
-  { id: "reference_sample", label: "Cut, keep the cast",
-    hint: "stills from the whole clip as references — NOT WIRED", cls: "todo", todo: true },
-  { id: "audio_reference", label: "Cut, keep sound and cast",
-    hint: "both of the above — NOT WIRED", cls: "todo", todo: true },
-];
+// FETCHED, NOT HARDCODED. This list used to live here as well as in
+// chunkplan.py, and they drifted: `reference_sample` was wired in the planner
+// and still shown dashed in the menu. /continuity serves the one definition, so
+// what the menu says a transition does is what the planner will do.
+let TRANSITIONS = [{ id: "carry", label: "Continue the shot",
+                     hint: "loading…", cls: "" }];
+const CLS = { carry: "", handoff: "soft", audio_carry: "sound", cut: "cut" };
+async function loadTransitions() {
+  try {
+    const r = await getJSON(`${API}/continuity`);
+    if (!r.ok || !r.kinds) return;
+    TRANSITIONS = r.kinds.map(k => ({
+      id: k.id, label: k.label,
+      hint: k.wired ? k.what : `${k.what} — NOT WIRED`,
+      cls: k.wired ? (CLS[k.id] ?? "soft") : "todo",
+      todo: !k.wired,
+    }));
+  } catch { /* the strip already reports a dead server */ }
+}
 const GLYPH = { carry: "→", handoff: "⇥", audio_carry: "♪", cut: "✂",
                 refresh: "↻", reference_video: "▣", reference_sample: "⁘",
                 audio_reference: "♪▣" };
@@ -1768,6 +1769,7 @@ async function poll(id) {
   fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i));
   fill($("lora"), ["(none)"].concat(rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
 
+  await loadTransitions();
   await loadAssets();
   fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
   drawRefSlots();

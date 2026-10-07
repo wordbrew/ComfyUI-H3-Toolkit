@@ -14,6 +14,7 @@ WHAT THIS DEFENDS
 
     python3 test_countplan.py
 """
+import pathlib
 import sys
 import types
 
@@ -74,6 +75,26 @@ text = cp.describe_count_plan(141, 4, 39)
 ok("how long will it be", "18.62s" in text)
 ok("how many beats do I write", "write 4 beat(s)" in text)
 ok("and it offers nearby sizes", "alternative:" in text)
+
+print("the UI cannot disagree with the vocabulary")
+# The transition list used to exist in BOTH chunkplan.py and ui/index.html, and
+# they drifted: reference_sample was wired here and still shown "not wired" in
+# the menu. The UI fetches /continuity now; what it still carries of its own is
+# a glyph per kind, so that is what this checks.
+import re as _re
+_html = (pathlib.Path(__file__).resolve().parent / "ui" / "index.html").read_text()
+_js = _re.search(r"<script>(.*?)</script>", _html, _re.S).group(1)
+ok("the UI no longer hardcodes the transition list",
+   "const TRANSITIONS = [" not in _js or "loadTransitions" in _js)
+_glyphs = set(_re.findall(r"(\w+):\s*\"[^\"]+\"",
+              _re.search(r"const GLYPH = \{(.*?)\};", _js, _re.S).group(1)))
+check("every kind has a glyph", sorted(set(cp.CONTINUITY) - _glyphs), [])
+check("and no glyph names a kind that does not exist",
+      sorted(_glyphs - set(cp.CONTINUITY)), [])
+check("the menu order covers every kind",
+      sorted(cp.CONTINUITY_ORDER), sorted(cp.CONTINUITY))
+ok("every kind carries a label for the menu",
+   all("label" in v for v in cp.CONTINUITY.values()))
 
 print()
 if fails:

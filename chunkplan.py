@@ -107,25 +107,31 @@ def snap_context(frames):
 CONTINUITY = {
     # name              pin frames          audio     supported
     "carry":           {"pin": "context",  "audio": "carry", "ok": True,
+                        "label": "Continue the shot",
                         "what": "the shot goes on from its last frames"},
     "cut":             {"pin": 0,          "audio": "fresh", "ok": True,
+                        "label": "Hard cut",
                         "what": "a new scene, nothing carried"},
     "handoff":         {"pin": 1,          "audio": "fresh", "ok": True,
+                        "label": "Cut on the last frame",
                         "what": "a new shot opening ON the last frame"},
     # THE ONE OUR OWN NOTES ASKED FOR. Generated audio restarts at every link,
     # so a cut in the picture takes the music with it. Carrying the audio across
     # a picture cut is a separate decision from carrying the picture, and the
     # pin machinery already keeps video and audio masks apart.
     "audio_carry":     {"pin": 0,          "audio": "carry", "ok": True,
+                        "label": "Cut, keep the sound",
                         "what": "the picture cuts, the sound continues"},
     # DECLARED ONLY -- each needs a conditioning path this pack does not build.
     "refresh":         {"pin": "context",  "audio": "carry", "ok": False,
+                        "label": "Continue, refreshed",
                         "what": "the same shot with the carried frames re-noised",
                         "why": "a fractional denoise mask on the carried rows, "
                                "and on 0.35+ a fractional mask scales the "
                                "model's velocity so those rows never finish "
                                "denoising -- see feather_warning()"},
     "reference_video": {"pin": 0,          "audio": "fresh", "ok": False,
+                        "label": "Cut, reference last frames",
                         "what": "a new shot REFERENCING the last frames",
                         "why": "the tail has to enter as a reference VIDEO, not "
                                "a pin; motion and appearance are the same tokens "
@@ -134,16 +140,23 @@ CONTINUITY = {
     # chunk's decoded output and hands them to a reference slot, firing only
     # where a plan asks for it. Appearance crosses the cut; motion does not.
     "reference_sample":{"pin": 0,          "audio": "fresh", "ok": True,
+                        "label": "Cut, keep the cast",
                         "what": "a new shot referencing stills from the clip "
                                 "before it — the cast crosses the cut, the "
                                 "motion does not",
                         "needs": "H3 Chunk Ref Sample wired from H3 Chunk Open's "
                                  "`prev_frames` into a reference slot"},
     "audio_reference": {"pin": 0,          "audio": "carry", "ok": False,
+                        "label": "Cut, keep sound and cast",
                         "what": "sound continues and the last frames are referenced",
                         "why": "reference_video plus audio_carry"},
 }
 DEFAULT_CONTINUITY = "carry"
+#: Menu order: what WORKS first, most-carried to least, then the unbuilt ones.
+#: Alphabetical would put `audio_carry` above `carry`, which reads as nonsense.
+CONTINUITY_ORDER = ("carry", "handoff", "audio_carry", "cut",
+                    "reference_sample", "refresh", "reference_video",
+                    "audio_reference")
 #: Picture does not continue across these, whatever the audio does.
 CUT_LIKE = tuple(k for k, v in CONTINUITY.items() if v["pin"] != "context")
 
