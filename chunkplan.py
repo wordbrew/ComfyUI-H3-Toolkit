@@ -93,6 +93,66 @@ def snap_context(frames):
     return 0
 
 
+# ---------------------------------------------------------------- continuity
+# HOW ONE CHUNK FOLLOWS THE ONE BEFORE. We had two options, `pin` and `pin 0`,
+# which is "the shot continues" and "hard cut" -- and nothing between. This
+# vocabulary is adopted from WAS Node Suite's MiniMax H3 Conditioning
+# (WASasquatch/was-node-suite-comfyui, MIT), whose timeline names eight; two of
+# them answer problems recorded in this repo and had no expression here at all.
+#
+# SUPPORTED means this planner emits a pin and an audio decision the existing
+# nodes already honour. DECLARED means the vocabulary carries it so a plan can
+# say what it wants, and `notes` says plainly that the conditioning for it is
+# not wired -- better than a name that silently does something else.
+CONTINUITY = {
+    # name              pin frames          audio     supported
+    "carry":           {"pin": "context",  "audio": "carry", "ok": True,
+                        "what": "the shot goes on from its last frames"},
+    "cut":             {"pin": 0,          "audio": "fresh", "ok": True,
+                        "what": "a new scene, nothing carried"},
+    "handoff":         {"pin": 1,          "audio": "fresh", "ok": True,
+                        "what": "a new shot opening ON the last frame"},
+    # THE ONE OUR OWN NOTES ASKED FOR. Generated audio restarts at every link,
+    # so a cut in the picture takes the music with it. Carrying the audio across
+    # a picture cut is a separate decision from carrying the picture, and the
+    # pin machinery already keeps video and audio masks apart.
+    "audio_carry":     {"pin": 0,          "audio": "carry", "ok": True,
+                        "what": "the picture cuts, the sound continues"},
+    # DECLARED ONLY -- each needs a conditioning path this pack does not build.
+    "refresh":         {"pin": "context",  "audio": "carry", "ok": False,
+                        "what": "the same shot with the carried frames re-noised",
+                        "why": "a fractional denoise mask on the carried rows, "
+                               "and on 0.35+ a fractional mask scales the "
+                               "model's velocity so those rows never finish "
+                               "denoising -- see feather_warning()"},
+    "reference_video": {"pin": 0,          "audio": "fresh", "ok": False,
+                        "what": "a new shot REFERENCING the last frames",
+                        "why": "the tail has to enter as a reference VIDEO, not "
+                               "a pin; motion and appearance are the same tokens "
+                               "on a ref video, which is its own measured trap"},
+    "reference_sample":{"pin": 0,          "audio": "fresh", "ok": False,
+                        "what": "a new shot referencing stills from the whole clip",
+                        "why": "needs stills sampled from the finished clip fed "
+                               "back as reference images -- the cheapest of the "
+                               "three to add, and it keeps the cast across a cut "
+                               "WITHOUT carrying motion"},
+    "audio_reference": {"pin": 0,          "audio": "carry", "ok": False,
+                        "what": "sound continues and the last frames are referenced",
+                        "why": "reference_video plus audio_carry"},
+}
+DEFAULT_CONTINUITY = "carry"
+#: Picture does not continue across these, whatever the audio does.
+CUT_LIKE = tuple(k for k, v in CONTINUITY.items() if v["pin"] != "context")
+
+
+def continuity_pin(name, context):
+    """-> (pin frames, audio decision, supported). Unknown names fall back."""
+    spec = CONTINUITY.get(name) or CONTINUITY[DEFAULT_CONTINUITY]
+    pin = spec["pin"]
+    return (int(context) if pin == "context" else int(pin),
+            spec["audio"], bool(spec["ok"]))
+
+
 LEGAL_RUNS = tuple(17 * k + 5 for k in range(0, 40))
 # legal AND exact on the 40 Hz audio grid (frames * 40 / 24 is a whole number)
 AV_EXACT_RUNS = tuple(r for r in LEGAL_RUNS if (r * 40) % 24 == 0)
@@ -163,7 +223,7 @@ def describe_count_plan(chunk_frames, chunk_count, context, fps=24.0):
 
 
 def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
-         context=0, grow_tail=False, *, generated_audio=False):
+         context=0, grow_tail=False, *, generated_audio=False, continuity=None):
     """-> (chunks, info)
 
     Each chunk is a dict:
@@ -320,6 +380,29 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
             # for. All of it is regenerated and dropped at the join.
             keep_from = start + (ctx if p > 0 else 0)
             pin_here = ctx if p > 0 else 0
+            # THE TRANSITION DECIDES THE PIN, where one was given. `continuity`
+            # is indexed by JOIN: entry 0 is the transition into chunk 2, so the
+            # first chunk never has one -- there is nothing behind it to follow
+            # from. Anything not given stays on the position-derived default, so
+            # a plan with no continuity at all behaves exactly as before.
+            here_name = DEFAULT_CONTINUITY
+            audio_here = "carry"
+            if p > 0 or chunks:
+                idx = len(chunks) - 1
+                if continuity and 0 <= idx < len(continuity):
+                    here_name = str(continuity[idx] or DEFAULT_CONTINUITY)
+                    cpin, audio_here, okc = continuity_pin(here_name, ctx)
+                    pin_here = cpin
+                    keep_from = start + cpin
+                    if not okc:
+                        notes.append(
+                            f"chunk {len(chunks) + 1} asks for {here_name!r}: "
+                            f"{CONTINUITY[here_name]['what']} — NOT WIRED. "
+                            f"{CONTINUITY[here_name].get('why', '')} Planned as "
+                            f"pin {cpin}, so it renders as the nearest thing "
+                            f"this pack can actually do.")
+            else:
+                audio_here = "fresh"
             # This chunk is already reaching back for a legal video run. When the
             # audio is GENERATED, reach a little further and land on the audio
             # grid too -- 300 frames at 141 with context 39 leaves a 96-frame
@@ -414,6 +497,11 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                 # opened on the frame it was meant to be cutting away from
                 # (measured 2026-08-31, workflow 17).
                 "cut": p == 0 and bool(chunks),
+                # The transition INTO this chunk, and whether the soundtrack
+                # crosses it. `cut` above stays what it always was -- does this
+                # chunk open a new shot -- because the runner reads it.
+                "continuity": here_name if (p > 0 or chunks) else None,
+                "carry_audio": audio_here == "carry" and bool(chunks),
                 "shot": si if mode == "scene" else None,
                 "part": (p + 1, n_parts) if n_parts > 1 else None,
                 "both_clocks": on_both_clocks(run),

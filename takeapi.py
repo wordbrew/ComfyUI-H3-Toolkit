@@ -26,6 +26,8 @@ import copy
 import json
 import pathlib
 
+from .chunkplan import CONTINUITY
+
 TEMPLATE_DIR = pathlib.Path(__file__).resolve().parent / "templates"
 DEFAULT_TEMPLATE = "longform_ref2va"
 PLACEHOLDER = "REPLACE_ME"
@@ -78,7 +80,7 @@ def _set(graph, role, field, value, required=True):
 
 
 # ------------------------------------------------------------------ planning
-def plan_fields(req, planner):
+def plan_fields(req, planner):   # noqa: C901
     """-> (plan dict, lint list). `planner` is chunkplan.describe_count_plan et al.
 
     Kept separate from graph building so a front end can call /take/plan on
@@ -93,10 +95,18 @@ def plan_fields(req, planner):
     if beats and len(beats) != cc:
         lint.append(f"{len(beats)} beat(s) for {cc} chunk(s) — one line per "
                     f"chunk, and chunk {cc} is the last one rendered")
+    # the transition INTO each chunk; entry 0 of `continuity` is chunk 2's
+    conts = req.get("continuity") or []
+    if isinstance(conts, str):
+        conts = [c.strip() for c in conts.replace(",", "\n").splitlines()
+                 if c.strip()]
     chunks = []
     at = 0
     for i in range(cc):
         delivered = first if i == 0 else rest
+        name = None if i == 0 else (conts[i - 1] if i - 1 < len(conts)
+                                    else "carry")
+        spec = CONTINUITY.get(name) if name else None
         chunks.append({
             "index": i,
             "number": i + 1,
@@ -104,8 +114,16 @@ def plan_fields(req, planner):
             "start_seconds": round(at / 24.0, 3),
             "end_seconds": round((at + delivered) / 24.0, 3),
             "beat": beats[i] if i < len(beats) else None,
+            "continuity": name,
+            "continuity_what": spec["what"] if spec else None,
+            "continuity_wired": bool(spec["ok"]) if spec else True,
+            "carry_audio": (spec["audio"] == "carry") if spec else False,
         })
         at += delivered
+    for i, c in enumerate(chunks):
+        if c["continuity"] and not c["continuity_wired"]:
+            lint.append(f"chunk {c['number']}: {c['continuity']!r} is named but "
+                        f"NOT WIRED — {CONTINUITY[c['continuity']].get('why','')}")
     return {
         "chunk_frames": cf, "chunk_count": cc, "context": ctx,
         "total_frames": total, "total_seconds": round(total / 24.0, 3),

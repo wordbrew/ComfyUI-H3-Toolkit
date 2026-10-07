@@ -97,6 +97,34 @@
     -webkit-box-orient: vertical;
   }
   .tl .b.none { color: var(--bad); font-style: italic; }
+  /* THE TRANSITION BUTTON SITS BETWEEN TWO SCENES, which is where the decision
+     lives. Interaction model adopted from WAS Node Suite's H3 prompt timeline. */
+  .tl { position: relative; }
+  .tl .join { position: relative; width: 0; display: flex;
+              align-items: flex-start; justify-content: center; z-index: 3; }
+  .tl .join button {
+    position: absolute; top: -9px; width: 20px; height: 20px; padding: 0;
+    border-radius: 50%; font: 600 10px/1 var(--mono); cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-dim);
+  }
+  .tl .join button:hover { border-color: var(--accent); color: var(--ink); }
+  .tl .join button.cut   { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .tl .join button.sound { background: var(--good); color: #fff; border-color: var(--good); }
+  .tl .join button.soft  { background: var(--accent); color: #17140c; border-color: var(--accent); }
+  .tl .join button.todo  { border-style: dashed; color: var(--warn); }
+
+  .transmenu { position: fixed; z-index: 50; background: var(--panel);
+               border: 1px solid var(--line); border-radius: var(--r);
+               padding: 5px; box-shadow: 0 8px 28px #0008; min-width: 290px; }
+  .transmenu button { display: block; width: 100%; text-align: left;
+                      border: 0; background: none; padding: 6px 8px;
+                      border-radius: 2px; font-size: 12.5px; }
+  .transmenu button:hover { background: var(--panel-2); }
+  .transmenu button.on { color: var(--accent); font-weight: 600; }
+  .transmenu small { display: block; color: var(--ink-faint); font-size: 11px;
+                     margin-top: 1px; }
+  .transmenu .nw small { color: var(--warn); }
+
   .total {
     display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
     font: 13px/1 var(--mono); color: var(--ink-dim); margin-top: 8px;
@@ -397,6 +425,16 @@
     </div>
     <div class="err" id="err" hidden></div>
 
+    <h2>Monitor</h2>
+    <div style="position:relative">
+      <img id="preview" hidden
+           style="width:100%;border-radius:var(--r);background:#000;display:block">
+      <p class="hint" id="previewnote">Each chunk appears here as it samples,
+      decoded by core's <code>taeh3</code> previewer. Requested per job, so it
+      needs no launch flag.</p>
+    </div>
+    <div class="total" style="margin-top:6px"><span id="progress"></span></div>
+
     <h2>Jobs</h2>
     <div id="jobs"></div>
   </section>
@@ -486,6 +524,7 @@ function save() {
   s.theme = document.documentElement.dataset.theme || "";
   s.cast = CAST;                 // the cast is the document, so it persists too
   s.refs = REFS;
+  s.cont = CONT;
   try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
 }
 function restore() {
@@ -497,7 +536,78 @@ function restore() {
   if (s.theme) document.documentElement.dataset.theme = s.theme;
   if (Array.isArray(s.cast)) CAST = s.cast;
   if (Array.isArray(s.refs)) REFS = s.refs;
+  if (Array.isArray(s.cont)) CONT = s.cont;
   if (typeof drawRefSlots === "function") drawRefSlots();
+}
+
+/* ------------------------------------------------------------ transitions
+   How each chunk follows the one before. The vocabulary and the between-scenes
+   button are adopted from WAS Node Suite's H3 prompt timeline (MIT); the pins
+   behind `carry`, `handoff` and `audio_carry` are this pack's own measured
+   machinery. CONT is indexed by JOIN: entry 0 is the transition into chunk 2. */
+let CONT = [];
+const TRANSITIONS = [
+  { id: "carry",       label: "Continue the shot",
+    hint: "the shot goes on from its last frames — the pin", cls: "" },
+  { id: "handoff",     label: "Cut on the last frame",
+    hint: "a new shot opening ON the final frame, one frame pinned", cls: "soft" },
+  { id: "audio_carry", label: "Cut, keep the sound",
+    hint: "the picture cuts and the soundtrack continues across it", cls: "sound" },
+  { id: "cut",         label: "Hard cut",
+    hint: "a new scene, nothing carried", cls: "cut" },
+  { id: "refresh",     label: "Continue, refreshed",
+    hint: "carried frames re-noised — NOT WIRED", cls: "todo", todo: true },
+  { id: "reference_video", label: "Cut, reference last frames",
+    hint: "the tail enters as a reference video — NOT WIRED", cls: "todo", todo: true },
+  { id: "reference_sample", label: "Cut, keep the cast",
+    hint: "stills from the whole clip as references — NOT WIRED", cls: "todo", todo: true },
+  { id: "audio_reference", label: "Cut, keep sound and cast",
+    hint: "both of the above — NOT WIRED", cls: "todo", todo: true },
+];
+const GLYPH = { carry: "→", handoff: "⇥", audio_carry: "♪", cut: "✂",
+                refresh: "↻", reference_video: "▣", reference_sample: "⁘",
+                audio_reference: "♪▣" };
+
+function joinButton(joinIndex, chunk) {
+  const wrap = document.createElement("div");
+  wrap.className = "join";
+  const id = CONT[joinIndex] || "carry";
+  const t = TRANSITIONS.find(x => x.id === id) || TRANSITIONS[0];
+  const b = document.createElement("button");
+  b.className = t.cls + (t.todo ? " todo" : "");
+  b.textContent = GLYPH[id] || "→";
+  b.title = `${t.label} — ${t.hint}\nclick to change`;
+  b.onclick = e => { e.stopPropagation(); openTransMenu(b, joinIndex); };
+  wrap.appendChild(b);
+  return wrap;
+}
+
+function openTransMenu(anchorEl, joinIndex) {
+  document.querySelectorAll(".transmenu").forEach(m => m.remove());
+  const m = document.createElement("div");
+  m.className = "transmenu";
+  const cur = CONT[joinIndex] || "carry";
+  for (const t of TRANSITIONS) {
+    const b = document.createElement("button");
+    if (t.todo) b.className = "nw";
+    if (t.id === cur) b.classList.add("on");
+    b.innerHTML = `${GLYPH[t.id]}&nbsp; ${escapeHTML(t.label)}` +
+                  `<small>${escapeHTML(t.hint)}</small>`;
+    b.onclick = () => {
+      CONT[joinIndex] = t.id;
+      m.remove();
+      refreshPlan();
+    };
+    m.appendChild(b);
+  }
+  document.body.appendChild(m);
+  const r = anchorEl.getBoundingClientRect();
+  m.style.left = Math.min(r.left, innerWidth - m.offsetWidth - 10) + "px";
+  m.style.top = Math.min(r.bottom + 6, innerHeight - m.offsetHeight - 10) + "px";
+  const away = ev => {
+    if (!m.contains(ev.target)) { m.remove(); document.removeEventListener("mousedown", away); }
+  };
+  setTimeout(() => document.addEventListener("mousedown", away), 0);
 }
 
 /* -------------------------------------------------------------------- plan */
@@ -508,6 +618,7 @@ async function refreshPlan() {
     chunk_count: +$("cc").value || 1,
     context: +$("ctx").value,
     beats: $("beats").value,
+    continuity: CONT,
   };
   let p;
   try { p = await post("/take/plan", body); }
@@ -517,7 +628,8 @@ async function refreshPlan() {
   lastPlan = p;
 
   $("tl").innerHTML = "";
-  for (const c of p.chunks) {
+  p.chunks.forEach((c, i) => {
+    if (i > 0) $("tl").appendChild(joinButton(i - 1, c));
     const seg = document.createElement("div");
     seg.className = "seg";
     seg.style.flex = String(c.frames);
@@ -529,7 +641,10 @@ async function refreshPlan() {
       (c.beat ? escapeHTML(c.beat) : "no beat written") + `</div>`;
     seg.title = `${c.frames} frames · ${c.start_seconds}s → ${c.end_seconds}s`;
     $("tl").appendChild(seg);
-  }
+  });
+  // keep the continuity list the same length as the joins
+  CONT = CONT.slice(0, Math.max(0, p.chunks.length - 1));
+  while (CONT.length < p.chunks.length - 1) CONT.push("carry");
   $("total").innerHTML =
     `<b>${p.total_seconds}s</b> <span>${p.total_frames} frames</span>` +
     `<span>${p.chunk_count} × ${p.chunk_frames} carrying ${p.context}</span>`;
@@ -945,6 +1060,7 @@ function request() {
   };
   const rows = CAST.filter(r => r.from_library || r.describe || r.setting);
   if (rows.length) req.cast = rows;
+  if (CONT.length) req.continuity = CONT.join("\n");
   if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
   return req;
 }
@@ -967,7 +1083,16 @@ async function doRender() {
     // errors arrive in its format and nothing here reimplements that contract.
     const res = await fetch("/prompt", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: graph, client_id: "h3-longtake" }),
+      body: JSON.stringify({
+        prompt: graph, client_id: CLIENT_ID,
+        // PER-QUEUE PREVIEW OVERRIDE (core PR #11261): ask for the taesd
+        // previewer on THIS job only, so live preview works without changing
+        // how ComfyUI was launched. `taeh3` is in core's VIDEO_TAES list and
+        // the decoder is already in models/vae_approx, so H3 previews decode
+        // properly rather than falling back to the Latent2RGB smear that
+        // --preview-method auto gives you.
+        extra_data: { preview_method: "taesd" },
+      }),
     });
     const out = await res.json();
     if (!res.ok || !out.prompt_id) {
@@ -978,6 +1103,50 @@ async function doRender() {
     addJob(out.prompt_id);
   } catch (e) { fail(String(e)); }
   finally { $("render").disabled = false; }
+}
+
+/* ----------------------------------------------------------------- preview
+   ComfyUI already broadcasts preview frames while sampling; nothing here needs
+   to decode a latent. We open its websocket with our own client id, and the
+   binary frames that arrive are the segment being sampled right now. */
+const CLIENT_ID = "h3-longtake-" + Math.random().toString(36).slice(2, 10);
+let SOCK = null;
+
+function openSocket() {
+  try {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    SOCK = new WebSocket(`${proto}//${location.host}/ws?clientId=${CLIENT_ID}`);
+    SOCK.binaryType = "blob";
+    SOCK.onmessage = onSocket;
+    SOCK.onclose = () => { SOCK = null; setTimeout(openSocket, 4000); };
+  } catch { SOCK = null; }
+}
+
+let previewURL = null;
+function onSocket(ev) {
+  if (ev.data instanceof Blob) {
+    // a preview frame: 8 bytes of header (event + format), then the image
+    ev.data.slice(8).arrayBuffer().then(buf => {
+      const blob = new Blob([buf], { type: "image/jpeg" });
+      if (previewURL) URL.revokeObjectURL(previewURL);
+      previewURL = URL.createObjectURL(blob);
+      const img = $("preview");
+      img.src = previewURL;
+      img.hidden = false;
+      $("previewnote").hidden = true;
+    });
+    return;
+  }
+  let msg;
+  try { msg = JSON.parse(ev.data); } catch { return; }
+  const d = msg.data || {};
+  if (msg.type === "progress" && d.max) {
+    $("progress").textContent = `step ${d.value}/${d.max}`;
+  } else if (msg.type === "executing" && d.node) {
+    $("progress").textContent = `node ${d.node}`;
+  } else if (msg.type === "execution_success" || msg.type === "execution_error") {
+    $("progress").textContent = msg.type === "execution_error" ? "failed" : "done";
+  }
 }
 
 /* -------------------------------------------------------------------- jobs */
@@ -1132,6 +1301,7 @@ async function poll(id) {
   }
   $("unet").addEventListener("change", checkModel);
   checkModel();
+  openSocket();
   $("render").addEventListener("click", doRender);
   $("dry").addEventListener("click", async () => {
     const g = await compose();

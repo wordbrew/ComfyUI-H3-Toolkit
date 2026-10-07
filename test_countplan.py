@@ -134,3 +134,39 @@ if fails:
     print(f"\nFAIL — {len(fails)} check(s)")
     sys.exit(1)
 print("\naudio grid: stated at the choice, defaulted sanely, snapped on request")
+
+
+print("continuity: the transition decides the pin")
+check("carry pins the context", cp.continuity_pin("carry", 39), (39, "carry", True))
+check("cut pins nothing", cp.continuity_pin("cut", 39), (0, "fresh", True))
+check("handoff pins one frame", cp.continuity_pin("handoff", 39), (1, "fresh", True))
+# THE ONE OUR OWN NOTES ASKED FOR: generated audio restarts at every link, so a
+# picture cut takes the music with it unless the two decisions are separable.
+check("audio_carry cuts the picture and keeps the sound",
+      cp.continuity_pin("audio_carry", 39), (0, "carry", True))
+ok("an unknown name falls back to carry rather than erroring",
+   cp.continuity_pin("nonsense", 39) == cp.continuity_pin("carry", 39))
+ok("every kind says what it does", all("what" in v for v in cp.CONTINUITY.values()))
+ok("every UNWIRED kind says why", all("why" in v for v in cp.CONTINUITY.values()
+                                      if not v["ok"]))
+
+print("and a plan carries it per chunk")
+_t = cp.total_for_count(192, 4, 39)
+_ch, _info = cp.plan(_t, 192, "fixed", context=39, grow_tail=True,
+                     continuity=["carry", "cut", "audio_carry"])
+check("pins follow the transitions", [c["pin"] for c in _ch], [0, 39, 0, 0])
+check("and so does the soundtrack",
+      [c["carry_audio"] for c in _ch], [False, True, False, True])
+check("chunk 1 has no transition into it", _ch[0]["continuity"], None)
+_ch2, _info2 = cp.plan(_t, 192, "fixed", context=39, grow_tail=True,
+                       continuity=["reference_sample"])
+ok("an unwired kind is reported, not silently swapped",
+   any("NOT WIRED" in n for n in _info2["notes"]))
+_ch3, _ = cp.plan(_t, 192, "fixed", context=39, grow_tail=True)
+check("no continuity at all behaves exactly as before",
+      [c["pin"] for c in _ch3], [0, 39, 39, 39])
+
+if fails:
+    print(f"\nFAIL — {len(fails)} check(s)")
+    sys.exit(1)
+print("\ncontinuity: the vocabulary holds")
