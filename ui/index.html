@@ -1024,6 +1024,12 @@ async function refreshPlan() {
 /* The timeline, drawn from whichever planner produced it. */
 function renderPlan(p) {
   lastPlan = p;
+  if (!p || !Array.isArray(p.chunks)) {
+    // a response that is ok but shapeless must not take the page down with it
+    $("total").textContent = "the planner returned nothing to draw";
+    $("tl").innerHTML = "";
+    return;
+  }
   $("tl").innerHTML = "";
   p.chunks.forEach((c, i) => {
     if (i > 0) $("tl").appendChild(joinButton(i - 1, c));
@@ -1793,45 +1799,8 @@ async function poll(id) {
 }
 
 /* -------------------------------------------------------------------- init */
-(async function init() {
-  fill($("cf"), legalRuns(39, 396).map(r => ({
-    v: r, t: `${r} — ${(r / 24).toFixed(2)}s${AV_EXACT.has(r) ? " · both clocks" : ""}`,
-  })), "192");
-  fill($("ctx"), [
-    { v: 39, t: "39 — both clocks" }, { v: 22, t: "22 — off the audio grid" },
-    { v: 5, t: "5" }, { v: 1, t: "1 — keyframe only" }, { v: 0, t: "0 — no carry" },
-  ], "39");
-
-  // loadAssets() fetches the image list into ASSETS, so it is not fetched here
-  const [unets, clips, vaes, loras] = await Promise.all([
-    optionsFor("UNETLoader", "unet_name"),
-    optionsFor("CLIPLoader", "clip_name"),
-    optionsFor("VAELoader", "vae_name"),
-    optionsFor("LoraLoaderModelOnly", "lora_name"),
-  ]);
-  /* ORDERING IS THE WHOLE POINT OF THESE DROPDOWNS. A list sorted by filename
-     puts a CORRUPTED checkpoint first: 10Eros's author states beta_3 and beta_4
-     are broken test builds and beta_5 is the only functional one, and "beta4"
-     sorts before "beta5". The same naive filter picked CLIP-ViT-H for the H3
-     text encoder and an unrelated LoRA for the H3 slot. So: rank, then demote
-     what is known bad, and never let alphabetical order choose. */
-  const rank = (a, good, bad = null) => {
-    const score = x => (bad && bad.test(x) ? 2 : good.test(x) ? 0 : 1);
-    return a.slice().sort((x, y) => score(x) - score(y));
-  };
-  const CORRUPT = /beta[_-]?[34]/i;
-  fill($("unet"), rank(unets, /minimax_h3|10eros/i, CORRUPT));
-  fill($("clip"), rank(clips, /qwen3vl.*minimax|minimax_h3/i));
-  fill($("vae"), rank(vaes, /minimax_h3_video|video_vae/i, /audio/i));
-  fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i));
-  fill($("lora"), ["(none)"].concat(rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
-
-  await loadTransitions();
-  await loadAssets();
-  fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
-  drawRefSlots();
-  drawAnchorTiles();
-
+/* Every control, attached before anything is fetched. */
+function wireControls() {
   $("e_pick").onclick = () => openPicker({
     title: "Anchor images", multi: true, chosen: anchorPaths(),
     done: setAnchorPaths,
@@ -1867,9 +1836,6 @@ async function poll(id) {
       ? `uploaded ${r.ok}, failed: ${r.failed.join(", ")}`
       : "Drop image files here to upload them";
   });
-  await loadLibrary();
-  if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
-  LORAS = loras;
   const paintStatic = () => {
     const v = $("lora").value;
     $("lorapick").textContent = !v || v === "(none)"
@@ -1883,7 +1849,6 @@ async function poll(id) {
     }
     $("lora").value = n; paintStatic(); save();
   });
-  paintStatic();
   $("i_addlora").onclick = () => {
     sceneLoras(SEL).push({ name: "", strength: 0.8 });
     drawSceneLoras();
@@ -1905,12 +1870,10 @@ async function poll(id) {
   $("i_len").addEventListener("change", () => {
     if (!SCENES[SEL]) return;
     SCENES[SEL].frames = +$("i_len").value;
-    drawScenes(); refreshPlan();
   });
   $("i_cont").addEventListener("change", () => {
     if (!SCENES[SEL]) return;
     SCENES[SEL].continuity = $("i_cont").value;
-    drawScenes(); refreshPlan();
   });
   for (const [id, key] of [["i_head", "head"], ["i_tail", "tail"]]) {
     $(id).addEventListener("input", () => {
@@ -1924,7 +1887,6 @@ async function poll(id) {
     if (!SCENES[SEL]) return;
     const v = $("i_pin").value;
     SCENES[SEL].pin = v === "" ? null : +v;   // null = take the global default
-    drawScenes(); refreshPlan();
   });
   $("qgo").onclick = () => {
     // a GENERATOR, not a second representation: it writes scenes and then the
@@ -1938,7 +1900,6 @@ async function poll(id) {
       SCENES.push(newScene({ frames: f, continuity: i ? "carry" : undefined }));
     }
     SEL = 0;
-    drawScenes(); compileSchedule(); refreshPlan();
   };
   $("i_seed").addEventListener("change", () => {
     if (SCENES[SEL]) SCENES[SEL].seed_offset = +$("i_seed").value;
@@ -1949,17 +1910,9 @@ async function poll(id) {
   $("e_save").onclick = saveSubject;
   $("e_delete").onclick = deleteSubject;
   $("e_cancel").onclick = () => { $("editor").open = false; };
-
-  restore();
-  drawScenes();
-  compileSchedule();
-  drawCast();
-  await refreshPlan();
-
   $("addperson").onclick = () => addRow("person");
   $("addsetting").onclick = () => addRow("setting");
   $("addlib").onclick = () => addRow("library", { from_library: LIBRARY[0] });
-
   $("ctx").addEventListener("change", () => { drawScenes(); refreshPlan(); });
   let t; $("beats").addEventListener("input", () => {
     clearTimeout(t); t = setTimeout(refreshPlan, 250);
@@ -1975,8 +1928,6 @@ async function poll(id) {
     $("modelwarn").hidden = !bad;
   }
   $("unet").addEventListener("change", checkModel);
-  checkModel();
-  openSocket();
   $("render").addEventListener("click", doRender);
   $("dry").addEventListener("click", async () => {
     const g = await compose();
@@ -1991,7 +1942,78 @@ async function poll(id) {
     r.dataset.theme = r.dataset.theme === "light" ? "" : "light";
     save();
   });
+}
+
+(async function init() {
+  // ---- SYNCHRONOUS SETUP: nothing here can fail on the network ---------- //
+  fill($("cf"), legalRuns(39, 396).map(r => ({
+    v: r, t: `${r} — ${(r / 24).toFixed(2)}s${AV_EXACT.has(r) ? " · both clocks" : ""}`,
+  })), "192");
+  fill($("ctx"), [
+    { v: 39, t: "39 — both clocks" }, { v: 22, t: "22 — off the audio grid" },
+    { v: 5, t: "5" }, { v: 1, t: "1 — keyframe only" }, { v: 0, t: "0 — no carry" },
+  ], "39");
+
+  // ---- HANDLERS BEFORE ANY AWAIT --------------------------------------- //
+  // A throw while loading used to abort init before the controls were wired,
+  // and the Render button then did NOTHING AT ALL: no error, no job, no clue.
+  // Wiring first means a failed load degrades to "that dropdown is empty",
+  // which can at least be seen and reported.
+  wireControls();
+  restore();
+  drawScenes();
+  drawCast();
+  compileSchedule();
+
+  // ---- AND THE LOADING, WHICH MAY FAIL VISIBLY ------------------------- //
+  try {
+    await loadTransitions();
+    await loadAssets();
+    const [unets, clips, vaes, loras] = await Promise.all([
+      optionsFor("UNETLoader", "unet_name"),
+      optionsFor("CLIPLoader", "clip_name"),
+      optionsFor("VAELoader", "vae_name"),
+      optionsFor("LoraLoaderModelOnly", "lora_name"),
+    ]);
+    /* ORDERING IS THE WHOLE POINT OF THESE DROPDOWNS. A list sorted by
+       filename puts a CORRUPTED checkpoint first: 10Eros's author states
+       beta_3 and beta_4 are broken test builds and beta_5 is the only
+       functional one, and "beta4" sorts before "beta5". The same naive filter
+       picked CLIP-ViT-H for the H3 text encoder and an unrelated LoRA for the
+       H3 slot. So: rank, demote what is known bad, never let alphabetical
+       order choose. */
+    const rank = (a, good, bad = null) => {
+      const score = x => (bad && bad.test(x) ? 2 : good.test(x) ? 0 : 1);
+      return a.slice().sort((x, y) => score(x) - score(y));
+    };
+    const CORRUPT = /beta[_-]?[34]/i;
+    fill($("unet"), rank(unets, /minimax_h3|10eros/i, CORRUPT));
+    fill($("clip"), rank(clips, /qwen3vl.*minimax|minimax_h3/i));
+    fill($("vae"), rank(vaes, /minimax_h3_video|video_vae/i, /audio/i));
+    fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i));
+    fill($("lora"), ["(none)"].concat(
+      rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
+    LORAS = loras;
+    fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
+    await loadLibrary();
+    if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
+    paintStatic();
+    drawRefSlots();
+    drawAnchorTiles();
+    checkModel();
+    openSocket();
+    await refreshPlan();
+    setConn(true);
+  } catch (e) {
+    // SAY IT. The page is still usable -- the controls are wired -- so the only
+    // thing left to get wrong is hiding why a dropdown is empty.
+    setConn(false);
+    fail(`could not finish loading from ComfyUI: ${e && e.message || e}\n` +
+         `The controls work, but the model and asset lists may be empty. ` +
+         `Check that ComfyUI is running, then reload.`);
+  }
 })();
+
 </script>
 </body>
 </html>
