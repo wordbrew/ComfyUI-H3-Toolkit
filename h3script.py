@@ -928,7 +928,24 @@ def look_paragraph(doc):
         parts.append(_sentence(lips))
     neg = (doc.get("negatives") or "").strip()
     if neg:
-        parts.append(_sentence(neg))
+        # AN EXCLUSION HAS TO READ AS ONE. This emitted the list as a plain
+        # declarative -- "Extra people, readable text, music." -- which asks the
+        # model FOR the three things it is supposed to keep out. H3 is CFG-free,
+        # so there is no negative conditioning to carry them: the only place an
+        # exclusion exists is the prose, and it has to be worded like one.
+        #
+        # An author who already wrote their own "no ..." is left alone; a bare
+        # list gets the wording.
+        bare = [x.strip() for x in neg.replace(";", ",").split(",") if x.strip()]
+        if bare and not any(x.lower().startswith(("no ", "not ", "without ",
+                                                  "never "))
+                            for x in bare):
+            neg = "no " + _join_and([x.lstrip("no ").strip() or x
+                                     for x in bare])
+        parts.append(_sentence(neg + " anywhere in frame"
+                               if not neg.lower().endswith(("frame", "shot",
+                                                            "anywhere"))
+                               else neg))
     return " ".join(p for p in parts if p)
 
 
@@ -1389,6 +1406,15 @@ def lint(doc, out):
             named |= set(NAME.findall(n))
         for ch in s["chunks"]:
             named |= {l["who"] for l in ch["lines"]}
+            # THE `do` LINES TOO. They were never scanned, so a subject used the
+            # most natural way -- `do @jenny sits down` -- was reported as
+            # "declared but never used" every time. The check was looking at
+            # shot headers, notes and dialogue speakers only, which is three of
+            # the four places a name can appear.
+            for a in ch.get("actions") or []:
+                named |= set(NAME.findall(a))
+            for ln in ch["lines"]:
+                named |= set(NAME.findall(ln.get("line") or ""))
     for c in doc["cast"]:
         if c["name"] not in named:
             notes.append(f"@{c['name']} is declared but never used — it still "
