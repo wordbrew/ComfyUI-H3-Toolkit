@@ -465,5 +465,143 @@ class H3ChunkLora:
         return {"ui": {"h3char": [info]}, "result": (out, info)}
 
 
-NODE_CLASS_MAPPINGS = {"H3ChunkLora": H3ChunkLora}
-NODE_DISPLAY_NAME_MAPPINGS = {"H3ChunkLora": "H3 Chunk LoRA (per-chunk)"}
+class H3ChunkStrength:
+    """A schedule -> a strength and an on/off for THIS chunk. For any dial.
+
+    WHY THIS RATHER THAN A NODE PER THING
+      H3ChunkLora schedules LoRAs because it loads them itself. Plenty of other
+      per-chunk wants are just a NUMBER on somebody else's node:
+      H3SimpleRefModLoader takes `strength` and `enabled`, H3GuideStrength takes
+      a float, the semantic bridge takes an alpha. Reimplementing each one's
+      patching to make it chunk-aware would be absurd; driving its existing
+      inputs is not.
+
+      So this evaluates the SAME schedule grammar H3ChunkLora uses and emits the
+      two values. Convert the target node's widget to an input, wire it here, and
+      that dial becomes per-chunk without the target knowing anything about
+      chunks.
+
+    THE SCHEDULE IS THE SAME GRAMMAR, minus the filename column:
+
+        2            on for chunk 2 at the default strength
+        2-4 | 0.4-0.9    ramps across chunks 2 to 4
+        last | 0.8
+        00:14-00:19 | 0.8    a colon still means time
+
+    OFF MEANS OFF, NOT ZERO. `enabled` goes false where nothing is scheduled, so
+    a loader that ignores strength 0 still does nothing -- a dial at 0 and a
+    patch that was never applied are not the same thing, and only the node being
+    driven knows which it honours.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "schedule": ("STRING", {"multiline": True, "default":
+                         "# where | strength   (a colon means time)\n"
+                         "# 2-4 | 0.4-0.9\n# last | 0.8\n",
+                         "tooltip": "Where this dial is ON, and how strong. Same "
+                                    "grammar as H3 Chunk LoRA without the "
+                                    "filename: a colon means TIME, no colon "
+                                    "means CHUNKS (1-based). `2`, `2-4`, `2,5`, "
+                                    "`2+`, `last`. A range like 0.4-0.9 ramps "
+                                    "across the chunks named."}),
+            "chunk_index": ("INT", {"default": 0, "min": 0, "max": 4096,
+                            "forceInput": True,
+                            "tooltip": "From H3 Chunk Open, which is also what "
+                                       "puts this node inside the per-chunk "
+                                       "body."}),
+        }, "optional": {
+            "chunk_plan": ("H3_CHUNK_PLAN", {"tooltip": "From H3 Chunk Plan, so "
+                           "`last` and times can be resolved. Required for "
+                           "anything but a bare chunk number."}),
+            "default_strength": ("FLOAT", {"default": 1.0, "min": -10.0,
+                                 "max": 10.0, "step": 0.05,
+                                 "tooltip": "Used by a row that names no "
+                                            "strength of its own."}),
+            "off_strength": ("FLOAT", {"default": 0.0, "min": -10.0, "max": 10.0,
+                             "step": 0.05,
+                             "tooltip": "What `strength` reads where the dial is "
+                                        "OFF. 0 for most things; a few nodes "
+                                        "treat 0 as a special case, which is why "
+                                        "`enabled` exists alongside it."}),
+        }}
+
+    RETURN_TYPES = ("FLOAT", "BOOLEAN", "STRING")
+    RETURN_NAMES = ("strength", "enabled", "info")
+    FUNCTION = "go"
+    CATEGORY = CATEGORY
+    EXPERIMENTAL = True
+    DESCRIPTION = ("Turn a per-chunk schedule into a strength and an on/off, for "
+                   "driving somebody else's dial — a RefMod loader, a guide "
+                   "strength, a bridge alpha — one chunk at a time.")
+
+    def go(self, schedule, chunk_index, chunk_plan=None, default_strength=1.0,
+           off_strength=0.0):
+        rows, bad = [], []
+        chunks = ((chunk_plan or {}).get("chunks")) or []
+        total = len(chunks)
+        for r in parse_rows(schedule):
+            if not r or not r[0]:
+                continue
+            spec = parse_chunks(r[0])
+            if spec is not None:
+                if not total:
+                    bad.append(f"{r[0]!r} needs chunk_plan to resolve")
+                    continue
+                members, oor = chunk_indices(spec, total)
+                if oor:
+                    bad.append(f"{r[0]!r} names chunk(s) {', '.join(oor)} of "
+                               f"{total}")
+                if not members:
+                    continue
+                target = ("chunks", members)
+            else:
+                target = parse_span(r[0])
+                if target is None:
+                    bad.append(f"cannot read {r[0]!r}")
+                    continue
+            rows.append(("dial", target,
+                         parse_strength(r[1] if len(r) > 1 else
+                                        str(default_strength))))
+        if bad:
+            raise ValueError("H3 Chunk Strength: " + "; ".join(bad))
+        if not rows:
+            info = ("H3 CHUNK STRENGTH: nothing scheduled — off everywhere")
+            return {"ui": {"h3char": [info]},
+                    "result": (float(off_strength), False, info)}
+        if not chunks:
+            raise ValueError("H3 Chunk Strength: no chunk_plan wired, so a "
+                             "schedule cannot be placed. Wire H3 Chunk Plan.")
+        i = max(0, min(int(chunk_index), total - 1))
+        spans = chunk_spans(chunks)
+        hits = resolve(rows, spans[i], i, total)
+        if not hits:
+            info = (f"H3 CHUNK STRENGTH: chunk {i + 1} of {total} — OFF "
+                    f"(nothing scheduled here), strength reads "
+                    f"{float(off_strength):.4g}")
+            return {"ui": {"h3char": [info]},
+                    "result": (float(off_strength), False, info)}
+        # several rows landing on one chunk: the LAST wins, which is how a
+        # later line overriding an earlier one reads
+        strength = float(hits[-1][1])
+        lines = [f"H3 CHUNK STRENGTH: chunk {i + 1} of {total} — ON at "
+                 f"{strength:.4g}"]
+        if len(hits) > 1:
+            lines.append(f"  {len(hits)} rows matched; the last one wins")
+        lines.append("  across the take:")
+        for k, sp in enumerate(spans):
+            got = resolve(rows, sp, k, total)
+            lines.append(f"    chunk {k + 1}: "
+                         f"{(f'{got[-1][1]:.4g}' if got else 'off')}"
+                         f"{'  <-' if k == i else ''}")
+        info = "\n".join(lines)
+        logging.info("H3ChunkStrength: chunk %d -> %s", i + 1, strength)
+        return {"ui": {"h3char": [info]}, "result": (strength, True, info)}
+
+
+NODE_CLASS_MAPPINGS = {"H3ChunkLora": H3ChunkLora,
+                       "H3ChunkStrength": H3ChunkStrength}
+NODE_DISPLAY_NAME_MAPPINGS = {"H3ChunkLora": "H3 Chunk LoRA (per-chunk)",
+                              "H3ChunkStrength":
+                                  "H3 Chunk Strength (drive any dial per chunk)"}
