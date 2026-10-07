@@ -141,7 +141,45 @@
   .state.done, .state.success { color: var(--good); }
   .state.error, .state.failed { color: var(--bad); }
   .err { color: var(--bad); font-size: 12.5px; margin-top: 8px; white-space: pre-wrap; }
-  .gutter { font: 11px/1.6 var(--mono); color: var(--ink-faint); }
+  .gutter { font: 11px/1.6 var(--mono); color: var(--ink-faint); white-space: pre-wrap; }
+
+  /* A CAST ROW. The kind is a coloured spine rather than a dropdown, because a
+     person and a place retain different things and that is worth seeing at a
+     glance rather than reading. */
+  .cast { border: 1px solid var(--line); border-left-width: 3px;
+          border-radius: var(--r); padding: 9px 10px; margin-bottom: 8px;
+          background: var(--panel); }
+  .cast[data-kind="library"] { border-left-color: var(--accent); }
+  .cast[data-kind="person"]  { border-left-color: var(--ink-dim); }
+  .cast[data-kind="setting"] { border-left-color: var(--good); }
+  .cast .top { display: flex; gap: 8px; align-items: center; }
+  .cast .top .tag { font: 600 10px var(--mono); letter-spacing: .07em;
+                    text-transform: uppercase; color: var(--ink-faint);
+                    min-width: 54px; }
+  .cast .top .grow { flex: 1; min-width: 0; }
+  .cast .x { padding: 3px 8px; line-height: 1; }
+  .cast .meta { font: 11px var(--mono); color: var(--ink-faint); margin-top: 6px; }
+  .cast .extra { display: none; gap: 8px; margin-top: 8px; }
+  .cast.open .extra { display: grid; grid-template-columns: 1fr 1fr; }
+  .cast .more { font-size: 11px; color: var(--ink-faint); cursor: pointer;
+                background: none; border: 0; padding: 4px 0; }
+
+  /* The library reads as a list of things, not a grid of cards -- there may be
+     one entry or fifty, and a row scans at both sizes. */
+  .lib { display: flex; align-items: center; gap: 10px; padding: 7px 9px;
+         border: 1px solid var(--line); border-radius: var(--r);
+         margin-bottom: 5px; background: var(--panel); cursor: pointer; }
+  .lib:hover { border-color: var(--accent); }
+  .lib .k { font: 600 9.5px var(--mono); letter-spacing: .08em; text-transform: uppercase;
+            padding: 2px 6px; border-radius: 2px; color: var(--ground); }
+  .lib[data-kind="person"] .k { background: var(--ink-dim); }
+  .lib[data-kind="place"]  .k { background: var(--good); }
+  .lib[data-kind="thing"]  .k { background: var(--accent); }
+  .lib .nm { font-weight: 600; }
+  .lib .ds { color: var(--ink-faint); font-size: 12px; flex: 1; min-width: 0;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib .an { font: 11px var(--mono); color: var(--ink-faint); }
+  .lib .use { padding: 3px 9px; font-size: 11.5px; }
 </style>
 </head>
 <body>
@@ -171,20 +209,83 @@
     <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
     <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
 
-    <details>
-      <summary>Subject, retention and sound</summary>
+    <h2>Cast</h2>
+    <p class="hint">A subject is anyone or anywhere the prompt names. Pick a saved
+    character and its anchors and wording come with it; or describe one here.
+    Numbering, retention wording and the anchor count are worked out for you —
+    you never type <code>&lt;Subject 2&gt;</code>.</p>
+    <div id="cast"></div>
+    <div class="bar">
+      <button id="addperson">+ Person</button>
+      <button id="addsetting">+ Setting</button>
+      <button id="addlib">+ From library</button>
+    </div>
+    <details id="castout">
+      <summary>What the model will be told</summary>
       <div class="body">
-        <label for="subject">subject_definitions</label>
-        <input type="text" id="subject" placeholder="&lt;Subject 1&gt; is the woman shown in &lt;Picture 1&gt;, &lt;Picture 2&gt; and &lt;Picture 3&gt;.">
-        <label for="retention">retention_analysis</label>
-        <input type="text" id="retention" placeholder="&lt;Subject 1&gt;: fully_preserved - preserve her facial identity, hair, skin…">
-        <p class="hint">Bind retention to the <em>subject</em>. Naming &lt;Picture N&gt; as the thing to preserve makes the model cut to the reference photo mid-clip.</p>
-        <label for="sound">overall_soundscape</label>
-        <input type="text" id="sound" placeholder="Close room tone in a small carpeted bedroom, faint traffic through glass.">
-        <label for="music">non_diegetic_music</label>
-        <input type="text" id="music" value="N/A">
+        <div class="gutter" id="castpreview">add a subject to see it</div>
       </div>
     </details>
+
+    <h2>Library</h2>
+    <p class="hint">Saved subjects, reusable across takes. A subject is a person,
+    a place or a thing — and the kind decides how the prompt asks for it to be
+    kept: a person keeps identity and build, a place keeps layout and light, a
+    thing keeps shape, material and markings.</p>
+    <div id="lib"></div>
+    <div class="bar">
+      <button id="newsubj">+ New subject</button>
+      <button id="reloadlib">Reload</button>
+    </div>
+
+    <details id="editor">
+      <summary id="editortitle">New subject</summary>
+      <div class="body">
+        <div class="row two">
+          <div><label for="e_name">Name</label>
+               <input type="text" id="e_name" placeholder="brass_lamp"></div>
+          <div><label for="e_kind">Kind</label>
+               <select id="e_kind">
+                 <option value="person">person — keeps identity and build</option>
+                 <option value="place">place — keeps layout and light</option>
+                 <option value="thing">thing — keeps shape and markings</option>
+               </select></div>
+        </div>
+        <label for="e_desc">Description — appearance, not plot</label>
+        <textarea id="e_desc" rows="2" placeholder="a brass desk lamp with a green glass shade"></textarea>
+        <div class="row two">
+          <div><label for="e_ret">Retention</label>
+               <select id="e_ret">
+                 <option>fully_preserved</option><option>partially_preserved</option>
+                 <option>attribute_transfer</option><option>weak_reference</option>
+               </select></div>
+          <div><label for="e_voicedesc">Voice description (people)</label>
+               <input type="text" id="e_voicedesc" placeholder="low, breathy, unhurried"></div>
+        </div>
+        <label for="e_imgs">Anchor images — from ComfyUI's input folder, ctrl-click for several</label>
+        <select id="e_imgs" multiple size="6"></select>
+        <p class="hint">Three anchors measurably beat one for identity; a fourth
+        reference broke subject motion in testing. Vary angle and lighting —
+        near-duplicates spend tokens without adding information.</p>
+        <label for="e_voice">Voice sample (optional)</label>
+        <select id="e_voice"></select>
+        <div class="bar">
+          <button class="go" id="e_save">Save</button>
+          <button id="e_delete">Delete</button>
+          <button id="e_cancel">Cancel</button>
+          <span class="sub" id="e_msg"></span>
+        </div>
+      </div>
+    </details>
+
+    <h2>Sound</h2>
+    <label for="sound">overall_soundscape — the room it was recorded in</label>
+    <input type="text" id="sound" placeholder="Close room tone in a small carpeted bedroom, faint traffic through glass.">
+    <label for="music">non_diegetic_music — score the characters cannot hear</label>
+    <input type="text" id="music" value="N/A">
+    <p class="hint">An instrument someone in the scene is playing is diegetic and
+    belongs in the beat, not here — put it here and the model lays an unrelated
+    backing track underneath.</p>
   </section>
 
   <section class="col">
@@ -216,6 +317,7 @@
           <div><label for="lstr">Strength</label><input type="number" id="lstr" value="0.8" step="0.05" min="0" max="2"></div>
         </div>
         <label>References — three held motion in testing; a fourth broke it</label>
+        <p class="hint" id="refnote"></p>
         <div class="row three">
           <select id="ref0"></select><select id="ref1"></select><select id="ref2"></select>
         </div>
@@ -299,12 +401,13 @@ async function optionsFor(cls, field) {
 function saved() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function save() {
   const s = {};
-  for (const id of ["head","beats","tail","subject","retention","sound","music",
+  for (const id of ["head","beats","tail","sound","music",
                     "cf","cc","ctx","unet","clip","vae","avae","lora","lstr",
                     "ref0","ref1","ref2","sched","seed","prefix"]) {
     const el = $(id); if (el) s[id] = el.value;
   }
   s.theme = document.documentElement.dataset.theme || "";
+  s.cast = CAST;                 // the cast is the document, so it persists too
   try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
 }
 function restore() {
@@ -314,6 +417,7 @@ function restore() {
     const el = $(k); if (el && v !== undefined && v !== "") el.value = v;
   }
   if (s.theme) document.documentElement.dataset.theme = s.theme;
+  if (Array.isArray(s.cast)) CAST = s.cast;
 }
 
 /* -------------------------------------------------------------------- plan */
@@ -366,6 +470,209 @@ function setConn(ok) {
   $("conn").textContent = ok ? "connected" : "no server";
 }
 
+/* -------------------------------------------------------------------- cast
+   Rows are structured; the SERVER turns them into subject_definitions and
+   retention_analysis through h3script. Nothing here composes "<Subject 2> is",
+   because that text is the most consequential in the pack and one
+   implementation of it is the point. */
+let CAST = [];
+let LIBRARY = [];
+const RETENTIONS = ["fully_preserved", "partially_preserved",
+                    "attribute_transfer", "weak_reference"];
+
+function addRow(kind, seed = {}) {
+  const n = CAST.length + 1;
+  CAST.push({
+    id: Math.random().toString(36).slice(2, 8),
+    kind, key: seed.key || (kind === "setting" ? "place" : `s${n}`),
+    from_library: seed.from_library || "",
+    describe: seed.describe || "", setting: seed.setting || "",
+    retention: seed.retention || "", wears: seed.wears || "", open: false,
+  });
+  drawCast();
+}
+function dropRow(id) { CAST = CAST.filter(r => r.id !== id); drawCast(); }
+
+function drawCast() {
+  const host = $("cast");
+  host.innerHTML = "";
+  if (!CAST.length) {
+    host.innerHTML = `<p class="hint">No subjects yet. A take needs at least one.</p>`;
+  }
+  CAST.forEach((r, i) => {
+    const el = document.createElement("div");
+    el.className = "cast" + (r.open ? " open" : "");
+    el.dataset.kind = r.kind;
+    const tag = r.kind === "library" ? "Subject " + (i + 1)
+              : r.kind === "setting" ? "Setting" : "Subject " + (i + 1);
+    const main = r.kind === "library"
+      ? `<select class="grow" data-f="from_library">` +
+        LIBRARY.map(c => `<option${c === r.from_library ? " selected" : ""}>${escapeHTML(c)}</option>`).join("") +
+        `</select>`
+      : `<input class="grow" type="text" data-f="${r.kind === "setting" ? "setting" : "describe"}"
+           value="${escapeHTML(r.kind === "setting" ? r.setting : r.describe)}"
+           placeholder="${r.kind === "setting"
+             ? "a bedroom in warm low light"
+             : "a man in his thirties, dark hair"}">`;
+    el.innerHTML =
+      `<div class="top"><span class="tag">${tag}</span>${main}` +
+      `<button class="x" data-x title="Remove">✕</button></div>` +
+      `<div class="meta" data-meta></div>` +
+      `<button class="more" data-more>${r.open ? "− less" : "+ retention, wardrobe"}</button>` +
+      `<div class="extra">` +
+      `<div><label>retention</label><select data-f="retention">` +
+      `<option value="">(default for this kind)</option>` +
+      RETENTIONS.map(v => `<option${v === r.retention ? " selected" : ""}>${v}</option>`).join("") +
+      `</select></div>` +
+      `<div><label>wears</label><input type="text" data-f="wears" ` +
+      `value="${escapeHTML(r.wears)}" placeholder="a charcoal wool coat"></div>` +
+      `</div>`;
+    el.querySelector("[data-x]").onclick = () => dropRow(r.id);
+    el.querySelector("[data-more]").onclick = () => { r.open = !r.open; drawCast(); };
+    el.querySelectorAll("[data-f]").forEach(inp => {
+      inp.onchange = () => {
+        r[inp.dataset.f] = inp.value;
+        if (inp.dataset.f === "from_library") describeMember(r, el);
+        refreshCast();
+      };
+    });
+    if (r.kind === "library") describeMember(r, el);
+    host.appendChild(el);
+  });
+  refreshCast();
+}
+
+/* A dropdown of eleven names says nothing about any of them, so show the card:
+   what she looks like, how many anchors exist, whether there is a voice. */
+async function describeMember(r, el) {
+  const meta = el.querySelector("[data-meta]");
+  if (!r.from_library) { meta.textContent = ""; return; }
+  try {
+    const c = await getJSON(`${API}/character?name=${encodeURIComponent(r.from_library)}`);
+    if (!c.ok) { meta.textContent = c.error || ""; return; }
+    r.anchors = c.anchors;
+    meta.textContent = `${c.anchors} anchor(s)` +
+      (c.has_voice ? ` · voice: ${c.voice}` : " · no voice") +
+      (c.description ? ` · ${c.description}` : "");
+  } catch { meta.textContent = ""; }
+}
+
+let castTimer;
+function refreshCast() {
+  clearTimeout(castTimer);
+  castTimer = setTimeout(async () => {
+    const rows = CAST.filter(r => r.from_library || r.describe || r.setting);
+    if (!rows.length) {
+      $("castpreview").textContent = "add a subject to see it";
+      save(); return;
+    }
+    try {
+      const out = await post("/cast/compile", { cast: rows });
+      if (!out.ok) { $("castpreview").textContent = out.error; return; }
+      $("castpreview").textContent =
+        "subject_definitions:\n" + out.subject_defs +
+        "\n\nretention_analysis:\n" + out.retention +
+        (out.lint?.length ? "\n\n" + out.lint.join("\n") : "");
+      const pics = (out.counts || {}).pictures || 0;
+      $("refnote").textContent = pics
+        ? `${pics} anchor(s) come from the cast`
+        : "no anchors in the cast — wire references below by hand";
+    } catch { /* offline; the plan strip already says so */ }
+    save();
+  }, 250);
+}
+
+/* ----------------------------------------------------------------- library
+   People, places and things, saved once and reused. The kind is not cosmetic:
+   it decides the retention wording, and a saved PLACE used to come back asking
+   the model to preserve its facial identity. */
+let SUBJECTS = [];
+let editing = null;          // the name being edited, or null for a new one
+
+async function loadLibrary() {
+  try {
+    const r = await getJSON(`${API}/subjects`);
+    SUBJECTS = r.subjects || [];
+  } catch { SUBJECTS = []; }
+  LIBRARY = SUBJECTS.map(s => s.name);
+  $("addlib").disabled = !LIBRARY.length;
+  drawLibrary();
+}
+
+function drawLibrary() {
+  const host = $("lib");
+  host.innerHTML = "";
+  if (!SUBJECTS.length) {
+    host.innerHTML = `<p class="hint">Nothing saved yet. “New subject” adds one.</p>`;
+    return;
+  }
+  for (const s of SUBJECTS) {
+    const el = document.createElement("div");
+    el.className = "lib";
+    el.dataset.kind = s.kind || "person";
+    el.innerHTML =
+      `<span class="k">${escapeHTML((s.kind || "person").slice(0, 6))}</span>` +
+      `<span class="nm">${escapeHTML(s.name)}</span>` +
+      `<span class="ds">${escapeHTML(s.description || "no description")}</span>` +
+      `<span class="an">${s.anchors || 0} anchor${s.anchors === 1 ? "" : "s"}` +
+      `${s.voice ? " · voice" : ""}</span>` +
+      `<button class="use">Use</button>`;
+    el.querySelector(".use").onclick = e => {
+      e.stopPropagation();
+      addRow("library", { from_library: s.name, key: s.name.toLowerCase() });
+    };
+    el.onclick = () => openEditor(s);
+    host.appendChild(el);
+  }
+}
+
+function openEditor(s) {
+  editing = s ? s.name : null;
+  $("editortitle").textContent = s ? `Editing “${s.name}”` : "New subject";
+  $("e_name").value = s ? s.name : "";
+  $("e_kind").value = (s && s.kind) || "person";
+  $("e_desc").value = (s && s.description) || "";
+  $("e_ret").value = (s && s.retention) || "fully_preserved";
+  $("e_voicedesc").value = (s && s.voice) || "";
+  for (const o of $("e_imgs").options) o.selected = false;
+  $("e_voice").value = "";
+  $("e_msg").textContent = s
+    ? `${s.anchors || 0} anchor(s) stored. Re-pick images to replace them; saving with none clears them.`
+    : "";
+  $("e_delete").hidden = !s;
+  $("editor").open = true;
+}
+
+async function saveSubject() {
+  const name = $("e_name").value.trim();
+  if (!name) { $("e_msg").textContent = "a name is required"; return; }
+  const imgs = [...$("e_imgs").selectedOptions].map(o => o.value);
+  const body = {
+    name, kind: $("e_kind").value, description: $("e_desc").value,
+    retention: $("e_ret").value, voice_description: $("e_voicedesc").value,
+    images: imgs, overwrite: true,
+  };
+  if ($("e_voice").value) body.voice = $("e_voice").value;
+  const r = await post("/subject/save", body);
+  if (!r.ok) { $("e_msg").textContent = r.error || "save failed"; return; }
+  $("e_msg").textContent = r.warning
+    ? `saved — ${r.warning}`
+    : `saved: ${r.card.kind}, ${r.card.anchors} anchor(s)`;
+  await loadLibrary();
+  refreshCast();
+}
+
+async function deleteSubject() {
+  if (!editing) return;
+  // a destructive, outward action on something reused across takes
+  if (!confirm(`Delete “${editing}” from the library? This removes its card, `
+             + `its anchor images and its voice sample from disk.`)) return;
+  const r = await post("/subject/delete", { name: editing });
+  if (!r.ok) { $("e_msg").textContent = r.error || "delete failed"; return; }
+  $("editor").open = false;
+  await loadLibrary();
+}
+
 /* ------------------------------------------------------------------ render */
 function request() {
   const refs = ["ref0","ref1","ref2"].map(i => $(i).value).filter(Boolean);
@@ -383,8 +690,8 @@ function request() {
         ? [{ name: $("lora").value, strength: +$("lstr").value }] : [],
     },
   };
-  if ($("subject").value) req.subject_def_1 = $("subject").value;
-  if ($("retention").value) req.retention_1 = $("retention").value;
+  const rows = CAST.filter(r => r.from_library || r.describe || r.setting);
+  if (rows.length) req.cast = rows;
   if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
   return req;
 }
@@ -500,14 +807,29 @@ async function poll(id) {
   fill($("lora"), ["(none)"].concat(rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
   for (const i of ["ref0", "ref1", "ref2"]) fill($(i), [""].concat(images));
 
+  fill($("e_imgs"), images);
+  fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
+  await loadLibrary();
+  if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
+  $("newsubj").onclick = () => openEditor(null);
+  $("reloadlib").onclick = loadLibrary;
+  $("e_save").onclick = saveSubject;
+  $("e_delete").onclick = deleteSubject;
+  $("e_cancel").onclick = () => { $("editor").open = false; };
+
   restore();
+  drawCast();
   await refreshPlan();
+
+  $("addperson").onclick = () => addRow("person");
+  $("addsetting").onclick = () => addRow("setting");
+  $("addlib").onclick = () => addRow("library", { from_library: LIBRARY[0] });
 
   for (const id of ["cf", "cc", "ctx"]) $(id).addEventListener("change", refreshPlan);
   let t; $("beats").addEventListener("input", () => {
     clearTimeout(t); t = setTimeout(refreshPlan, 250);
   });
-  for (const id of ["head","tail","subject","retention","sound","music","unet",
+  for (const id of ["head","tail","sound","music","unet",
                     "clip","vae","avae","lora","lstr","ref0","ref1","ref2",
                     "sched","seed","prefix"]) {
     $(id).addEventListener("change", save);

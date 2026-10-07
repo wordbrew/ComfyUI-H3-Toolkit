@@ -154,6 +154,18 @@ def build(req, template=None):
     for role, name in zip(slots, refs):
         _set(graph, role, "image", name)
 
+    # A CAST BEATS TWO TEXT BOXES. When `cast` is given it is compiled through
+    # h3script and OVERRIDES subject_def_1 / retention_1, so a caller never
+    # types `<Subject 2>` or a retention clause by hand. Explicit text still
+    # wins if both are sent, because an escape hatch that cannot be reached is
+    # not an escape hatch.
+    if req.get("cast"):
+        from . import h3script as _hs
+        compiled = compile_cast(req["cast"], _hs.parse, _hs.emit)
+        req = dict(req)
+        req.setdefault("subject_def_1", compiled["subject_defs"])
+        req.setdefault("retention_1", compiled["retention"])
+
     # the prompt, as head/beats/tail -- the fields H3LongFormLinks repeats into
     # every chunk, which is what makes each link independent
     for field in ("head", "beats", "tail", "subject_def_1", "retention_1",
@@ -203,3 +215,64 @@ def placeholders_in(graph):
             if isinstance(v, str) and PLACEHOLDER in v:
                 out.append((f"{role}.{k}", v))
     return out
+
+# ------------------------------------------------------------------- the cast
+def cast_to_script(cast):
+    """Structured cast rows -> H3Script text. The ONE place that mapping lives.
+
+    WHY GO THROUGH THE SCRIPT LANGUAGE AT ALL
+      Because the numbering, the retention wording per KIND, and the store
+      lookup are already written, tested and used by the ComfyUI panel. A UI
+      that composed `<Subject 2> is ...` itself would be a second implementation
+      of the pack's most consequential text, and the two would drift. So the
+      rows become `@name = ...` lines and h3script.emit does the rest -- it is
+      what turns `character Lily` into "<Subject 1> is Lily." with her anchors
+      counted from the store, and what knows a SETTING retains "layout,
+      architecture, materials and quality of light" while a person retains
+      "facial identity, hair, eye colour and build".
+
+    A row is {key, from_library | describe | setting, retention?, wears?,
+              preserve?, allow?, pictures?, audio?}.
+    """
+    lines = []
+    for i, row in enumerate(cast or []):
+        key = str(row.get("key") or f"s{i + 1}").strip().lstrip("@") or f"s{i + 1}"
+        if row.get("setting"):
+            lines.append(f"@{key} = setting. {row['setting']}")
+        elif row.get("from_library"):
+            lines.append(f"@{key} = character {row['from_library']}")
+        elif row.get("describe"):
+            lines.append(f"@{key} = {row['describe']}")
+        else:
+            continue                      # an empty row is not a subject
+        for field in ("retention", "wears", "preserve", "allow", "pictures",
+                      "audio", "retention_detail"):
+            if row.get(field) not in (None, "", []):
+                lines.append(f"@{key}.{field} = {row[field]}")
+    if not lines:
+        return ""
+    # emit() describes a take, so it needs at least one shot to describe. The
+    # caller only wants the cast fields, and discards everything else.
+    lines += ["", "shot | placeholder"]
+    return "\n".join(lines)
+
+
+def compile_cast(cast, parse, emit, lint=None):
+    """-> {subject_defs, retention, counts, lint}. Empty cast gives empty text."""
+    text = cast_to_script(cast)
+    if not text:
+        return {"subject_defs": "", "retention": "", "counts": {}, "lint": []}
+    doc = parse(text)
+    out = emit(doc)
+    notes = []
+    if lint is not None:
+        # the script lint knows about a cast with no pictures, a speaker with no
+        # voice, and the other traps; drop anything about the placeholder shot
+        notes = [m for m in lint(doc, out) if "placeholder" not in m.lower()]
+    return {
+        "subject_defs": out.get("subject_defs", ""),
+        "retention": out.get("retention", ""),
+        "counts": out.get("counts", {}),
+        "index": out.get("index", {}),
+        "lint": notes,
+    }

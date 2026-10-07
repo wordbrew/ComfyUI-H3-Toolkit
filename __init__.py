@@ -183,6 +183,148 @@ def _register_routes():
             return web.json_response({"ok": False, "characters": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
 
+    @routes.get(ROUTE_PREFIX + "/subjects")
+    async def _subjects(request):
+        """The whole library, with cards. GET -> people, places and things.
+
+        /characters returns names only, which is all the ComfyUI panel's dropdown
+        needed. A UI that lets you BROWSE and EDIT the library has to show what
+        each entry is, so this returns the kind, the description, the anchor count
+        and the voice for every one, in a single call.
+        """
+        try:
+            from .character import list_subjects
+            return web.json_response({"ok": True, "subjects": list_subjects()})
+        except Exception as exc:                                # noqa: BLE001
+            return web.json_response({"ok": False, "subjects": [],
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
+    @routes.post(ROUTE_PREFIX + "/subject/save")
+    async def _subject_save(request):
+        """Create or replace a subject. People, places and things.
+
+        POST {"name": "the lamp", "kind": "thing",
+              "description": "a brass desk lamp with a green glass shade",
+              "retention": "fully_preserved",
+              "images": ["lamp_a.png", "lamp_b.png"],   # names in ComfyUI/input
+              "voice": "sample.wav",                     # optional, also input/
+              "overwrite": true}
+
+        Images are taken from ComfyUI's INPUT folder, because core's own
+        /upload/image already puts them there — so a browser uploads through the
+        endpoint ComfyUI already has, and this copies rather than inventing a
+        second upload path.
+
+        KIND IS NOT COSMETIC. It decides how the prompt asks for the thing to be
+        preserved: a person keeps facial identity and build, a place keeps layout
+        and quality of light, a thing keeps shape, material and markings.
+        """
+        from .character import save_subject
+        data = await _body(request)
+        try:
+            import folder_paths
+            indir = pathlib.Path(folder_paths.get_input_directory())
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI input directory"})
+
+        def resolve(fn):
+            # keep it inside input/: a name is a name, never a path out
+            cand = (indir / pathlib.Path(str(fn)).name)
+            return str(cand) if cand.is_file() else None
+
+        imgs = [r for r in (resolve(f) for f in data.get("images") or []) if r]
+        missing = [f for f in (data.get("images") or []) if not resolve(f)]
+        voice = resolve(data["voice"]) if data.get("voice") else None
+        try:
+            card = save_subject(
+                data.get("name", ""), kind=data.get("kind", "person"),
+                description=data.get("description", ""),
+                voice_description=data.get("voice_description", ""),
+                retention=data.get("retention", "fully_preserved"),
+                image_paths=imgs, voice_path=voice,
+                overwrite=bool(data.get("overwrite")))
+        except (ValueError, OSError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        out = {"ok": True, "card": card}
+        if missing:
+            out["warning"] = (f"not found in the input folder, so not saved: "
+                              f"{', '.join(map(str, missing))}")
+        return web.json_response(out)
+
+    @routes.post(ROUTE_PREFIX + "/subject/delete")
+    async def _subject_delete(request):
+        """Remove a subject from the store. POST {"name": "..."}"""
+        from .character import delete_subject
+        data = await _body(request)
+        try:
+            gone = delete_subject(data.get("name", ""))
+        except (ValueError, OSError) as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        return web.json_response({"ok": True, "deleted": bool(gone)})
+
+    @routes.get(ROUTE_PREFIX + "/character")
+    async def _character(request):
+        """One saved character's card. GET ?name=Lily
+
+        The list route gives names; a UI picking from it needs to SHOW what it is
+        picking — the description, the voice, how many anchors exist and the
+        retention marker the store already decided. Without this a dropdown of
+        eleven names tells you nothing about any of them.
+        """
+        name = request.rel_url.query.get("name")
+        if not name:
+            return web.json_response({"ok": False, "error": "pass ?name="})
+        try:
+            from .character import characters_dir, read_card
+            card = read_card(name)
+            if not card:
+                return web.json_response({"ok": False,
+                                          "error": f"no character {name!r}"})
+            d = pathlib.Path(characters_dir()) / name / "images"
+            imgs = sorted(x.name for x in d.glob("*")) if d.is_dir() else []
+            return web.json_response({
+                "ok": True, "name": name,
+                "description": card.get("description", ""),
+                "voice": card.get("voice", ""),
+                "retention": card.get("retention", "fully_preserved"),
+                "anchors": int(card.get("anchors", len(imgs)) or len(imgs)),
+                "images": imgs,
+                "has_voice": bool(card.get("voice")),
+            })
+        except Exception as exc:                                # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
+    @routes.post(ROUTE_PREFIX + "/cast/compile")
+    async def _cast_compile(request):
+        """Cast rows -> the subject_definitions and retention_analysis text.
+
+        POST {"cast": [
+                {"key": "lead", "from_library": "Lily",
+                 "retention": "fully_preserved", "wears": "a black silk slip"},
+                {"key": "man",  "describe": "a man in his thirties"},
+                {"key": "room", "setting": "a bedroom in warm low light"}]}
+
+        Numbering, the store lookup and the per-KIND retention wording all come
+        from h3script, so this cannot drift from what the script language and the
+        ComfyUI panel produce. A setting retains layout and light; a person
+        retains identity and build; neither is written here.
+        """
+        from .h3script import ScriptError, emit, lint, parse
+        from .takeapi import cast_to_script, compile_cast
+        data = await _body(request)
+        try:
+            out = compile_cast(data.get("cast") or [], parse, emit, lint)
+            out["ok"] = True
+            out["script"] = cast_to_script(data.get("cast") or [])
+            return web.json_response(out)
+        except ScriptError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        except (KeyError, TypeError, ValueError) as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
     @routes.post(ROUTE_PREFIX + "/chunk/plan")
     async def _chunk_plan(request):
         """How long will this be, and how many beats do I write?

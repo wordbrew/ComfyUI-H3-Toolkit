@@ -126,6 +126,97 @@ def read_card(name):
         return {}
 
 
+def sanitise(name):
+    """The store's folder name for a subject. Raises on a name that empties."""
+    safe = "".join(c for c in str(name).strip()
+                   if c.isalnum() or c in "-_ ").strip()
+    if not safe:
+        raise ValueError("subject name is empty after sanitising")
+    return safe
+
+
+def card_of(name, kind="person", description="", voice_description="",
+            retention="fully_preserved", anchors=0):
+    """The card dict, in ONE place, so the node and the HTTP route agree."""
+    return {"name": name, "kind": kind, "description": str(description).strip(),
+            "voice": str(voice_description).strip(), "retention": retention,
+            "anchors": int(anchors)}
+
+
+def save_subject(name, kind="person", description="", voice_description="",
+                 retention="fully_preserved", image_paths=(), voice_path=None,
+                 overwrite=False):
+    """Write a subject to the store from FILES on disk. -> the card.
+
+    The node's save() takes IMAGE tensors because that is what a graph carries.
+    An HTTP caller has filenames -- ComfyUI's own /upload/image already put them
+    in input/ -- so copying beats a tensor round trip. Both land the identical
+    layout: card.json, images/NNN.png, voice.wav. `card_of` is shared so the two
+    cannot write different cards.
+    """
+    import shutil
+    safe = sanitise(name)
+    d = os.path.join(characters_dir(create=True), safe)
+    if os.path.isdir(d) and not overwrite:
+        raise ValueError(f"'{safe}' already exists — pass overwrite to replace it")
+    img_dir = os.path.join(d, "images")
+    os.makedirs(img_dir, exist_ok=True)
+    for f in os.listdir(img_dir):
+        os.remove(os.path.join(img_dir, f))
+    n = 0
+    for src in image_paths or ():
+        if not os.path.isfile(src):
+            continue
+        ext = os.path.splitext(src)[1].lower()
+        if ext not in IMAGE_EXT:
+            continue
+        n += 1
+        shutil.copyfile(src, os.path.join(img_dir, f"{n:03d}{ext}"))
+    if voice_path and os.path.isfile(voice_path):
+        shutil.copyfile(voice_path,
+                        os.path.join(d, "voice" + os.path.splitext(voice_path)[1].lower()))
+    card = card_of(safe, kind, description, voice_description, retention, n)
+    with open(os.path.join(d, "card.json"), "w", encoding="utf-8") as f:
+        json.dump(card, f, indent=2)
+    _CACHE.pop(safe, None)
+    return card
+
+
+def delete_subject(name):
+    """Remove a subject from the store. -> True if it was there."""
+    import shutil
+    safe = sanitise(name)
+    d = os.path.join(characters_dir(), safe)
+    if not os.path.isdir(d):
+        return False
+    shutil.rmtree(d)
+    _CACHE.pop(safe, None)
+    return True
+
+
+def list_subjects():
+    """Every saved subject with its card, for a UI that must SHOW the library."""
+    d = characters_dir()
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for name in sorted(os.listdir(d)):
+        if not os.path.isdir(os.path.join(d, name)):
+            continue
+        card = read_card(name) or {}
+        img_dir = os.path.join(d, name, "images")
+        imgs = sorted(f for f in os.listdir(img_dir)
+                      if f.lower().endswith(IMAGE_EXT)) if os.path.isdir(img_dir) else []
+        out.append({"name": name,
+                    "kind": str(card.get("kind") or "person").lower(),
+                    "description": card.get("description", ""),
+                    "voice": card.get("voice", ""),
+                    "retention": card.get("retention", "fully_preserved"),
+                    "anchors": int(card.get("anchors", len(imgs)) or len(imgs)),
+                    "images": imgs})
+    return out
+
+
 class H3Character:
     """Load a saved character: anchors, voice, and the wording that describes them."""
 
@@ -219,12 +310,23 @@ class H3Character:
         # anchor's own studio background (090 cut at 7.71s/9.79s; 091 with this
         # wording and nothing else changed was clean at two seeds, one of them the
         # seed that had cut). Matches the working 14-clip one-take workflow.
+        # WHAT "KEEP IT THE SAME" MEANS DEPENDS ON WHAT IT IS. This used to be
+        # hardcoded person wording, so a saved PLACE came back asking the model
+        # to preserve its "facial identity, hairstyle, body proportions" --
+        # H3CharacterSave has written `kind` since it gained the widget, and the
+        # loader simply never read it. h3script fixed the same bug in its own
+        # path months ago; this shares that table rather than restating it, so
+        # the two cannot drift again.
+        from .h3script import PRESERVE_BY_KIND
+        kind = str(card.get("kind") or "person").lower()
+        preserve = PRESERVE_BY_KIND.get(kind, PRESERVE_BY_KIND["person"])
+        allow = ("natural poses and expressions" if kind == "person" else
+                 "natural changes of light and viewpoint" if kind in ("place", "setting")
+                 else "natural handling and viewpoint")
         rets = []
         if pics:
-            rets.append(f"{subj} (appears in [Shot 1]): {marker} - preserve their facial "
-                        f"identity, hairstyle, body proportions, skin and distinctive "
-                        f"features from {pic_list} while allowing natural poses and "
-                        f"expressions.")
+            rets.append(f"{subj} (appears in [Shot 1]): {marker} - preserve "
+                        f"{preserve} from {pic_list} while allowing {allow}.")
         if voice is not None:
             rets.append(f"<Audio {audio_index}>: reference - timbre, accent and delivery "
                         f"only for {subj}; the signal is not copied and the words are new.")
