@@ -250,5 +250,38 @@ ok("lint says so rather than letting it render silently",
 ok("an explicit override still wins",
    hs.parse("@x = character Nobody\n@x.pictures = 2\nshot | @x\n"
             )["cast"][0]["pictures"] == 2)
+
+# ---------------------------------------------------------------- the lint lies
+# CJ: "@jenny is declared but never used ... do we have the @declarations
+# working?" They worked. The LINT did not: it scanned shot headers, notes and
+# dialogue speakers, and never the `do` lines -- so a subject used the most
+# natural way was reported unused every time, which reads as the feature being
+# broken.
+_d = hs.parse("@jenny = a woman\n@bob = a man\n\nshot | a bedroom\n"
+           "  do  @jenny sits down\n  say @bob hello")
+_o = hs.emit(_d)
+_unused = [n for n in hs.lint(_d, _o) if "never used" in n]
+ok("a subject used in a `do` line is not reported unused",
+   not any("jenny" in n for n in _unused))
+ok("and a subject who only speaks is not either",
+   not any("bob" in n for n in _unused))
+_d2 = hs.parse("@seen = a woman\n@nobody = a man\n\nshot | a room\n"
+               "  do  @seen closes the door")
+ok("while one that really is unused still reports",
+   any("nobody" in n for n in hs.lint(_d2, hs.emit(_d2))))
+
+# ------------------------------------------------- negatives must read negative
+# This emitted the list as a plain declarative -- "Extra people, readable text,
+# music." -- which asks the model FOR the things it must keep out. H3 is
+# CFG-free, so prose is the only place an exclusion can live.
+_p = hs.emit(hs.parse("negatives = extra people, readable text, music\n\n"
+                "@her = a woman\n\nshot | a room\n  do  @her closes the door"))["prompt"]
+ok("a bare list is worded as an exclusion", "No extra people" in _p)
+ok("and it is scoped to the frame", "anywhere in frame" in _p)
+_p2 = hs.emit(hs.parse("negatives = no other people, no text\n\n"
+                 "@her = a woman\n\nshot | a room\n  do  @her closes the door"))["prompt"]
+ok("an author's own wording is left alone", "No other people, no text" in _p2)
+ok("and not double-negated", "no no " not in _p2.lower())
+
 print()
 print("h3 script: store checks pass")
