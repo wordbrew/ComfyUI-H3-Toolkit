@@ -42,15 +42,19 @@ def default_comfy():
     guess = HERE.parents[2]
     if (guess / "custom_nodes").is_dir():
         return guess
-    for base in (pathlib.Path("/mnt/c/SD/ComfyUI"), pathlib.Path.home() / "ComfyUI"):
-        if not base.is_dir():
-            continue
-        # newest install that has a custom_nodes/, so a retired one is not picked
-        roots = sorted((p for p in base.glob("*/ComfyUI") if (p / "custom_nodes").is_dir()),
-                       key=lambda p: p.stat().st_mtime, reverse=True)
-        if roots:
-            return roots[0]
-    return guess
+    # Nothing above assumes a particular machine: walk up looking for the
+    # directory that has a custom_nodes/, which covers a clone sitting anywhere
+    # as long as it is somewhere under the install. A clone kept OUTSIDE the
+    # install -- the normal case here, since the deploy is a code-only copy that
+    # does not carry patches/ -- cannot be discovered at all, so say so rather
+    # than reporting "no such directory" for every patch in the registry.
+    for parent in HERE.parents:
+        if (parent / "custom_nodes").is_dir():
+            return parent
+    raise SystemExit(
+        "Cannot find the ComfyUI root from " + str(HERE) + ".\n"
+        "This clone is not inside a ComfyUI install, so set COMFYUI_PATH or pass\n"
+        "--comfy /path/to/ComfyUI.")
 
 # patch file -> the repo it applies inside, relative to the ComfyUI root
 PATCHES = {

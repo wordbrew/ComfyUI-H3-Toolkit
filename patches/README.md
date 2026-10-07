@@ -11,6 +11,17 @@ After any ComfyUI or Manager update, run:
     python3 patches/apply.py --apply    # apply whatever is missing
     python3 patches/apply.py --revert   # take them all back out
 
+It finds the ComfyUI root by walking up from here, which works when the clone
+sits inside the install. This clone does not -- the deploy is a code-only copy
+that does not carry patches/ -- so point it at the install:
+
+    export COMFYUI_PATH=/path/to/ComfyUI      # or --comfy /path/to/ComfyUI
+
+Without it the script now STOPS and says so. It used to derive the root as three
+levels up unconditionally, which outside an install resolves to a home directory
+and made every patch report "no such directory" -- a wrong answer that looked
+like an answer.
+
 It is idempotent -- an applied patch is reported and skipped, never applied
 twice -- and it reports CONFLICT when core has moved under a patch, which means
 the patch needs rebasing rather than forcing.
