@@ -227,6 +227,31 @@ class H3LongFormLinks:
                                "Chunk Plan. Only so the plan text can line each "
                                "clause up against the chunk it will actually be "
                                "rendered on."}),
+                "heads": ("STRING", {"multiline": True, "default": "",
+                          "tooltip": "A HEAD PER SHOT, separated by a blank "
+                                     "line, used instead of `head`.\n\n"
+                                     "Head and tail must be byte-identical "
+                                     "across CONTINUING links — varying the head "
+                                     "per link dragged wardrobe and set "
+                                     "description along with whatever was being "
+                                     "varied. So these are per SHOT, not per "
+                                     "link: every link of one shot takes the same "
+                                     "entry, and a new entry begins only where a "
+                                     "cut does.\n\n"
+                                     "Empty means `head` for the whole take, "
+                                     "which is right for a single continuous "
+                                     "take. Fewer entries than shots reuses the "
+                                     "last one."}),
+                "tails": ("STRING", {"multiline": True, "default": "",
+                          "tooltip": "A TAIL PER SHOT, separated by a blank "
+                                     "line, used instead of `tail`. Same rule as "
+                                     "`heads`: per shot, never per link."}),
+                "shot_index": ("INT", {"default": 0, "min": 0, "max": 4096,
+                               "forceInput": True,
+                               "tooltip": "Which SHOT this link belongs to — wire "
+                                          "it from the plan. Without it `heads` "
+                                          "and `tails` cannot be indexed and the "
+                                          "single `head` is used."}),
             },
         }
 
@@ -257,7 +282,7 @@ class H3LongFormLinks:
     def build(self, head, beats, tail, link_index, seconds_per_link, seed,
               subject_def_1="", retention_1="", task_type="keyframe completion",
               expected_count=0, soundscape="", music="", chunk_frames=0,
-              chunk_plan=None):
+              chunk_plan=None, heads="", tails="", shot_index=0):
         # A chunk's length comes from the PLAN, not from a widget you matched to
         # it by hand. This is what the comment here used to claim and the code
         # never did: it read the `chunk_frames` widget even with a plan wired, so
@@ -293,7 +318,21 @@ class H3LongFormLinks:
             _mismatch = None
 
         idx = max(0, min(link_index, len(clauses) - 1))
-        h, t = head.strip(), tail.strip()
+        # PER-SHOT HEAD AND TAIL. Head and tail must be byte-identical across
+        # CONTINUING links -- varying the head per link dragged wardrobe and set
+        # description along with whatever was being varied -- so these are
+        # indexed by SHOT, never by link. Every link of one shot gets the same
+        # entry, a new entry begins only where a cut does, and fewer entries than
+        # shots reuses the last.
+        def _per_shot(blob, fallback):
+            parts = [b.strip() for b in str(blob or "").split("\n\n") if b.strip()]
+            if not parts:
+                return fallback.strip(), False
+            k = max(0, min(int(shot_index or 0), len(parts) - 1))
+            return parts[k], True
+
+        h, used_heads = _per_shot(heads, head)
+        t, used_tails = _per_shot(tails, tail)
         clause = clauses[idx]
         # Line the clauses up against the chunks they will be RENDERED on. A
         # clause list on its own does not tell you whether clause 3 describes the
@@ -374,6 +413,12 @@ class H3LongFormLinks:
                 kept = sum(k["end"] - k["keep_from"] for k in chunks)
                 head_line += (f"\n{kept} frames kept ({kept / FPS:.1f}s), "
                               f"{gen} generated")
+            if used_heads or used_tails:
+                which = " and ".join(x for x in
+                                     ("head" if used_heads else "",
+                                      "tail" if used_tails else "") if x)
+                head_line += (f"\nshot {int(shot_index or 0) + 1}'s {which} used "
+                              f"(per-shot text, not the single field)")
             head_line += ("\nlength and seed come from the chunk runner — "
                           "seconds_per_link is ignored")
         else:

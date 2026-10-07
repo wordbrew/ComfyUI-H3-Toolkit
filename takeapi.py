@@ -26,7 +26,7 @@ import copy
 import json
 import pathlib
 
-from .chunkplan import CONTINUITY
+from .chunkplan import CONTINUITY, CUT_LIKE
 
 TEMPLATE_DIR = pathlib.Path(__file__).resolve().parent / "templates"
 DEFAULT_TEMPLATE = "longform_ref2va"
@@ -115,11 +115,21 @@ def plan_fields(req, planner):   # noqa: C901
             "end_seconds": round((at + delivered) / 24.0, 3),
             "beat": beats[i] if i < len(beats) else None,
             "continuity": name,
+            "shot": None,                    # filled below, once cuts are known
+            "opens_shot": None,
             "continuity_what": spec["what"] if spec else None,
             "continuity_wired": bool(spec["ok"]) if spec else True,
             "carry_audio": (spec["audio"] == "carry") if spec else False,
         })
         at += delivered
+    # SHOTS, the same rule scene_plan uses: a run from one cut to the next, and
+    # head/tail belong to the shot rather than the chunk.
+    shot = 0
+    for i, c in enumerate(chunks):
+        opens = i == 0 or (c["continuity"] in CUT_LIKE)
+        if opens and i:
+            shot += 1
+        c["shot"], c["opens_shot"] = shot, opens
     for i, c in enumerate(chunks):
         if c["continuity"] and not c["continuity_wired"]:
             lint.append(f"chunk {c['number']}: {c['continuity']!r} is named but "
@@ -193,7 +203,7 @@ def build(req, template=None):
     # the prompt, as head/beats/tail -- the fields H3LongFormLinks repeats into
     # every chunk, which is what makes each link independent
     for field in ("head", "beats", "tail", "subject_def_1", "retention_1",
-                  "soundscape", "music", "task_type"):
+                  "soundscape", "music", "task_type", "heads", "tails"):
         if field in req:
             _set(graph, "h3.links", field, req[field])
 

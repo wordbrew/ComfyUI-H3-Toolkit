@@ -92,7 +92,7 @@ CONTRACT = {
         "prompt_links",
         ["head", "beats", "tail", "link_index", "seconds_per_link", "seed",
          "subject_def_1", "retention_1", "expected_count", "task_type",
-         "chunk_frames", "soundscape", "music", "chunk_plan"],
+         "chunk_frames", "soundscape", "music", "chunk_plan", "heads", "tails", "shot_index"],
         ["prompt", "length", "seed", "link_count", "plan", "lint", "clause"]),
     "H3RefBudget": (
         "budget", None,
