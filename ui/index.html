@@ -1799,6 +1799,23 @@ async function poll(id) {
 }
 
 /* -------------------------------------------------------------------- init */
+/* These two are called from BOTH wireControls() and init(), so they live at
+   module scope. They were swept inside wireControls() when it was split out of
+   init, and init's call then failed with "paintStatic is not defined" — the
+   controls worked and the model lists silently kept their raw labels. */
+function paintStatic() {
+  const v = $("lora").value;
+  $("lorapick").textContent = !v || v === "(none)"
+    ? "(none) — click to choose" : v.split(/[\\/]/).pop();
+  $("lorapick").title = v || "";
+}
+
+function checkModel() {
+  // 10Eros's author states beta_3 and beta_4 are corrupted test builds
+  const v = $("unet").value || "";
+  $("modelwarn").hidden = !/beta[_-]?[34]/i.test(v);
+}
+
 /* Every control, attached before anything is fetched. */
 function wireControls() {
   $("e_pick").onclick = () => openPicker({
@@ -1836,12 +1853,6 @@ function wireControls() {
       ? `uploaded ${r.ok}, failed: ${r.failed.join(", ")}`
       : "Drop image files here to upload them";
   });
-  const paintStatic = () => {
-    const v = $("lora").value;
-    $("lorapick").textContent = !v || v === "(none)"
-      ? "(none) — click to choose" : v.split(/[\\/]/).pop();
-    $("lorapick").title = v || "";
-  };
   $("lorapick").onclick = () => pickLora(n => {
     if (![...$("lora").options].some(o => o.value === n)) {
       const o = document.createElement("option");
@@ -1922,11 +1933,6 @@ function wireControls() {
                     "sched","seed","prefix"]) {
     $(id).addEventListener("change", save);
   }
-  function checkModel() {
-    const v = $("unet").value || "";
-    const bad = /beta[_-]?[34]/i.test(v);
-    $("modelwarn").hidden = !bad;
-  }
   $("unet").addEventListener("change", checkModel);
   $("render").addEventListener("click", doRender);
   $("dry").addEventListener("click", async () => {
@@ -2002,8 +2008,11 @@ function wireControls() {
     drawAnchorTiles();
     checkModel();
     openSocket();
+    // NO setConn(true) HERE. refreshPlan() already sets the indicator from
+    // what actually happened -- false when it could not reach the planner --
+    // and asserting success afterwards overwrote the truth with a lie. The page
+    // said "connected" with every dropdown empty.
     await refreshPlan();
-    setConn(true);
   } catch (e) {
     // SAY IT. The page is still usable -- the controls are wired -- so the only
     // thing left to get wrong is hiding why a dropdown is empty.
