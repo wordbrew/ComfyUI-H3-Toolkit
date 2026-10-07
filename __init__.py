@@ -472,8 +472,14 @@ def _register_routes():
         page = pathlib.Path(__file__).resolve().parent / "ui" / "index.html"
         if not page.is_file():
             return web.Response(status=404, text="ui/index.html is missing")
+        # NO-STORE. The file is read from disk on every request, so the server
+        # always has the current page -- but without this the BROWSER keeps the
+        # copy it already had and a refresh shows yesterday's app. That cost a
+        # round trip of "I see no change" when the change was already deployed.
         return web.Response(body=page.read_bytes(),
-                            content_type="text/html", charset="utf-8")
+                            content_type="text/html", charset="utf-8",
+                            headers={"Cache-Control": "no-store, must-revalidate",
+                                     "Pragma": "no-cache"})
 
     @routes.post(ROUTE_PREFIX + "/take/plan")
     async def _take_plan(request):
