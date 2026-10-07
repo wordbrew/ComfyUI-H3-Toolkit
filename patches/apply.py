@@ -34,7 +34,23 @@ def default_comfy():
     env = os.environ.get("COMFYUI_PATH")
     if env:
         return pathlib.Path(env)
-    return HERE.parents[2]
+    # The pack is DEPLOYED as a code-only copy -- the deploy does not carry
+    # patches/ -- so in practice this script always runs from the git clone,
+    # where parents[2] is the home directory and not a ComfyUI root at all. It
+    # reported "no such directory" for every patch. Verify the guess before
+    # trusting it, and otherwise look where the installs actually are.
+    guess = HERE.parents[2]
+    if (guess / "custom_nodes").is_dir():
+        return guess
+    for base in (pathlib.Path("/mnt/c/SD/ComfyUI"), pathlib.Path.home() / "ComfyUI"):
+        if not base.is_dir():
+            continue
+        # newest install that has a custom_nodes/, so a retired one is not picked
+        roots = sorted((p for p in base.glob("*/ComfyUI") if (p / "custom_nodes").is_dir()),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        if roots:
+            return roots[0]
+    return guess
 
 # patch file -> the repo it applies inside, relative to the ComfyUI root
 PATCHES = {
@@ -55,6 +71,11 @@ PATCHES = {
     # a dropdown -- nothing renders differently until you pick a new level --
     # so a silent revert costs you options, not a wrong result.
     "nvidia_rtx_nodes_quality_levels.patch": "custom_nodes/comfyui_nvidia_rtx_nodes",
+    # Adds H3MultiRefModLoader. Mostly a NEW FILE plus two lines of registration,
+    # so an upstream release is unlikely to conflict with it -- but a revert
+    # silently costs you the node, and a graph saved with it then loads with a
+    # red box where the loader was.
+    "h3refmodloader-multi-node.patch": "custom_nodes/ComfyUI-H3RefModLoader",
 }
 
 
