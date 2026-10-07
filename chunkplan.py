@@ -161,6 +161,65 @@ LEGAL_RUNS = tuple(17 * k + 5 for k in range(0, 40))
 AV_EXACT_RUNS = tuple(r for r in LEGAL_RUNS if (r * 40) % 24 == 0)
 
 
+def scene_plan(scenes, context=39, fps=24.0):
+    """A LIST OF SCENES, each with its own length and transition.
+
+    `count_plan` answers "n chunks of one size", which is right for a single
+    continuous take and wrong for a sequence of shots -- a four-second insert
+    and a twelve-second master are the same film. A scene here is
+    {frames, continuity, beat}, and every scene sets its own length.
+
+    Each scene RENDERS `frames`. What it DELIVERS depends on the transition
+    into it: a carry overlaps the scene before by its pin and that overlap is
+    dropped at the join, so it delivers `frames - pin`. A cut overlaps nothing
+    and delivers all of it. This is the same arithmetic count_plan does, per
+    scene instead of once.
+
+    -> {scenes: [...], total_frames, total_seconds, notes}
+    """
+    ctx = int(context)
+    out, notes = [], []
+    at = 0
+    for i, sc in enumerate(scenes or []):
+        want = int(sc.get("frames") or 0)
+        frames = legal_run(want, "nearest") if want else legal_run(141, "nearest")
+        if want and frames != want:
+            notes.append(f"scene {i + 1}: {want} is not a legal run — rendered "
+                         f"at {frames} ({frames / fps:.2f}s)")
+        name = (sc.get("continuity") if i else None) or (None if i == 0 else "carry")
+        pin, audio, wired = (0, "fresh", True) if i == 0 else \
+            continuity_pin(name, ctx)
+        pin = min(pin, max(0, frames - 1))      # a pin cannot eat the whole scene
+        delivered = frames - pin
+        if not wired:
+            notes.append(f"scene {i + 1}: {name!r} is named but not wired — "
+                         f"{CONTINUITY[name].get('why', '')}")
+        out.append({
+            "index": i, "number": i + 1,
+            "frames": frames,                   # what the sampler renders
+            "pin": pin,                         # carried in from the scene before
+            "delivered": delivered,             # what reaches the finished clip
+            "start": at, "end": at + delivered,
+            "start_seconds": round(at / fps, 3),
+            "end_seconds": round((at + delivered) / fps, 3),
+            "seconds": round(delivered / fps, 3),
+            "continuity": name,
+            "carry_audio": audio == "carry" and i > 0,
+            "continuity_wired": wired,
+            "both_clocks": on_both_clocks(frames),
+            "beat": sc.get("beat") or None,
+        })
+        at += delivered
+    off = [c["number"] for c in out if not c["both_clocks"]]
+    if off:
+        notes.append(f"scene(s) {', '.join(map(str, off))} are off the 40 Hz "
+                     f"audio grid, so each join there rounds the audio by up to "
+                     f"half a tick; the exact runs are "
+                     f"{', '.join(map(str, AV_EXACT_RUNS[:6]))}...")
+    return {"scenes": out, "total_frames": at,
+            "total_seconds": round(at / fps, 3), "notes": notes}
+
+
 def total_for_count(chunk_frames, chunk_count, context):
     """Frames delivered by `chunk_count` chunks of `chunk_frames`, carrying `context`.
 

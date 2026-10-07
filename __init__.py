@@ -494,6 +494,32 @@ def _register_routes():
         except (TakeError, ValueError, TypeError) as exc:
             return web.json_response({"ok": False, "error": str(exc)})
 
+    @routes.post(ROUTE_PREFIX + "/take/scenes")
+    async def _take_scenes(request):
+        """A LIST OF SCENES, each with its own length. -> the same shape as
+        /take/plan, per scene.
+
+        POST {"scenes": [{"frames": 192, "beat": "master two-shot"},
+                         {"frames": 90, "continuity": "carry", "beat": "..."},
+                         {"frames": 141, "continuity": "cut", "beat": "..."}],
+              "context": 39}
+
+        /take/plan answers "n chunks of one size", which is a single continuous
+        take. This answers a SEQUENCE OF SHOTS, where a four-second insert and a
+        twelve-second master belong in the same film. Each scene renders its own
+        frames, and what it delivers depends on the transition into it.
+        """
+        from .chunkplan import scene_plan
+        data = await _body(request)
+        try:
+            out = scene_plan(data.get("scenes") or [],
+                             context=int(data.get("context", 39)))
+            return web.json_response({"ok": True, **out,
+                                      "lint": out.pop("notes", [])})
+        except (ValueError, TypeError, KeyError) as exc:
+            return web.json_response({"ok": False,
+                                      "error": f"{type(exc).__name__}: {exc}"})
+
     @routes.post(ROUTE_PREFIX + "/take/graph")
     async def _take_graph(request):
         """Compose a submittable API graph. -> {"ok": true, "graph": {...}}
