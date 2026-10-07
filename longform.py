@@ -13,7 +13,8 @@ import torch
 from .avlatent import av
 from .chunkplan import describe as describe_plan
 from .chunkplan import find_cuts, plan as build_plan, tokens_per_frame
-from .chunkplan import describe_count_plan, total_for_count
+from .chunkplan import (DEFAULT_CONTINUITY, describe_count_plan,
+                        scene_plan, total_for_count)
 from .timing import is_av_aligned, snap_av_aligned
 from .crop import H3_CANVAS_MP
 from .geometry import canvas_for_megapixels
@@ -636,6 +637,20 @@ class H3ChunkPlan:
                                       "them and `info` says plainly what it did "
                                       "instead. Vocabulary adopted from WAS Node "
                                       "Suite's H3 Conditioning (MIT)."}),
+            "scene_frames": ("STRING", {"default": "", "multiline": True,
+                             "tooltip": "A LENGTH PER SCENE, one per line, so a "
+                                        "four-second insert and a twelve-second "
+                                        "master can share a take. Overrides "
+                                        "chunk_frames and chunk_count "
+                                        "entirely.\n\n"
+                                        "Each is snapped to a legal run (17n+5) "
+                                        "and `info` says what it became. Pair it "
+                                        "with `continuity`, one entry per JOIN — "
+                                        "so three lengths take two "
+                                        "transitions.\n\n"
+                                        "Empty uses chunk_frames x chunk_count, "
+                                        "which is the right shape for one "
+                                        "continuous take."}),
         }}
 
     # total_frames appended LAST: saved graphs store output slots by index
@@ -649,7 +664,7 @@ class H3ChunkPlan:
     def go(self, chunk_frames, chunk_mode, source_images=None, chunk_count=4,
            scene_threshold=0.12, min_chunk=39, render_width=0, render_height=0,
            ref_tokens=0, context="39", cut_frames="", av_aligned=False,
-           continuity=""):
+           continuity="", scene_frames=""):
         chunk_frames = int(chunk_frames)
         av_note = ""
         if av_aligned and not is_av_aligned(chunk_frames):
@@ -721,10 +736,31 @@ class H3ChunkPlan:
         conts = [c.strip() for c in
                  str(continuity or "").replace(",", "\n").splitlines()
                  if c.strip()] or None
-        chunks, info = build_plan(n, int(chunk_frames), chunk_mode, cuts=cuts,
-                                  min_chunk=int(min_chunk), context=int(context),
-                                  grow_tail=fresh, generated_audio=fresh,
-                                  continuity=conts)
+        # PER-SCENE LENGTHS TAKE OVER COMPLETELY when given. scene_plan emits the
+        # same chunk shape plan() does -- verified field by field on the uniform
+        # case -- so the runner cannot tell which planner built it.
+        sizes = [int(x) for x in
+                 str(scene_frames or "").replace(",", "\n").split()
+                 if x.strip().isdigit()]
+        if sizes:
+            sp = scene_plan(
+                [{"frames": f,
+                  "continuity": (conts[k - 1] if conts and k and
+                                 k - 1 < len(conts) else
+                                 (DEFAULT_CONTINUITY if k else None))}
+                 for k, f in enumerate(sizes)],
+                context=int(context))
+            chunks = sp["scenes"]
+            n = sp["total_frames"]
+            info = {"chunks": len(chunks), "mode": "scenes",
+                    "shots": len(sp["shots"]), "total_frames": n,
+                    "chunk_frames": sizes[0], "off_grid": 0,
+                    "notes": sp["notes"], "cuts": [], "cuts_ignored": []}
+        else:
+            chunks, info = build_plan(n, int(chunk_frames), chunk_mode, cuts=cuts,
+                                      min_chunk=int(min_chunk),
+                                      context=int(context), grow_tail=fresh,
+                                      generated_audio=fresh, continuity=conts)
         # A V2V pass already knows its render size — it is the size of the clip
         # in hand, [T, H, W, C] — so asking for it again is a second copy that
         # can only be stale. Nobody filled the widgets in, so the token and
@@ -760,9 +796,18 @@ class H3ChunkPlan:
         # needs -- how many beats to write, and how long the result will be --
         # goes at the TOP of the report rather than being inferred from the
         # chunk list.
-        if source_images is None:
+        if source_images is None and not sizes:
+            # Only describe the COUNT plan when that is what ran. With per-scene
+            # lengths this printed "3 x 192 ... TOTAL 498 frames" above a plan of
+            # 384, which is the report contradicting the thing it reports on.
             text = (describe_count_plan(chunk_frames, chunk_count,
                                         int(context)) + "\n" + text)
+        elif sizes:
+            lens = ", ".join(f"{c['run']}f ({c['run'] / 24:.2f}s)"
+                             for c in chunks)
+            text = (f"{len(chunks)} scene(s) at their own lengths: {lens}\n"
+                    f"  {len(set(c['shot'] for c in chunks))} shot(s), "
+                    f"TOTAL {n} frames = {n / 24:.2f}s\n" + text)
         if inert:
             text = ("".join(f"IGNORED: {m}\n" for m in inert)) + text
         if av_note:

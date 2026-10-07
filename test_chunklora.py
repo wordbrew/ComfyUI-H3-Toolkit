@@ -227,13 +227,18 @@ check("a range on ONE chunk takes the low end",
       dict(cl.resolve(_one, _spans[1], 1, 4)).get("x"), 0.4)
 
 print("a row naming a chunk the plan does not have RAISES")
-try:
-    cl.H3ChunkLora().go(sentinel, 0, "chunk 9 | a.safetensors | 0.8",
-                        chunk_plan={"chunks": _ch})
-    check("out of range raises", "no error", "ValueError")
-except ValueError as e:
-    ok("it names the count", "4 chunk" in str(e))
-    ok("and the bad reference", "9" in str(e))
+# A STALE ROW IS SKIPPED, NOT THROWN. This asserted a ValueError, on the
+# reasoning that a take rendering without its LoRA and looking fine is worse. In
+# practice it threw mid-render and destroyed a whole take over one row — and
+# since the schedule is now GENERATED from the scene list, a stale reference is
+# a bug in the generator, not something the author typed.
+_r = cl.H3ChunkLora().go(sentinel, 0, "chunk 9 | a.safetensors | 0.8",
+                         chunk_plan={"chunks": _ch})["result"]
+ok("the model still comes out, so the take survives", _r[0] is sentinel)
+ok("the skip is reported", "SKIPPED" in _r[1])
+ok("it names the count", "4 chunk" in _r[1])
+ok("and the bad reference", "9" in _r[1])
+ok("and says the take still renders", "still renders" in _r[1])
 
 print("the pickers have a real empty state")
 _names = cl.H3ChunkLora.INPUT_TYPES()["optional"]["lora_1"]
