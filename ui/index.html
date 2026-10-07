@@ -963,19 +963,6 @@ async function refreshPlan() {
   // for a plain continuous take.
   let p;
   if (SCENES.length) {
-    // ONE ENTRY PER SHOT, blank-line separated, in shot order — which is what
-    // H3LongFormLinks indexes by shot_index. A shot whose opener wrote nothing
-    // falls back to the take-wide Head/Tail.
-    const heads = [], tails = [];
-    SCENES.forEach((x, i) => {
-      if (!opensShot(i)) return;
-      heads.push((x.head || $("head").value || "").trim());
-      tails.push((x.tail || $("tail").value || "").trim());
-    });
-    if (heads.some(Boolean)) req.heads = heads.join("\n\n");
-    if (tails.some(Boolean)) req.tails = tails.join("\n\n");
-  }
-  if (SCENES.length) {
     try {
       const r = await post("/take/scenes", {
         scenes: SCENES.map(s => ({ frames: s.frames, continuity: s.continuity,
@@ -1653,6 +1640,19 @@ function request() {
     req.chunk_frames = SCENES[0].frames;
     req.scenes = SCENES.map(x => ({ frames: x.frames, continuity: x.continuity,
                                     beat: x.beat, pin: x.pin }));
+  }
+  if (SCENES.length) {
+    // ONE ENTRY PER SHOT, blank-line separated, in shot order — which is what
+    // H3LongFormLinks indexes by shot_index. A shot whose opener wrote nothing
+    // falls back to the take-wide Head/Tail.
+    const heads = [], tails = [];
+    SCENES.forEach((x, i) => {
+      if (!opensShot(i)) return;
+      heads.push((x.head || $("head").value || "").trim());
+      tails.push((x.tail || $("tail").value || "").trim());
+    });
+    if (heads.some(Boolean)) req.heads = heads.join("\n\n");
+    if (tails.some(Boolean)) req.tails = tails.join("\n\n");
   }
   if (CONT.length) req.continuity = CONT.join("\n");
   if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
