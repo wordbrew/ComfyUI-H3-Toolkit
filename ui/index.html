@@ -125,6 +125,32 @@
                      margin-top: 1px; }
   .transmenu .nw small { color: var(--warn); }
 
+  /* A RULER, so the strip is a time axis and not just proportions. */
+  .ruler { position: relative; height: 15px; margin-bottom: 2px;
+           border-bottom: 1px solid var(--line); }
+  .ruler span { position: absolute; top: 0; font: 9.5px var(--mono);
+                color: var(--ink-faint); transform: translateX(-50%); }
+  .ruler span::after { content: ""; position: absolute; left: 50%; top: 12px;
+                       width: 1px; height: 4px; background: var(--line); }
+
+  /* DIRECT MANIPULATION. The right edge of a scene is its length and the body
+     is its position, which is how every editor CJ already uses behaves. */
+  .tl .seg { cursor: grab; }
+  .tl .seg.drag { opacity: .45; }
+  .tl .seg.over { box-shadow: inset 3px 0 0 var(--accent); }
+  .tl .seg .grip {
+    position: absolute; inset: 0 -3px 0 auto; width: 9px; cursor: col-resize;
+    z-index: 4;
+  }
+  .tl .seg .grip::after {
+    content: ""; position: absolute; inset: 6px 3px auto 3px; height: 14px;
+    border-left: 1px solid var(--ink-faint); border-right: 1px solid var(--ink-faint);
+    opacity: 0; transition: opacity .1s;
+  }
+  .tl .seg .grip:hover::after { opacity: 1; }
+  .tl .seg.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
+  .dragnote { font: 11px var(--mono); color: var(--accent); min-height: 14px; }
+
   .total {
     display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
     font: 13px/1 var(--mono); color: var(--ink-dim); margin-top: 8px;
@@ -443,7 +469,9 @@
            </div></div>
     </div>
     <input type="number" id="cc" value="3" hidden>
+    <div id="ruler" class="ruler"></div>
     <div id="tl" class="tl"></div>
+    <div class="dragnote" id="dragnote"></div>
     <div class="total" id="total"></div>
     <ul class="lint" id="lint"></ul>
 
@@ -951,8 +979,10 @@ function renderPlan(p) {
       `<div class="b${c.beat ? "" : " none"}">` +
       (c.beat ? escapeHTML(c.beat) : "no beat written") + `</div>`;
     seg.title = `${c.frames} frames · ${c.start_seconds}s → ${c.end_seconds}s`;
+    if (SCENES.length) makeSegInteractive(seg, i, p);
     $("tl").appendChild(seg);
   });
+  drawRuler(p);
   // keep the continuity list the same length as the joins
   CONT = CONT.slice(0, Math.max(0, p.chunks.length - 1));
   while (CONT.length < p.chunks.length - 1) CONT.push("carry");
@@ -1437,6 +1467,99 @@ function drawRefSlots() {
   $("refcount").textContent = n
     ? `${n} reference${n === 1 ? "" : "s"} from the cast`
     : "no cast images yet — add a library subject, or put images on a cast row";
+}
+
+/* ------------------------------------------------------- timeline gestures
+   Direct manipulation, because the length and the order of a shot are the two
+   things you change most and a dropdown is the wrong instrument for either.
+   Gestures follow the editor CJ pointed at: drag the right edge to resize, drag
+   the body to reorder. Lengths SNAP to legal runs -- there is no such thing as
+   a 100-frame scene, so the drag lands on 90 or 107 and the readout says which. */
+function makeSegInteractive(seg, i, plan) {
+  const sc = SCENES[i];
+  if (!sc) return;
+  if (i === SEL) seg.classList.add("sel");
+  seg.onclick = () => { SEL = i; drawScenes(); };
+
+  const grip = document.createElement("div");
+  grip.className = "grip";
+  grip.title = "drag to set this scene's length";
+  seg.appendChild(grip);
+
+  // ---- resize -------------------------------------------------------- //
+  grip.onmousedown = e => {
+    e.preventDefault(); e.stopPropagation();
+    const strip = $("tl").getBoundingClientRect();
+    const total = Math.max(1, plan.total_frames);
+    const pxPerFrame = strip.width / total;        // the strip IS the take
+    const startX = e.clientX, startF = sc.frames;
+    const runs = legalRuns(39, 396);
+    const move = ev => {
+      const want = startF + Math.round((ev.clientX - startX) / pxPerFrame);
+      const snapped = runs.reduce((a, b) =>
+        Math.abs(b - want) < Math.abs(a - want) ? b : a, runs[0]);
+      if (snapped !== sc.frames) {
+        sc.frames = snapped;
+        $("dragnote").textContent =
+          `scene ${i + 1}: ${snapped}f = ${(snapped / 24).toFixed(2)}s` +
+          (AV_EXACT.has(snapped) ? "  · both clocks" : "  · off the audio grid");
+        drawScenes();
+      }
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      $("dragnote").textContent = "";
+      refreshPlan();
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  };
+
+  // ---- reorder ------------------------------------------------------- //
+  seg.draggable = true;
+  seg.ondragstart = ev => {
+    ev.dataTransfer.setData("text/plain", String(i));
+    ev.dataTransfer.effectAllowed = "move";
+    seg.classList.add("drag");
+  };
+  seg.ondragend = () => {
+    seg.classList.remove("drag");
+    $("tl").querySelectorAll(".seg").forEach(x => x.classList.remove("over"));
+  };
+  seg.ondragover = ev => { ev.preventDefault(); seg.classList.add("over"); };
+  seg.ondragleave = () => seg.classList.remove("over");
+  seg.ondrop = ev => {
+    ev.preventDefault();
+    const from = +ev.dataTransfer.getData("text/plain");
+    if (Number.isNaN(from) || from === i) return;
+    const [moved] = SCENES.splice(from, 1);
+    SCENES.splice(i, 0, moved);
+    // SCENE 1 CANNOT HAVE A TRANSITION IN -- nothing precedes it. Moving a
+    // scene to the front would otherwise leave it claiming to carry from
+    // something that is now after it.
+    if (SCENES[0]) SCENES[0].continuity = undefined;
+    for (let k = 1; k < SCENES.length; k++) {
+      if (!SCENES[k].continuity) SCENES[k].continuity = "carry";
+    }
+    SEL = i;
+    drawScenes(); compileSchedule(); refreshPlan();
+  };
+}
+
+function drawRuler(plan) {
+  const host = $("ruler");
+  host.innerHTML = "";
+  const secs = plan.total_seconds || 0;
+  if (!secs) return;
+  // a tick every 1, 2, 5 or 10 seconds -- whichever gives a readable count
+  const step = [1, 2, 5, 10, 15, 30].find(x => secs / x <= 12) || 60;
+  for (let t = 0; t <= secs + 0.001; t += step) {
+    const el = document.createElement("span");
+    el.style.left = `${(t / secs) * 100}%`;
+    el.textContent = `${t}s`;
+    host.appendChild(el);
+  }
 }
 
 /* ------------------------------------------------------------------ render */
