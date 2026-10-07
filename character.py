@@ -182,6 +182,42 @@ def save_subject(name, kind="person", description="", voice_description="",
     return card
 
 
+def stage_subject(name, input_dir, folder="h3_subjects"):
+    """Copy a subject's anchors into ComfyUI's INPUT folder. -> [relative paths]
+
+    WHY THIS EXISTS
+      A subject's anchors live in models/h3_characters/<name>/images/, and
+      LoadImage only lists ComfyUI/input. So a cast member picked from the
+      library had its pictures CITED in the prompt while the images actually
+      encoded came from somewhere else entirely -- the "five nodes that have to
+      agree" failure, with the two halves in different directories.
+
+      Copying into input/ makes the anchors reachable by the same node everything
+      else uses, so the pictures cited and the pictures sent are the same files.
+      It also puts them in the asset gallery, where they can be seen.
+
+    IT IS A CACHE, NOT A SECOND COPY OF THE TRUTH
+      The store stays authoritative. This is idempotent -- same name, same
+      destination, overwritten each time -- so re-staging after an edit refreshes
+      it, and nothing downstream has to know whether it ran.
+    """
+    import shutil
+    safe = sanitise(name)
+    src = os.path.join(characters_dir(), safe, "images")
+    if not os.path.isdir(src):
+        return []
+    dest = os.path.join(str(input_dir), folder, safe)
+    os.makedirs(dest, exist_ok=True)
+    out = []
+    for f in sorted(os.listdir(src)):
+        if not f.lower().endswith(IMAGE_EXT):
+            continue
+        shutil.copyfile(os.path.join(src, f), os.path.join(dest, f))
+        # LoadImage lists nested files with forward slashes
+        out.append(f"{folder}/{safe}/{f}")
+    return out
+
+
 def delete_subject(name):
     """Remove a subject from the store. -> True if it was there."""
     import shutil

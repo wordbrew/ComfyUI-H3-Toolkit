@@ -199,6 +199,27 @@ check("scene 1 has no transition in", _sp["scenes"][0]["continuity"], None)
 check("audio_carry keeps the sound across its cut",
       [c["carry_audio"] for c in _sp["scenes"]], [False, True, False, True])
 
+print("a scene may override the carry, and says when it did")
+# the global `context` is right most of the time, but a scene continuing from a
+# fast-moving shot has no reason to pin as much as one continuing from a held
+# frame — so the global is a DEFAULT, not the only answer
+_ov = cp.scene_plan([{"frames": 192},
+                     {"frames": 192, "continuity": "carry"},
+                     {"frames": 192, "continuity": "carry", "pin": 5}],
+                    context=39)
+check("the default applies where nothing is set",
+      _ov["scenes"][1]["pin"], 39)
+check("and an override wins", _ov["scenes"][2]["pin"], 5)
+check("so that scene delivers more",
+      _ov["scenes"][2]["delivered"], 187)
+check("the default is reported either way",
+      [c["pin_default"] for c in _ov["scenes"]], [39, 39, 39])
+check("and which scenes overrode it",
+      [c["pin_overridden"] for c in _ov["scenes"]], [False, False, True])
+ok("a pin of 0 is an override, not an absence",
+   cp.scene_plan([{"frames": 192}, {"frames": 192, "continuity": "carry",
+                                    "pin": 0}], context=39)["scenes"][1]["pin"] == 0)
+
 print("and it refuses to lie about illegal lengths")
 _sp2 = cp.scene_plan([{"frames": 100}], context=39)
 check("100 is snapped to a legal run", _sp2["scenes"][0]["frames"], 107)
