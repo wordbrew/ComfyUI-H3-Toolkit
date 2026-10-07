@@ -537,6 +537,12 @@
           <div class="body"><div class="gutter" id="schedview">none</div></div>
         </details>
         <div class="row two">
+          <div><label for="mp">Frame size</label>
+            <select id="mp"></select></div>
+          <div><label for="ar">Shape</label><select id="ar"></select></div>
+        </div>
+        <p class="hint" id="mpwarn" hidden style="color:var(--bad)"></p>
+        <div class="row two">
           <div><label for="seed">Seed</label><input type="number" id="seed" value="977573931686826"></div>
           <div><label for="prefix">Output prefix</label><input type="text" id="prefix" value="H3/longtake/take"></div>
         </div>
@@ -650,7 +656,7 @@ function save() {
   const s = {};
   for (const id of ["head","beats","tail","sound","music",
                     "cf","cc","ctx","unet","clip","vae","avae","lora","lstr",
-                    "sched","seed","prefix"]) {
+                    "sched","seed","prefix","mp","ar"]) {
     const el = $(id); if (el) s[id] = el.value;
   }
   s.theme = document.documentElement.dataset.theme || "";
@@ -661,6 +667,11 @@ function save() {
 }
 function restore() {
   const s = saved();
+  // The options must exist BEFORE the saved value is assigned -- a <select>
+  // silently refuses a value none of its options carry, which is exactly how
+  // the length dropdown came to show the wrong thing.
+  fill($("mp"), SIZES, s.mp ?? 0.5);
+  fill($("ar"), SHAPES, s.ar || SHAPES[0]);
   for (const [k, v] of Object.entries(s)) {
     if (k === "theme") continue;
     const el = $(k); if (el && v !== undefined && v !== "") el.value = v;
@@ -775,6 +786,7 @@ function delScene(i) {
 }
 
 function drawScenes() {
+  if ($("mp")) checkFrameSize();
   const host = $("scenelist");
   host.innerHTML = "";
   if (!SCENES.length) {
@@ -909,6 +921,41 @@ function checkSound() {
   const quiet = !$("sound").value.trim() &&
                 (!$("music").value.trim() || $("music").value.trim() === "N/A");
   $("soundwarn").hidden = !quiet;
+}
+
+// FRAME SIZE IS THE LONG-FORM BUDGET, and the app had no control for it at
+// all -- every take went out at the template's 1.0 MP. CJ's proven 59-62s
+// renders were 544x928 and 512x896, both about 0.5 MP; a 20s take at 1.0 MP
+// ran the 4090 out of memory in the DiT forward. Attention cost grows faster
+// than linearly in sequence length, and tokens scale with frame AREA, so the
+// frame size sets how long a take can get far more than the chunk count does.
+const SIZES = [
+  { v: 0.46, t: "0.46 MP — 512x896, proven to 59s" },
+  { v: 0.50, t: "0.50 MP — 544x928, proven to 60s" },
+  { v: 0.75, t: "0.75 MP — untested for long form" },
+  { v: 1.00, t: "1.00 MP — 832x1248, OOM past ~20s" },
+];
+const SHAPES = ["2:3 (Portrait Photo)", "9:16 (Portrait Video)",
+                "1:1 (Square)", "3:2 (Landscape Photo)",
+                "16:9 (Landscape Video)"];
+
+function checkFrameSize() {
+  const mp = +$("mp").value || 0.5;
+  const ctx = +$("ctx").value || 39;
+  const frames = SCENES.length
+    ? SCENES.reduce((a, x, i) => a + (i ? Math.max(5, x.frames - ctx)
+                                       : x.frames), 0)
+    : 0;
+  const secs = frames / 24;
+  // the budget CJ's own renders demonstrate: ~30 MP-seconds got through
+  const spend = mp * secs;
+  const w = $("mpwarn");
+  if (!frames || spend <= 31) { w.hidden = true; return; }
+  w.hidden = false;
+  w.textContent = `${secs.toFixed(1)}s at ${mp} MP is past what this card has `
+    + `managed. The longest takes that rendered were ~60s at 0.5 MP; this asks `
+    + `for ${spend.toFixed(0)} MP-seconds against about 30. Drop the frame size `
+    + `or shorten the take.`;
 }
 
 function compileSchedule() {
@@ -1677,6 +1724,8 @@ function request() {
     if (heads.some(Boolean)) req.heads = heads.join("\n\n");
     if (tails.some(Boolean)) req.tails = tails.join("\n\n");
   }
+  req.megapixels = +$("mp").value || 0.5;
+  req.aspect_ratio = $("ar").value;
   if (CONT.length) req.continuity = CONT.join("\n");
   if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
   return req;
@@ -1912,6 +1961,8 @@ function wireControls() {
   for (const id of ["sound", "music"]) {
     $(id).addEventListener("input", checkSound);
   }
+  $("mp").addEventListener("change", () => { checkFrameSize(); save(); });
+  $("ar").addEventListener("change", save);
   for (const [id, key] of [["i_head", "head"], ["i_tail", "tail"]]) {
     $(id).addEventListener("input", () => {
       if (!SCENES[SEL]) return;
@@ -1997,6 +2048,7 @@ function wireControls() {
   drawCast();
   compileSchedule();
   checkSound();
+  checkFrameSize();
 
   // ---- AND THE LOADING, WHICH MAY FAIL VISIBLY ------------------------- //
   try {
