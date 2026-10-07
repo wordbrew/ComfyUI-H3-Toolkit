@@ -1075,19 +1075,46 @@ function drawRowImages(r, el) {
 async function stageLibraryRows() {
   const names = [...new Set(CAST.filter(r => r.kind === "library" && r.from_library)
                                 .map(r => r.from_library))];
-  if (!names.length) return;
+  if (!names.length) return null;
+  // IT MUST SAY WHEN IT FAILS. This swallowed every error, so a library subject
+  // whose anchors could not be staged simply had no images and nothing on
+  // screen explained it -- which is exactly what "it doesn't actually apply
+  // images as references" looked like. The commonest cause is the plainest: the
+  // route is new and ComfyUI has not been restarted, which returns 405.
+  let out;
   try {
-    const out = await post("/subject/stage", { names });
-    if (!out.ok && !out.staged) return;
-    for (const r of CAST) {
-      if (r.kind !== "library" || !r.from_library) continue;
-      const got = (out.staged || {})[r.from_library];
-      if (got && got.length) {
-        r.images = got;                       // the store decides the order
-        if (!ASSETS.includes(got[0])) ASSETS.unshift(...got);
-      }
+    const res = await fetch(API + "/subject/stage", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ names }),
+    });
+    if (res.status === 404 || res.status === 405) {
+      return "the /subject/stage route is not registered — RESTART ComfyUI, " +
+             "then reload this page. Until then a library subject's anchors " +
+             "cannot be reached.";
     }
-  } catch { /* offline; the plan strip already says so */ }
+    out = await res.json();
+  } catch (e) {
+    return `could not reach ComfyUI to stage anchors (${e})`;
+  }
+  if (!out || (!out.ok && !out.staged)) {
+    return out?.error || "staging the library anchors failed";
+  }
+  const missing = [];
+  for (const r of CAST) {
+    if (r.kind !== "library" || !r.from_library) continue;
+    const got = (out.staged || {})[r.from_library];
+    if (got && got.length) {
+      r.images = got;                         // the store decides the order
+      for (const pth of got) if (!ASSETS.includes(pth)) ASSETS.unshift(pth);
+    } else {
+      missing.push(r.from_library);
+    }
+  }
+  if (missing.length) {
+    return `no anchor images found for ${missing.join(", ")} — open it in the ` +
+           `Library and add some, or it will be cited with no picture.`;
+  }
+  return null;
 }
 
 /* REFERENCES ARE THE CAST'S IMAGES, in subject order. One source of truth. */
@@ -1132,13 +1159,26 @@ function refreshCast() {
         "\n\nretention_analysis:\n" + out.retention +
         (out.lint?.length ? "\n\n" + out.lint.join("\n") : "");
       const pics = (out.counts || {}).pictures || 0;
-      await stageLibraryRows();
+      const problem = await stageLibraryRows();
       deriveRefs();
-      $("refnote").textContent = pics && pics !== REFS.length
-        ? `the prompt cites ${pics} picture(s) but the cast carries `
-          + `${REFS.length} image(s) — add images to a cast row, or lower its `
-          + `pictures count`
-        : "";
+      const note = $("refnote");
+      if (problem) {
+        note.textContent = problem;
+        note.style.color = "var(--bad)";
+      } else if (pics !== REFS.length) {
+        // THE ONE THING THAT MUST NEVER BE SILENT: the prompt citing a
+        // different number of pictures than the model is sent.
+        note.textContent =
+          `the prompt cites ${pics} picture(s) but the cast carries ` +
+          `${REFS.length} image(s). Those must match, or <Picture N> refers to ` +
+          `something the model never saw.`;
+        note.style.color = "var(--bad)";
+      } else {
+        note.textContent = pics
+          ? `${pics} picture(s) cited, ${REFS.length} sent — they match`
+          : "";
+        note.style.color = "var(--ink-faint)";
+      }
     } catch { /* offline; the plan strip already says so */ }
     save();
   }, 250);

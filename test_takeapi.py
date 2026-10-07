@@ -194,6 +194,50 @@ ok("every input link points at a node that exists",
 ok("no node lost its class_type", all("class_type" in n for n in g.values()))
 check("node count is the template's", len(g), len(tpl))
 
+print("\nthe cast is DYNAMIC: add, add again, drop, and the numbering follows")
+# CJ: "if I add a subject with refs, it should appropriately tie that in. if I
+# add multiples, it does it properly to add to the list. if I drop one, it drops
+# it and adjusts the others along with prompt call outs."
+import importlib as _il2
+_hs = _load("h3script")
+
+
+def _cast(*rows):
+    return ta.compile_cast(list(rows), _hs.parse, _hs.emit)
+
+
+_typed = {"key": "man", "describe": "a man in his thirties"}
+_typed2 = {"key": "woman", "describe": "a woman with red hair"}
+_place = {"key": "room", "setting": "a bedroom in warm light"}
+
+_one = _cast(_typed)
+check("one subject is Subject 1", _one["counts"]["subjects"], 1)
+ok("and it is the one described", "<Subject 1> is a man" in _one["subject_defs"])
+
+_two = _cast(_typed, _typed2)
+check("adding one appends rather than replacing", _two["counts"]["subjects"], 2)
+ok("the first keeps its number", "<Subject 1> is a man" in _two["subject_defs"])
+ok("and the second gets the next", "<Subject 2> is a woman" in _two["subject_defs"])
+
+_three = _cast(_typed, _typed2, _place)
+check("a setting is a subject too", _three["counts"]["subjects"], 3)
+ok("and retains what a PLACE retains, not a face",
+   "layout" in _three["retention"] and "facial identity" in _three["retention"])
+
+print("dropping one renumbers everything after it")
+_dropped = _cast(_typed2, _place)
+ok("what was Subject 2 becomes Subject 1",
+   "<Subject 1> is a woman" in _dropped["subject_defs"])
+ok("and nothing still claims to be Subject 3",
+   "<Subject 3>" not in _dropped["subject_defs"])
+check("the count follows", _dropped["counts"]["subjects"], 2)
+
+print("and the PICTURE count is what the references must match")
+# a typed subject cites no pictures; only a stored one does, from its anchors
+check("typed subjects cite no pictures", _two["counts"]["pictures"], 0)
+ok("so a mismatch is detectable by comparing counts to the images sent",
+   isinstance(_two["counts"].get("pictures"), int))
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")
