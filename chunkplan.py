@@ -187,8 +187,14 @@ def scene_plan(scenes, context=39, fps=24.0):
             notes.append(f"scene {i + 1}: {want} is not a legal run — rendered "
                          f"at {frames} ({frames / fps:.2f}s)")
         name = (sc.get("continuity") if i else None) or (None if i == 0 else "carry")
+        # A SCENE MAY OVERRIDE THE CARRY. `context` is the default for the whole
+        # take, which is right most of the time -- but a scene continuing from a
+        # fast-moving shot has no reason to pin the same number of frames as one
+        # continuing from a held frame. An absent or None `pin` takes the global.
+        here_ctx = sc.get("pin")
+        here_ctx = ctx if here_ctx in (None, "") else int(here_ctx)
         pin, audio, wired = (0, "fresh", True) if i == 0 else \
-            continuity_pin(name, ctx)
+            continuity_pin(name, here_ctx)
         pin = min(pin, max(0, frames - 1))      # a pin cannot eat the whole scene
         delivered = frames - pin
         if not wired:
@@ -204,6 +210,8 @@ def scene_plan(scenes, context=39, fps=24.0):
             "end_seconds": round((at + delivered) / fps, 3),
             "seconds": round(delivered / fps, 3),
             "continuity": name,
+            "pin_default": ctx,
+            "pin_overridden": sc.get("pin") not in (None, "") and i > 0,
             "carry_audio": audio == "carry" and i > 0,
             "continuity_wired": wired,
             "both_clocks": on_both_clocks(frames),

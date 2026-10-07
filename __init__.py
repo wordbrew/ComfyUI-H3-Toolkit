@@ -252,6 +252,34 @@ def _register_routes():
                               f"{', '.join(map(str, missing))}")
         return web.json_response(out)
 
+    @routes.post(ROUTE_PREFIX + "/subject/stage")
+    async def _subject_stage(request):
+        """Make a subject's anchors reachable as references. POST {"names": [...]}
+
+        A subject's anchors live in models/h3_characters/<name>/images/ and
+        LoadImage only lists input/. Without this a cast member from the library
+        had its pictures CITED in the prompt while different images were encoded.
+        This copies them to input/h3_subjects/<name>/ so the pictures cited and
+        the pictures sent are the same files, and returns the paths in the order
+        the prompt numbers them.
+        """
+        from .character import stage_subject
+        data = await _body(request)
+        try:
+            import folder_paths
+            indir = folder_paths.get_input_directory()
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI input directory"})
+        out, errs = {}, {}
+        for name in (data.get("names") or []):
+            try:
+                out[name] = stage_subject(name, indir)
+            except (ValueError, OSError) as exc:
+                errs[name] = str(exc)
+        return web.json_response({"ok": not errs, "staged": out,
+                                  **({"errors": errs} if errs else {})})
+
     @routes.post(ROUTE_PREFIX + "/subject/delete")
     async def _subject_delete(request):
         """Remove a subject from the store. POST {"name": "..."}"""
