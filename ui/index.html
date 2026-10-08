@@ -56,6 +56,11 @@
   }
   @media (max-width: 920px) { main { grid-template-columns: 1fr; } }
   .col { background: var(--ground); padding: 18px 20px 40px; min-width: 0; }
+  /* Plan and The take now share a column, so the boundary has to be stated --
+     without it the plan's totals read as part of the scene list below. */
+  .split {
+    margin: 26px -20px 22px; border: 0; border-top: 1px solid var(--line-strong);
+  }
 
   h2 {
     font-size: 11px; font-weight: 600; letter-spacing: .09em;
@@ -356,13 +361,25 @@
     <div class="row two">
       <div><label for="ctx">Carry — the default pin for every continuing scene</label>
            <select id="ctx"></select></div>
-      <div><label>Quick setup</label>
-           <div class="bar" style="margin-top:0">
-             <input type="number" id="qn" value="4" min="1" max="24" style="width:58px" title="how many scenes">
-             <select id="cf" style="flex:1" title="length of each"></select>
-             <button id="qgo" title="replace the scene list with this">Make scenes</button>
-           </div></div>
+      <div></div>
     </div>
+    <details id="quick">
+      <summary>Quick setup — start a take from scratch</summary>
+      <div class="body">
+        <p class="hint">Builds a fresh scene list. This REPLACES whatever is
+        there, so use it to start rather than to adjust — once scenes exist,
+        edit them on the strip or in the inspector.</p>
+        <div class="row three">
+          <div><label for="qn">How many scenes</label>
+            <input type="number" id="qn" value="4" min="1" max="24"></div>
+          <div><label for="cf">Length of each</label>
+            <select id="cf"></select></div>
+          <div><label for="qcont">Joined by</label>
+            <select id="qcont"></select></div>
+        </div>
+        <div class="bar"><button id="qgo">Make scenes</button></div>
+      </div>
+    </details>
     <input type="number" id="cc" value="3" hidden>
     <div id="ruler" class="ruler"></div>
     <div id="tl" class="tl"></div>
@@ -375,6 +392,7 @@
     <div class="total" id="total"></div>
     <ul class="lint" id="lint"></ul>
 
+    <hr class="split">
     <h2>The take</h2>
 
     <label for="head">Head — repeated into every chunk, byte for byte</label>
@@ -885,6 +903,21 @@ function shotOpener(i) {
 // Every transition, with what it does and why, selectable in place. Drawn from
 // the same /continuity vocabulary the strip and the planner use, so the three
 // cannot disagree -- which they did when the UI shipped its own copy.
+function fillQuickJoin() {
+  const sel = $("qcont");
+  if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = "";
+  for (const t of TRANSITIONS) {
+    if (t.todo) continue;            // never offer a kind that is not wired
+    const o = document.createElement("option");
+    o.value = t.id; o.textContent = t.label;
+    sel.appendChild(o);
+  }
+  sel.value = keep && [...sel.options].some(o => o.value === keep)
+    ? keep : "carry";
+}
+
 function drawContList() {
   const host = $("contlist");
   if (!host) return;
@@ -2175,11 +2208,12 @@ function wireControls() {
     // scene list is the only place a length lives
     const n = Math.max(1, +$("qn").value || 1);
     const f = +$("cf").value || 192;
+    const join = $("qcont").value || "carry";
     if (SCENES.length && !confirm(`Replace the ${SCENES.length} scene(s) with `
         + `${n} of ${(f / 24).toFixed(2)}s?`)) return;
     SCENES = [];
     for (let i = 0; i < n; i++) {
-      SCENES.push(newScene({ frames: f, continuity: i ? "carry" : undefined }));
+      SCENES.push(newScene({ frames: f, continuity: i ? join : undefined }));
     }
     SEL = 0;
   };
@@ -2288,6 +2322,7 @@ function wireControls() {
     // the node's own aspect list, so a hand-typed string can never reach submit
     const shapes = (await optionsFor("ResolutionSelector", "aspect_ratio"))
       .filter(x => !/^Auto/i.test(x));     // Auto needs an input image
+    fillQuickJoin();
     if (shapes.length) {
       SHAPES = shapes;
       fill($("ar"), SHAPES, saved().ar || "2:3 (Portrait Photo)");

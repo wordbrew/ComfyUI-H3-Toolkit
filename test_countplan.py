@@ -122,10 +122,19 @@ _glyphs = set(_re.findall(r"(\w+):\s*\"[^\"]+\"",
 check("every kind has a glyph", sorted(set(cp.CONTINUITY) - _glyphs), [])
 check("and no glyph names a kind that does not exist",
       sorted(_glyphs - set(cp.CONTINUITY)), [])
-check("the menu order covers every kind",
-      sorted(cp.CONTINUITY_ORDER), sorted(cp.CONTINUITY))
-ok("every kind carries a label for the menu",
-   all("label" in v for v in cp.CONTINUITY.values()))
+# OFFERED and KNOWN are deliberately different sets now. CJ: "we either wire it
+# or we drop it." The three blocked kinds were taken OUT of the menu order and
+# stay in CONTINUITY, so a saved graph naming one still plans instead of
+# raising -- that split is the thing worth pinning.
+check("the menu offers only what is not retired",
+      sorted(cp.CONTINUITY_ORDER),
+      sorted(k for k in cp.CONTINUITY if k not in cp.RETIRED_CONTINUITY))
+ok("every retired kind is still known to the planner",
+   all(k in cp.CONTINUITY for k in cp.RETIRED_CONTINUITY))
+ok("and still plans rather than raising",
+   all(cp.continuity_pin(k, 39) for k in cp.RETIRED_CONTINUITY))
+ok("while none of them is offered",
+   not any(k in cp.CONTINUITY_ORDER for k in cp.RETIRED_CONTINUITY))
 
 print()
 if fails:

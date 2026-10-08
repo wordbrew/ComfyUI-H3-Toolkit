@@ -152,11 +152,25 @@ CONTINUITY = {
                         "why": "reference_video plus audio_carry"},
 }
 DEFAULT_CONTINUITY = "carry"
-#: Menu order: what WORKS first, most-carried to least, then the unbuilt ones.
-#: Alphabetical would put `audio_carry` above `carry`, which reads as nonsense.
+#: Menu order: most-carried to least. Alphabetical would put `audio_carry` above
+#: `carry`, which reads as nonsense.
+#:
+#: THE THREE RETIRED KINDS ARE NOT OFFERED. CJ: "we either wire it or we drop
+#: it." Each is blocked by something measured, not merely unbuilt, so dropping
+#: is the honest answer rather than leaving them in the menu as promises:
+#:
+#:   refresh          a fractional denoise mask scales the model's velocity on
+#:                    0.35+, so the carried rows never finish denoising
+#:   reference_video  the tail would enter as a reference VIDEO, where motion and
+#:                    appearance are the same tokens and no setting splits them
+#:   audio_reference  reference_video plus audio_carry, so it inherits the block
+#:
+#: They stay in CONTINUITY so a saved graph naming one still plans instead of
+#: raising; they are simply never offered. If the engine lifts one of those
+#: blocks, move it back into this tuple and it reappears everywhere at once.
+RETIRED_CONTINUITY = ("refresh", "reference_video", "audio_reference")
 CONTINUITY_ORDER = ("carry", "handoff", "audio_carry", "cut",
-                    "reference_sample", "refresh", "reference_video",
-                    "audio_reference")
+                    "reference_sample")
 #: Picture does not continue across these, whatever the audio does.
 CUT_LIKE = tuple(k for k, v in CONTINUITY.items() if v["pin"] != "context")
 
