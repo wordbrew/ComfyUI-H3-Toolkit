@@ -537,8 +537,9 @@
           <div class="body"><div class="gutter" id="schedview">none</div></div>
         </details>
         <div class="row two">
-          <div><label for="mp">Frame size</label>
-            <select id="mp"></select></div>
+          <div><label for="mp">Frame size (MP)</label>
+            <input type="number" id="mp" value="0.5" min="0.05" max="4"
+                   step="0.01"></div>
           <div><label for="ar">Shape</label><select id="ar"></select></div>
         </div>
         <p class="hint" id="mpwarn" hidden style="color:var(--bad)"></p>
@@ -670,7 +671,6 @@ function restore() {
   // The options must exist BEFORE the saved value is assigned -- a <select>
   // silently refuses a value none of its options carry, which is exactly how
   // the length dropdown came to show the wrong thing.
-  fill($("mp"), SIZES, s.mp ?? 0.5);
   fill($("ar"), SHAPES, s.ar || SHAPES[0]);
   for (const [k, v] of Object.entries(s)) {
     if (k === "theme") continue;
@@ -929,15 +929,29 @@ function checkSound() {
 // ran the 4090 out of memory in the DiT forward. Attention cost grows faster
 // than linearly in sequence length, and tokens scale with frame AREA, so the
 // frame size sets how long a take can get far more than the chunk count does.
-const SIZES = [
-  { v: 0.46, t: "0.46 MP — 512x896, proven to 59s" },
-  { v: 0.50, t: "0.50 MP — 544x928, proven to 60s" },
-  { v: 0.75, t: "0.75 MP — untested for long form" },
-  { v: 1.00, t: "1.00 MP — 832x1248, OOM past ~20s" },
+// MEASURED REFERENCE POINTS, not a list of permitted values. These are what
+// actually rendered on this card, kept as guidance beside a free-form field
+// rather than as the only choices -- my own measurements should not become a
+// ceiling. Each is MP -> the longest take observed at it.
+const SIZE_MARKS = [
+  { mp: 0.46, secs: 59, note: "512x896" },
+  { mp: 0.50, secs: 60, note: "544x928" },
+  { mp: 1.04, secs: 20, note: "832x1248, OOM at 20.8s" },
 ];
 const SHAPES = ["2:3 (Portrait Photo)", "9:16 (Portrait Video)",
                 "1:1 (Square)", "3:2 (Landscape Photo)",
                 "16:9 (Landscape Video)"];
+
+// H3 wants both axes a multiple of 32, so the real frame is not exactly the MP
+// asked for -- show what it will actually be.
+function frameFor(mp, shape) {
+  const m = /(\d+)\s*:\s*(\d+)/.exec(shape || "2:3");
+  const [rw, rh] = m ? [+m[1], +m[2]] : [2, 3];
+  const px = Math.max(0.05, mp) * 1e6;
+  const h = Math.sqrt(px * rh / rw), w = px / h;
+  const q = (x) => Math.max(32, Math.round(x / 32) * 32);
+  return [q(w), q(h)];
+}
 
 function checkFrameSize() {
   const mp = +$("mp").value || 0.5;
@@ -949,13 +963,37 @@ function checkFrameSize() {
   const secs = frames / 24;
   // the budget CJ's own renders demonstrate: ~30 MP-seconds got through
   const spend = mp * secs;
+  const [fw, fh] = frameFor(mp, $("ar").value);
+  const real = ((fw * fh) / 1e6).toFixed(2);
   const w = $("mpwarn");
-  if (!frames || spend <= 31) { w.hidden = true; return; }
+  // always say what frame this renders; warn only when it is past what this
+  // card has been seen to manage
+  const base = `Renders ${fw}x${fh} (${real} MP)`
+    + (frames ? ` for ${secs.toFixed(1)}s` : "");
+  const near = SIZE_MARKS.reduce((a, b) =>
+    Math.abs(b.mp - mp) < Math.abs(a.mp - mp) ? b : a);
   w.hidden = false;
-  w.textContent = `${secs.toFixed(1)}s at ${mp} MP is past what this card has `
-    + `managed. The longest takes that rendered were ~60s at 0.5 MP; this asks `
-    + `for ${spend.toFixed(0)} MP-seconds against about 30. Drop the frame size `
-    + `or shorten the take.`;
+  if (!frames || spend <= 31) {
+    w.style.color = "var(--ink-soft)";
+    w.textContent = `${base}. Measured here: ${near.mp} MP held `
+      + `${near.secs}s (${near.note}).`;
+    return;
+  }
+  w.style.color = "var(--bad)";
+  w.textContent = `${base} — past what this card has managed. ~60s rendered at `
+    + `0.5 MP, and 20.8s at 1.04 MP ran out of memory. This asks for `
+    + `${spend.toFixed(0)} MP-seconds against about 30 that got through. `
+    + `Lower the frame size or shorten the take.`;
+}
+
+// Every scene edit ends here: redraw the strip, recompile the schedule, update
+// the plan from the server, recheck the frame-size budget, and persist.
+function sceneChanged() {
+  drawScenes();
+  compileSchedule();
+  checkFrameSize();
+  save();
+  refreshPlan();
 }
 
 function compileSchedule() {
@@ -1950,19 +1988,27 @@ function wireControls() {
     clearTimeout(window._sb);
     window._sb = setTimeout(() => { drawScenes(); refreshPlan(); }, 300);
   });
+  // CHANGING A SCENE HAS TO REACH EVERYTHING THAT DESCRIBES IT. These two wrote
+  // into SCENES and stopped there: the timeline kept its old widths, the plan
+  // kept its old totals, the frame-size budget kept its old length, and nothing
+  // was persisted -- so a reload silently threw the edit away. `sceneChanged`
+  // is now the single path every scene edit goes through, including the drag
+  // handles, so they cannot drift apart again.
   $("i_len").addEventListener("change", () => {
     if (!SCENES[SEL]) return;
     SCENES[SEL].frames = +$("i_len").value;
+    sceneChanged();
   });
   $("i_cont").addEventListener("change", () => {
     if (!SCENES[SEL]) return;
     SCENES[SEL].continuity = $("i_cont").value;
+    sceneChanged();
   });
   for (const id of ["sound", "music"]) {
     $(id).addEventListener("input", checkSound);
   }
-  $("mp").addEventListener("change", () => { checkFrameSize(); save(); });
-  $("ar").addEventListener("change", save);
+  $("mp").addEventListener("input", () => { checkFrameSize(); save(); });
+  $("ar").addEventListener("change", () => { checkFrameSize(); save(); });
   for (const [id, key] of [["i_head", "head"], ["i_tail", "tail"]]) {
     $(id).addEventListener("input", () => {
       if (!SCENES[SEL]) return;
