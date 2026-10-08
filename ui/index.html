@@ -141,6 +141,26 @@
   /* THE HANDLE HAS TO BE VISIBLE. This was a 9px strip at opacity 0 that only
      appeared once you were already hovering it — an affordance you cannot see
      does not exist, and CJ went looking for a drag that was there all along. */
+  /* THE TRANSITIONS HAVE TO BE REVIEWABLE BEFORE CHOOSING. A <select> shows one
+     line at a time and only after the choice is made, which is no way to pick
+     between eight of them. */
+  .contlist { display: flex; flex-direction: column; gap: 1px; }
+  .controw {
+    display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+    padding: 9px 10px; background: var(--ground-2); cursor: pointer;
+    border: 1px solid transparent; text-align: left; width: 100%;
+    font: inherit; color: inherit;
+  }
+  .controw:hover { border-color: var(--line-strong); }
+  .controw[aria-current="true"] { border-color: var(--accent); }
+  .controw .g { font-size: 15px; text-align: center; opacity: .85; }
+  .controw b { display: block; font-weight: 600; margin-bottom: 2px; }
+  .controw span { color: var(--ink-soft); font-size: 11.5px; line-height: 1.45; }
+  .controw em { color: var(--ink-faint); font-style: normal; }
+  .controw.todo b::after {
+    content: " not wired"; color: var(--bad); font-weight: 400;
+  }
+
   .tl .seg .grip {
     position: absolute; inset: 0 -4px 0 auto; width: 14px; cursor: col-resize;
     z-index: 4; display: flex; align-items: center; justify-content: center;
@@ -330,6 +350,31 @@
 
 <main>
   <section class="col">
+    <h2>Plan</h2>
+    <p class="hint">A readout, not a second place to set things. Length and
+    transition live on each scene; this is what they add up to.</p>
+    <div class="row two">
+      <div><label for="ctx">Carry — the default pin for every continuing scene</label>
+           <select id="ctx"></select></div>
+      <div><label>Quick setup</label>
+           <div class="bar" style="margin-top:0">
+             <input type="number" id="qn" value="4" min="1" max="24" style="width:58px" title="how many scenes">
+             <select id="cf" style="flex:1" title="length of each"></select>
+             <button id="qgo" title="replace the scene list with this">Make scenes</button>
+           </div></div>
+    </div>
+    <input type="number" id="cc" value="3" hidden>
+    <div id="ruler" class="ruler"></div>
+    <div id="tl" class="tl"></div>
+    <div class="dragnote" id="dragnote"></div>
+    <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
+    segment's right edge to change that scene's length. Drag a segment itself to
+    reorder. Click the round button between two segments for the transition. The
+    inspector's <em>Length</em> dropdown does the same thing if you prefer
+    typing.</p>
+    <div class="total" id="total"></div>
+    <ul class="lint" id="lint"></ul>
+
     <h2>The take</h2>
 
     <label for="head">Head — repeated into every chunk, byte for byte</label>
@@ -361,6 +406,9 @@
         <div><label for="i_pin">Carry in</label><select id="i_pin"></select></div>
       </div>
       <p class="hint" id="i_contwhat"></p>
+      <details id="contguide"><summary>What each transition does</summary>
+        <div class="body"><div id="contlist" class="contlist"></div></div>
+      </details>
       <input type="number" id="i_seed" value="0" hidden>
       <div id="i_shotbox">
         <label for="i_head">This shot's setting — subject, wardrobe, room, light, camera</label>
@@ -476,31 +524,6 @@
   </section>
 
   <section class="col">
-    <h2>Plan</h2>
-    <p class="hint">A readout, not a second place to set things. Length and
-    transition live on each scene; this is what they add up to.</p>
-    <div class="row two">
-      <div><label for="ctx">Carry — the default pin for every continuing scene</label>
-           <select id="ctx"></select></div>
-      <div><label>Quick setup</label>
-           <div class="bar" style="margin-top:0">
-             <input type="number" id="qn" value="4" min="1" max="24" style="width:58px" title="how many scenes">
-             <select id="cf" style="flex:1" title="length of each"></select>
-             <button id="qgo" title="replace the scene list with this">Make scenes</button>
-           </div></div>
-    </div>
-    <input type="number" id="cc" value="3" hidden>
-    <div id="ruler" class="ruler"></div>
-    <div id="tl" class="tl"></div>
-    <div class="dragnote" id="dragnote"></div>
-    <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
-    segment's right edge to change that scene's length. Drag a segment itself to
-    reorder. Click the round button between two segments for the transition. The
-    inspector's <em>Length</em> dropdown does the same thing if you prefer
-    typing.</p>
-    <div class="total" id="total"></div>
-    <ul class="lint" id="lint"></ul>
-
     <h2>Render</h2>
     <details id="setup">
       <summary>Models and references</summary>
@@ -544,7 +567,16 @@
         </div>
         <p class="hint" id="mpwarn" hidden style="color:var(--bad)"></p>
         <div class="row two">
-          <div><label for="seed">Seed</label><input type="number" id="seed" value="977573931686826"></div>
+          <div><label for="seed">Seed</label>
+            <div class="bar" style="margin-top:0">
+              <input type="number" id="seed" value="977573931686826" style="flex:1">
+              <select id="seedmode" title="what happens to the seed after each render" style="width:118px">
+                <option value="fixed">fixed</option>
+                <option value="random">randomise</option>
+                <option value="increment">increment</option>
+                <option value="decrement">decrement</option>
+              </select>
+            </div></div>
           <div><label for="prefix">Output prefix</label><input type="text" id="prefix" value="H3/longtake/take"></div>
         </div>
       </div>
@@ -657,7 +689,7 @@ function save() {
   const s = {};
   for (const id of ["head","beats","tail","sound","music",
                     "cf","cc","ctx","unet","clip","vae","avae","lora","lstr",
-                    "sched","seed","prefix","mp","ar"]) {
+                    "sched","seed","prefix","mp","ar","seedmode"]) {
     const el = $(id); if (el) s[id] = el.value;
   }
   s.theme = document.documentElement.dataset.theme || "";
@@ -703,6 +735,11 @@ async function loadTransitions() {
     TRANSITIONS = r.kinds.map(k => ({
       id: k.id, label: k.label,
       hint: k.wired ? k.what : `${k.what} — NOT WIRED`,
+      // what actually separates these eight: whether the picture carries over
+      // the join, and whether the sound does. `why_not` only says anything for
+      // a kind that is not wired yet.
+      pic: !!k.carries_picture, aud: !!k.carries_audio,
+      needs: k.needs || "", whynot: k.why_not || "", wired: k.wired !== false,
       cls: k.wired ? (CLS[k.id] ?? "soft") : "todo",
       todo: !k.wired,
     }));
@@ -845,6 +882,43 @@ function shotOpener(i) {
   return 0;
 }
 
+// Every transition, with what it does and why, selectable in place. Drawn from
+// the same /continuity vocabulary the strip and the planner use, so the three
+// cannot disagree -- which they did when the UI shipped its own copy.
+function drawContList() {
+  const host = $("contlist");
+  if (!host) return;
+  host.innerHTML = "";
+  const sc = SCENES[SEL];
+  for (const t of TRANSITIONS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "controw" + (t.todo ? " todo" : "");
+    if (sc && sc.continuity === t.id) b.setAttribute("aria-current", "true");
+    const g = document.createElement("div");
+    g.className = "g"; g.textContent = GLYPH[t.id] || "·";
+    const d = document.createElement("div");
+    const nb = document.createElement("b"); nb.textContent = t.label;
+    const sp = document.createElement("span"); sp.textContent = t.hint;
+    d.append(nb, sp);
+    const facts = [];
+    facts.push(t.pic ? "picture carries" : "picture restarts");
+    facts.push(t.aud ? "sound carries" : "sound restarts");
+    if (t.needs) facts.push("needs " + t.needs);
+    const em = document.createElement("em");
+    em.textContent = "  " + facts.join(" · ")
+      + (t.todo && t.whynot ? " — " + t.whynot : "");
+    sp.append(document.createElement("br"), em);
+    b.append(g, d);
+    b.onclick = () => {
+      if (!SCENES[SEL] || SEL === 0) return;
+      SCENES[SEL].continuity = t.id;
+      sceneChanged();
+    };
+    host.appendChild(b);
+  }
+}
+
 function drawInspector() {
   const sc = SCENES[SEL];
   if (!sc) { $("inspector").hidden = true; return; }
@@ -867,6 +941,8 @@ function drawInspector() {
   $("i_contwhat").textContent = SEL === 0
     ? "The first scene opens the take, so it has no transition in."
     : `${t.label} — ${t.hint}`;
+  drawContList();
+  $("contguide").hidden = SEL === 0;
   // head/tail only where a shot BEGINS; everywhere else say what is inherited
   const opener = shotOpener(SEL);
   const isOpener = opener === SEL;
@@ -1010,10 +1086,33 @@ function checkFrameSize() {
 // the plan from the server, recheck the frame-size budget, and persist.
 function sceneChanged() {
   drawScenes();
+  drawInspector();          // the explanation lagged a full render without this
   compileSchedule();
   checkFrameSize();
   save();
   refreshPlan();
+}
+
+// The seed advances after a render, not before it, so the value in the box is
+// always the one that produced the take on screen. ComfyUI's own
+// control_after_generate works this way and it is the behaviour that lets you
+// read a seed off a result you like and keep it.
+function advanceSeed() {
+  const mode = $("seedmode").value;
+  if (mode === "fixed") return;
+  const el = $("seed");
+  const cur = Number(el.value) || 0;
+  // stay inside what a JS number represents exactly; ComfyUI seeds are u64 but
+  // anything past 2^53 stops incrementing reliably
+  const CAP = Number.MAX_SAFE_INTEGER;
+  if (mode === "random") {
+    el.value = String(Math.floor(Math.random() * 1e15));
+  } else if (mode === "increment") {
+    el.value = String(cur >= CAP ? 0 : cur + 1);
+  } else {
+    el.value = String(cur <= 0 ? CAP : cur - 1);
+  }
+  save();
 }
 
 function compileSchedule() {
@@ -1791,6 +1890,35 @@ function request() {
 
 function fail(msg) { $("err").hidden = false; $("err").textContent = msg; }
 
+// CORE'S REJECTION, MADE READABLE. A bad COMBO value comes back as
+// `prompt_outputs_failed_validation` with an EMPTY `details` -- CJ hit exactly
+// that and it named neither the node nor the field. The useful part is in
+// `node_errors`, keyed by node id, so this pulls out each field and what core
+// said about it.
+function explainReject(out) {
+  const lines = [];
+  const e = out.error;
+  lines.push(typeof e === "string" ? e
+             : (e && (e.message || e.type)) || "ComfyUI rejected the graph");
+  if (e && e.details) lines.push(e.details);
+  const ne = out.node_errors || {};
+  for (const [id, info] of Object.entries(ne)) {
+    const name = (info.class_type || `node ${id}`);
+    for (const err of info.errors || []) {
+      const where = err.extra_info && err.extra_info.input_name
+        ? `${name}.${err.extra_info.input_name}` : name;
+      lines.push(`  ${where}: ${err.message || err.type}`
+                 + (err.details ? ` — ${err.details}` : ""));
+    }
+  }
+  if (lines.length === 1) {
+    lines.push("No field was named. This is usually a dropdown holding a value "
+               + "the node does not offer — check the model and shape lists "
+               + "after a ComfyUI restart.");
+  }
+  return lines.join("\n");
+}
+
 async function compose() {
   $("err").hidden = true;
   const r = await post("/take/graph", request());
@@ -1830,11 +1958,11 @@ async function doRender() {
     });
     const out = await res.json();
     if (!res.ok || !out.prompt_id) {
-      fail(typeof out.error === "string" ? out.error
-           : JSON.stringify(out.error || out, null, 2));
+      fail(explainReject(out));
       return;
     }
     addJob(out.prompt_id);
+    advanceSeed();           // only once it is actually queued
   } catch (e) { fail(String(e)); }
   finally { $("render").disabled = false; }
 }
