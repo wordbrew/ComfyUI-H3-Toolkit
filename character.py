@@ -136,11 +136,15 @@ def sanitise(name):
 
 
 def card_of(name, kind="person", description="", voice_description="",
-            retention="fully_preserved", anchors=0):
+            retention="fully_preserved", anchors=0, has_voice=False):
     """The card dict, in ONE place, so the node and the HTTP route agree."""
+    # `voice` is the DESCRIPTION of how they sound; `has_voice` is whether a
+    # sample exists on disk. Two different things that both have to reach the
+    # UI -- it can describe a voice it cannot play, and it must not offer to
+    # use a sample that was never recorded.
     return {"name": name, "kind": kind, "description": str(description).strip(),
             "voice": str(voice_description).strip(), "retention": retention,
-            "anchors": int(anchors)}
+            "anchors": int(anchors), "has_voice": bool(has_voice)}
 
 
 def save_subject(name, kind="person", description="", voice_description="",
@@ -175,7 +179,10 @@ def save_subject(name, kind="person", description="", voice_description="",
     if voice_path and os.path.isfile(voice_path):
         shutil.copyfile(voice_path,
                         os.path.join(d, "voice" + os.path.splitext(voice_path)[1].lower()))
-    card = card_of(safe, kind, description, voice_description, retention, n)
+    card = card_of(safe, kind, description, voice_description, retention, n,
+                   has_voice=any(
+                       os.path.isfile(os.path.join(d, "voice" + e))
+                       for e in (".wav", ".flac", ".mp3")))
     with open(os.path.join(d, "card.json"), "w", encoding="utf-8") as f:
         json.dump(card, f, indent=2)
     _CACHE.pop(safe, None)
@@ -218,6 +225,43 @@ def stage_subject(name, input_dir, folder="h3_subjects"):
     return out
 
 
+def stage_voice(name, input_dir, folder="h3_subjects"):
+    """Copy a subject's voice sample into INPUT. -> the relative path, or None.
+
+    Same reasoning as stage_subject: the store keeps voice.wav beside the
+    anchors, LoadAudio only lists ComfyUI/input, and a voice CITED as <Audio N>
+    in the prompt has to be the file actually encoded. It lands in the same
+    per-subject folder the anchors do, so one subject is one directory.
+    """
+    import shutil
+    safe = sanitise(name)
+    d = os.path.join(characters_dir(), safe)
+    for cand in ("voice.wav", "voice.flac", "voice.mp3"):
+        src = os.path.join(d, cand)
+        if not os.path.isfile(src):
+            continue
+        dest = os.path.join(str(input_dir), folder, safe)
+        os.makedirs(dest, exist_ok=True)
+        shutil.copyfile(src, os.path.join(dest, cand))
+        return f"{folder}/{safe}/{cand}"
+    return None
+
+
+def stored_voice(name):
+    """Where a subject's voice sample lives in the STORE, or None.
+
+    Named away from save_subject's `voice_path` PARAMETER on purpose: a module
+    function with that name is shadowed inside that function, which is the kind
+    of thing that reads fine and breaks on the next edit.
+    """
+    d = os.path.join(characters_dir(), sanitise(name))
+    for cand in ("voice.wav", "voice.flac", "voice.mp3"):
+        p = os.path.join(d, cand)
+        if os.path.isfile(p):
+            return p
+    return None
+
+
 def delete_subject(name):
     """Remove a subject from the store. -> True if it was there."""
     import shutil
@@ -249,6 +293,10 @@ def list_subjects():
                     "voice": card.get("voice", ""),
                     "retention": card.get("retention", "fully_preserved"),
                     "anchors": int(card.get("anchors", len(imgs)) or len(imgs)),
+                    # FROM DISK, not from the card: subjects saved before
+                    # has_voice existed have no such key, and a stale card must
+                    # not hide a sample that is sitting right there.
+                    "has_voice": stored_voice(name) is not None,
                     "images": imgs})
     return out
 
