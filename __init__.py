@@ -263,7 +263,7 @@ def _register_routes():
         the pictures sent are the same files, and returns the paths in the order
         the prompt numbers them.
         """
-        from .character import stage_subject
+        from .character import stage_subject, stage_voice
         data = await _body(request)
         try:
             import folder_paths
@@ -271,13 +271,19 @@ def _register_routes():
         except Exception:                                       # noqa: BLE001
             return web.json_response({"ok": False,
                                       "error": "no ComfyUI input directory"})
-        out, errs = {}, {}
+        out, errs, voices = {}, {}, {}
         for name in (data.get("names") or []):
             try:
                 out[name] = stage_subject(name, indir)
+                # the voice rides along: a subject is one directory in input/,
+                # and a caller should not have to ask twice for one subject
+                v = stage_voice(name, indir)
+                if v:
+                    voices[name] = v
             except (ValueError, OSError) as exc:
                 errs[name] = str(exc)
         return web.json_response({"ok": not errs, "staged": out,
+                                  "voices": voices,
                                   **({"errors": errs} if errs else {})})
 
     @routes.post(ROUTE_PREFIX + "/subject/delete")

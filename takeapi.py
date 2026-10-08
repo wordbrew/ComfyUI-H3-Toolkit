@@ -187,6 +187,15 @@ def build(req, template=None):
     # still sends it to the model, which is the one way this can silently send
     # a reference nobody asked for.
     set_references(graph, req.get("references") or [])
+    # VOICES. The model's rule is that an audio reference accompanies a picture
+    # or a video, so a voice with no pictures anywhere in the take is dropped
+    # rather than sent on its own and silently ignored.
+    voices = [v for v in (req.get("audio_references") or []) if v]
+    if voices and not (req.get("references") or []):
+        raise TakeError("a voice reference needs at least one picture in the "
+                        "take: H3 pairs an audio reference with an image or a "
+                        "video, and a lone voice is dropped")
+    set_audio_references(graph, voices)
 
     # A CAST BEATS TWO TEXT BOXES. When `cast` is given it is compiled through
     # h3script and OVERRIDES subject_def_1 / retention_1, so a caller never
@@ -335,6 +344,47 @@ def compile_cast(cast, parse, emit, lint=None):
         "index": out.get("index", {}),
         "lint": notes,
     }
+
+def set_audio_references(graph, names):
+    """Wire exactly len(names) VOICE references into ref_audios.* -> [node ids].
+
+    The conditioning node has carried `ref_audios` all along -- an Autogrow
+    input beside `ref_images` -- and the template wired only the pictures. So a
+    subject with a recorded voice had that voice saved, listed and described,
+    and never sent: the model heard nothing and invented a voice.
+
+    Unlike the picture loaders there is nothing in the template to copy, so the
+    LoadAudio nodes are minted outright. `audio` is a COMBO over ComfyUI/input,
+    which is why the sample has to be staged there first -- same reason the
+    anchors are.
+    """
+    cond = _one(graph, "h3.conditioning", required=False)
+    if cond is None:
+        if names:
+            raise TakeError("the template has no h3.conditioning node, so "
+                            "voice references cannot be wired")
+        return []
+    ins = graph[cond].setdefault("inputs", {})
+
+    # rebuild from scratch, and PRUNE the loaders behind the old wiring -- an
+    # orphaned LoadAudio still executes and still fails on a missing file
+    for key in [k for k in ins if k.startswith("ref_audios.ref_audio_")]:
+        old = ins.pop(key)
+        if isinstance(old, list) and graph.get(old[0], {}).get(
+                "_meta", {}).get("title", "").startswith("h3.refaudio."):
+            graph.pop(old[0], None)
+
+    next_id = max((int(k) for k in graph if k.isdigit()), default=0) + 1
+    made = []
+    for i, name in enumerate(names):
+        nid = str(next_id); next_id += 1
+        graph[nid] = {"class_type": "LoadAudio",
+                      "inputs": {"audio": name},
+                      "_meta": {"title": f"h3.refaudio.{i}"}}
+        ins[f"ref_audios.ref_audio_{i}"] = [nid, 0]
+        made.append(nid)
+    return made
+
 
 def set_references(graph, names):
     """Wire exactly len(names) reference loaders, adding or pruning as needed."""

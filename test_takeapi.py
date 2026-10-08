@@ -238,6 +238,36 @@ check("typed subjects cite no pictures", _two["counts"]["pictures"], 0)
 ok("so a mismatch is detectable by comparing counts to the images sent",
    isinstance(_two["counts"].get("pictures"), int))
 
+
+# ------------------------------------------------------ voices reach the model
+# The conditioning node has carried `ref_audios` all along and the template
+# wired only pictures, so a subject's saved voice was stored, listed, described
+# -- and never sent. CJ: "I don't think audio is being applied for subjects."
+_V = dict(REQ, audio_references=["h3_subjects/jen/voice.wav"])
+_g = ta.build(_V)
+_cond = ta._one(_g, "h3.conditioning")
+_slots = [k for k in _g[_cond]["inputs"] if k.startswith("ref_audios.ref_audio_")]
+check("one voice wires one audio slot", len(_slots), 1)
+_aud = _g[_cond]["inputs"]["ref_audios.ref_audio_0"]
+check("through a LoadAudio", _g[_aud[0]]["class_type"], "LoadAudio")
+check("holding the staged path", _g[_aud[0]]["inputs"]["audio"],
+      "h3_subjects/jen/voice.wav")
+ok("and the pictures are untouched",
+   len([k for k in _g[_cond]["inputs"] if k.startswith("ref_images.")]) >= 3)
+
+print("two voices number from zero, and dropping them prunes the loaders")
+_g2 = ta.build(dict(REQ, audio_references=["a.wav", "b.wav"]))
+check("both wire", sorted(k for k in _g2[ta._one(_g2, "h3.conditioning")]["inputs"]
+                         if k.startswith("ref_audios.")),
+      ["ref_audios.ref_audio_0", "ref_audios.ref_audio_1"])
+_g3 = ta.build(REQ)
+check("no voices leaves no LoadAudio behind",
+      sum(1 for v in _g3.values() if v["class_type"] == "LoadAudio"), 0)
+
+print("a voice with no picture anywhere is refused, not silently dropped")
+raises("lone voice", lambda: ta.build(
+    dict(REQ, references=[], audio_references=["v.wav"])), "picture")
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

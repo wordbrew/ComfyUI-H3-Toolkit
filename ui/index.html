@@ -1375,6 +1375,16 @@ function drawCast() {
       `</select></div>` +
       `<div><label>wears</label><input type="text" data-f="wears" ` +
       `value="${escapeHTML(r.wears)}" placeholder="a charcoal wool coat"></div>` +
+      // THE VOICE IS OPT-IN and only appears when a sample actually exists.
+      // A stored voice is often a record of how someone sounds rather than an
+      // instruction to use it, and sending one costs reference budget.
+      (r.voice_path
+        ? `<div><label>voice</label><label class="chk">` +
+          `<input type="checkbox" data-f="use_voice"${r.use_voice ? " checked" : ""}>` +
+          ` use the saved sample as &lt;Audio&gt;</label></div>`
+        : (r.kind === "library"
+           ? `<div><label>voice</label><span class="hint">no sample saved for ` +
+             `this subject — add one in the Library</span></div>` : "")) +
       `</div>`;
     el.querySelector("[data-x]").onclick = () => dropRow(r.id);
     // A TYPED subject needs its own pictures; a LIBRARY one brings them. Both
@@ -1391,7 +1401,9 @@ function drawCast() {
     el.querySelector("[data-more]").onclick = () => { r.open = !r.open; drawCast(); };
     el.querySelectorAll("[data-f]").forEach(inp => {
       inp.onchange = () => {
-        r[inp.dataset.f] = inp.value;
+        // A CHECKBOX'S .value IS THE STRING "on", whatever its state -- reading
+        // it here would have set use_voice truthy and left it that way forever.
+        r[inp.dataset.f] = inp.type === "checkbox" ? inp.checked : inp.value;
         if (inp.dataset.f === "from_library") describeMember(r, el);
         refreshCast();
       };
@@ -1447,6 +1459,11 @@ async function stageLibraryRows() {
     if (got && got.length) {
       r.images = got;                         // the store decides the order
       for (const pth of got) if (!ASSETS.includes(pth)) ASSETS.unshift(pth);
+      // A VOICE IS OPT-IN. The sample is staged whenever one exists, but it
+      // only reaches the graph if this row asked for it -- a stored voice is
+      // often a sample of how someone sounds, not a direction to use it.
+      r.voice_path = (out.voices || {})[r.from_library] || null;
+      if (!r.voice_path) r.use_voice = false;
     } else {
       missing.push(r.from_library);
     }
@@ -1461,9 +1478,11 @@ async function stageLibraryRows() {
 /* REFERENCES ARE THE CAST'S IMAGES, in subject order. One source of truth. */
 function deriveRefs() {
   REFS = [];
+  VOICES = [];
   CAST.forEach((r, i) => {
     const who = r.from_library || r.describe || r.setting || `subject ${i + 1}`;
     for (const pth of (r.images || [])) REFS.push({ path: pth, from: who });
+    if (r.use_voice && r.voice_path) VOICES.push({ path: r.voice_path, from: who });
   });
   drawRefSlots();
 }
@@ -1755,6 +1774,8 @@ function drawAnchorTiles() {
    with no declared maximum and the builder mints a loader per reference, so the
    count belongs to the take. An empty slot is simply dropped. */
 let REFS = [];
+// voices run alongside REFS and are derived the same way, from the cast
+let VOICES = [];
 
 /* REFERENCES ARE DERIVED, NEVER PICKED HERE. They are the cast's images in
    subject order, which is the order the prompt numbers <Picture N>. Two places
@@ -1914,6 +1935,7 @@ function request() {
     if (heads.some(Boolean)) req.heads = heads.join("\n\n");
     if (tails.some(Boolean)) req.tails = tails.join("\n\n");
   }
+  if (VOICES.length) req.audio_references = VOICES.map(v => v.path);
   req.megapixels = +$("mp").value || 0.5;
   req.aspect_ratio = $("ar").value;
   if (CONT.length) req.continuity = CONT.join("\n");
