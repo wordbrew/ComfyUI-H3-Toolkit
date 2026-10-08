@@ -539,8 +539,11 @@ def _register_routes():
         and dead in the other.
         """
         from .chunkplan import CONTINUITY, CONTINUITY_ORDER, DEFAULT_CONTINUITY
+        # CONTINUITY_ORDER *is* the offered list: the retired kinds were taken
+        # out of it rather than filtered here, so there is one place that
+        # decides what gets offered. This used to append everything else in
+        # CONTINUITY, which is how the retired three reached the menu at all.
         order = [k for k in CONTINUITY_ORDER if k in CONTINUITY]
-        order += [k for k in CONTINUITY if k not in order]
         return web.json_response({
             "ok": True, "default": DEFAULT_CONTINUITY,
             "kinds": [{
