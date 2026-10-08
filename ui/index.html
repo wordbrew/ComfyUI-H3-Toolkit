@@ -671,7 +671,7 @@ function restore() {
   // The options must exist BEFORE the saved value is assigned -- a <select>
   // silently refuses a value none of its options carry, which is exactly how
   // the length dropdown came to show the wrong thing.
-  fill($("ar"), SHAPES, s.ar || SHAPES[0]);
+  fill($("ar"), SHAPES, s.ar || "2:3 (Portrait Photo)");
   for (const [k, v] of Object.entries(s)) {
     if (k === "theme") continue;
     const el = $(k); if (el && v !== undefined && v !== "") el.value = v;
@@ -772,12 +772,24 @@ function newScene(seed = {}) {
   return { frames: seed.frames || 192, beat: seed.beat || "",
            continuity: seed.continuity || "carry", seed_offset: seed.seed_offset || 0 };
 }
+// A DUPLICATE HAS TO BE INDEPENDENT. `{ ...src }` is a shallow spread: it copies
+// `frames` and `beat` by value but hands the new scene THE SAME `loras` array,
+// so choosing a LoRA on the copy rewrote the original -- they were one array
+// with two owners. CJ: "if I click duplicate off of Scene 2, into scene 3. Then
+// I pick a new lora in scene 3 for use, it will also change the lora for scene
+// 2." Anything nested in a scene has the same problem, so this clones deeply
+// rather than naming the fields that currently happen to be arrays.
+function cloneScene(src) {
+  try { return structuredClone(src); }
+  catch { return JSON.parse(JSON.stringify(src)); }
+}
+
 function addScene(copyFrom = null) {
   const src = copyFrom != null ? SCENES[copyFrom] : null;
-  SCENES.push(src ? { ...src } : newScene(
+  SCENES.push(src ? cloneScene(src) : newScene(
     SCENES.length ? { frames: SCENES[SCENES.length - 1].frames } : {}));
   SEL = SCENES.length - 1;
-  drawScenes(); refreshPlan();
+  sceneChanged();
 }
 function delScene(i) {
   SCENES.splice(i, 1);
@@ -938,14 +950,22 @@ const SIZE_MARKS = [
   { mp: 0.50, secs: 60, note: "544x928" },
   { mp: 1.04, secs: 20, note: "832x1248, OOM at 20.8s" },
 ];
-const SHAPES = ["2:3 (Portrait Photo)", "9:16 (Portrait Video)",
-                "1:1 (Square)", "3:2 (Landscape Photo)",
-                "16:9 (Landscape Video)"];
+// THE NODE OWNS THIS LIST. I hand-wrote five of these and got three wrong --
+// "9:16 (Portrait Video)" is really "9:16 (Portrait Widescreen)", "16:9
+// (Landscape Video)" is "16:9 (Widescreen)", "3:2 (Landscape Photo)" is "3:2
+// (Photo)" -- and a COMBO value the node does not declare fails validation at
+// submit with "prompt_outputs_failed_validation" and an empty details field.
+// These are only the fallback for a server that cannot be reached; the real
+// list is fetched from /object_info, exactly like the model lists.
+let SHAPES = ["1:1 (Square)", "2:3 (Portrait Photo)", "3:2 (Photo)",
+              "3:4 (Portrait Standard)", "4:3 (Standard)",
+              "9:16 (Portrait Widescreen)", "16:9 (Widescreen)",
+              "21:9 (Ultrawide)"];
 
 // H3 wants both axes a multiple of 32, so the real frame is not exactly the MP
 // asked for -- show what it will actually be.
 function frameFor(mp, shape) {
-  const m = /(\d+)\s*:\s*(\d+)/.exec(shape || "2:3");
+  const m = /(\d+)\s*:\s*(\d+)/.exec(shape || "2:3 (Portrait Photo)");
   const [rw, rh] = m ? [+m[1], +m[2]] : [2, 3];
   const px = Math.max(0.05, mp) * 1e6;
   const h = Math.sqrt(px * rh / rw), w = px / h;
@@ -2137,6 +2157,14 @@ function wireControls() {
     // what actually happened -- false when it could not reach the planner --
     // and asserting success afterwards overwrote the truth with a lie. The page
     // said "connected" with every dropdown empty.
+    // the node's own aspect list, so a hand-typed string can never reach submit
+    const shapes = (await optionsFor("ResolutionSelector", "aspect_ratio"))
+      .filter(x => !/^Auto/i.test(x));     // Auto needs an input image
+    if (shapes.length) {
+      SHAPES = shapes;
+      fill($("ar"), SHAPES, saved().ar || "2:3 (Portrait Photo)");
+      checkFrameSize();
+    }
     await refreshPlan();
   } catch (e) {
     // SAY IT. The page is still usable -- the controls are wired -- so the only
