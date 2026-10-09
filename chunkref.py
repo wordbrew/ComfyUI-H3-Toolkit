@@ -37,33 +37,75 @@ ROLES = {
     "identity": {
         "tag": "Picture",
         "clause": "",            # identity is cited in subject_definitions
+        "depth": False,
+        "for": (),               # NOT offered for an additional reference
         "what": "the picture as itself — identity, folded into the subject "
-                "definition. This is what a plain reference already does.",
+                "definition. This is what a cast member's anchors already do, "
+                "so it is not offered as an additional reference: make the "
+                "person a subject instead.",
     },
     "frame 0": {
         "tag": "Picture",
         "clause": "{tag} is the first frame.",
-        "what": "the image itself anchors the opening frame.",
+        "depth": False,          # the actual image, or it is not the frame
+        "for": ("image",),
+        "what": "the image itself opens the chunk. No depth pass — it has to "
+                "be the real picture or it is not the frame.",
     },
     "composition": {
         "tag": "Picture",
         "clause": "{tag} is inspiration for frame 0, follow only the "
                   "composition, ignore the subject in the center.",
-        "what": "a DEPTH pass: take the framing, not the person. Pass the image "
-                "through DepthAnything_V2 before this node.",
+        "depth": True,           # always; that is what separates framing from
+                                 # appearance, and the clause assumes it
+        "for": ("image",),
+        "what": "the framing, not the person. Always goes through depth — "
+                "that is the whole mechanism, and the clause above is written "
+                "as though it did.",
     },
-    "motion": {
+    "composition and motion": {
         "tag": "Video",
         "clause": "{tag} is used for inspiration for the new video, follow "
                   "only the composition and motion.",
-        "what": "a DEPTH pass of a clip: take the movement and framing, not the "
-                "appearance. Pass the video through DepthAnything_V2 first.",
+        "depth": True,
+        "for": ("video",),
+        "what": "the movement and framing of a clip, not its appearance. "
+                "Always goes through depth.",
     },
 }
-ROLE_ORDER = ("identity", "frame 0", "composition", "motion")
+
+#: The roles a source of each kind may take. CJ: "Drop down for role should be
+#: content smart and list only per image vs video." A clip has exactly one
+#: useful role here -- extending a clip is a different workflow, not a chunk
+#: reference -- so the picker is a statement rather than a question.
+ROLES_FOR = {
+    "image": ("composition", "frame 0"),
+    "video": ("composition and motion",),
+}
+
+#: Depth is NOT a user toggle any more. It is a property of the role: a
+#: composition reference that skipped the depth pass would carry the appearance
+#: the clause tells the model to ignore, which is a contradiction no one should
+#: be able to express by unticking a box.
+def depth_for_role(role):
+    return bool((ROLES.get(role) or {}).get("depth"))
+
+
+ROLE_ORDER = ("composition", "frame 0", "composition and motion",
+              "identity")
+
+
+#: `motion` was the old name for `composition and motion`. A saved graph or a
+#: stored reference may still say it, and it should keep working.
+ALIASES = {"motion": "composition and motion"}
+
+
+def canonical(role):
+    return ALIASES.get(str(role or "").strip(), str(role or "").strip())
 
 
 def retention_clause(role, ordinal):
+    role = canonical(role)
     """The sentence that tells the model what to take. -> str, possibly empty."""
     spec = ROLES.get(role)
     if not spec or not spec["clause"]:
@@ -165,6 +207,7 @@ class H3ChunkRef:
 
     def go(self, role, chunks, chunk_index, image=None, ordinal=1,
            chunk_plan=None, label="", retention_in=""):
+        role = canonical(role)
         plan = (chunk_plan or {}).get("chunks") or []
         total = len(plan) or 1
         live, note = active_here(chunks, chunk_index, total)

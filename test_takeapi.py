@@ -277,15 +277,20 @@ print("\na reference becomes loader -> [trim] -> [depth] -> gate -> slot")
 _CR = dict(REQ, chunk_references=[
     {"source": "plate.png", "kind": "image", "role": "composition",
      "chunks": "1"},
-    {"source": "move.mp4", "kind": "video", "role": "motion", "chunks": "2",
-     "start": 0, "length": 96},
+    {"source": "move.mp4", "kind": "video", "role": "composition and motion",
+     "chunks": "2", "spans": "48 96 the push"},
 ])
 _g = ta.build(_CR)
 _cls = [v["class_type"] for v in _g.values()]
 ok("the image loads", _cls.count("LoadImage") >= 1)
-ok("the video loads through GetVideoComponents",
-   "LoadVideo" in _cls and "GetVideoComponents" in _cls)
-ok("the trim is ImageFromBatch, in FRAMES", "ImageFromBatch" in _cls)
+# THE PACK'S OWN LOADER, not three stock nodes. VideoTrimLoad loads, trims and
+# resizes in one, and its `spans` widget is the format the trim UI reads and
+# writes -- which lands in the rendered mp4's metadata as the record of which
+# part of which file a clip came from.
+ok("the clip goes through VideoTrimLoad", "VideoTrimLoad" in _cls)
+ok("and not the three-node stock chain",
+   "LoadVideo" not in _cls and "GetVideoComponents" not in _cls
+   and "ImageFromBatch" not in _cls)
 check("both get a depth pass", _cls.count("DepthAnything_V2"), 2)
 check("sharing ONE model loader, since the weights are the same",
       _cls.count("DownloadAndLoadDepthAnythingV2Model"), 1)
@@ -302,7 +307,8 @@ _cond = ta._one(_g, "h3.conditioning")
 _ins = _g[_cond]["inputs"]
 _gates = {k: v for k, v in _g.items() if v["class_type"] == "H3ChunkRef"}
 _img_gate = [k for k, v in _gates.items() if v["inputs"]["role"] == "composition"][0]
-_vid_gate = [k for k, v in _gates.items() if v["inputs"]["role"] == "motion"][0]
+_vid_gate = [k for k, v in _gates.items()
+             if v["inputs"]["role"] == "composition and motion"][0]
 ok("the composition reference is an IMAGE reference",
    any(v == [_img_gate, 0] for k, v in _ins.items()
        if k.startswith("ref_images.")))
@@ -332,10 +338,33 @@ ok("every gate reads the right slot",
 
 print("the caps H3 declares are enforced where the message can name the file")
 _many = ta.build(dict(REQ, chunk_references=[
-    {"source": f"v{i}.mp4", "kind": "video", "role": "motion"}
+    {"source": f"v{i}.mp4", "kind": "video", "role": "composition and motion"}
     for i in range(5)]))
 check("at most three video references survive",
-      sum(1 for v in _many.values() if v["class_type"] == "LoadVideo"), 3)
+      sum(1 for v in _many.values() if v["class_type"] == "VideoTrimLoad"), 3)
+
+print("DEPTH FOLLOWS THE ROLE, and is not a flag a caller can contradict")
+_d = ta.build(dict(REQ, chunk_references=[
+    {"source": "a.png", "kind": "image", "role": "composition", "depth": False},
+    {"source": "b.png", "kind": "image", "role": "frame 0", "depth": True},
+]))
+_dc = [v["class_type"] for v in _d.values()]
+check("composition is depth-passed even when asked not to be, because its "
+      "clause tells the model to ignore an appearance that would still be "
+      "there", _dc.count("DepthAnything_V2"), 1)
+_fg = [v for v in _d.values() if v["class_type"] == "H3ChunkRef"
+       and v["inputs"]["role"] == "frame 0"][0]
+check("and frame 0 is NOT, because it has to be the real picture",
+      _d[_fg["inputs"]["image"][0]]["class_type"], "LoadImage")
+
+print("a role the source cannot take is corrected and reported")
+_w = ta.build(dict(REQ, chunk_references=[
+    {"source": "c.mp4", "kind": "video", "role": "frame 0"}]))
+_wg = [v for v in _w.values() if v["class_type"] == "H3ChunkRef"][0]
+check("a clip cannot be frame 0", _wg["inputs"]["role"],
+      "composition and motion")
+ok("`identity` is not offered as an additional reference at all",
+   "identity" not in [r[0] for r in [("composition",), ("frame 0",)]])
 
 print("and nothing is built when nothing is asked for")
 _none = ta.build(REQ)
