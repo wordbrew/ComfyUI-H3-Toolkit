@@ -299,7 +299,17 @@
   }
   .tl .seg .grip:hover::after { opacity: 1; padding: 9px 2px; }
   .tl .seg.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
-  .dragnote { font: 11px var(--mono); color: var(--accent); min-height: 14px; }
+  /* THE DRAG READOUT HANGS OFF THE CHUNK IT DESCRIBES. It used to be one div
+     after every track, so while resizing chunk 2 the number appeared below
+     the cast, setting, props and reference lanes -- nowhere near the thing
+     changing. Absolutely positioned under its own segment, it is always under
+     the right one, and it floats over the lanes for the moment it is up. */
+  .tl .seg .note {
+    position: absolute; left: 0; top: 100%; margin-top: 4px; z-index: 20;
+    font: 11px/1 var(--mono); color: #17140c; background: var(--accent);
+    padding: 4px 6px; border-radius: 3px; white-space: nowrap;
+    pointer-events: none; box-shadow: 0 2px 8px #0006;
+  }
 
   .total {
     display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
@@ -531,7 +541,6 @@
         <button id="addref" title="add an image or clip">+</button></div>
         <div id="lanes" class="lanes"></div></div>
     </div>
-    <div class="dragnote" id="dragnote"></div>
     <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
     segment's right edge to change that chunk's length. Drag a segment itself to
     reorder. Click the round button between two segments for the transition. The
@@ -2687,6 +2696,18 @@ function drawRefSlots() {
    Gestures follow the editor CJ pointed at: drag the right edge to resize, drag
    the body to reorder. Lengths SNAP to legal runs -- there is no such thing as
    a 100-frame scene, so the drag lands on 90 or 107 and the readout says which. */
+// one badge per segment, created on demand and removed when the drag ends
+function segNote(seg, text) {
+  let n = seg.querySelector(".note");
+  if (!text) { if (n) n.remove(); return; }
+  if (!n) {
+    n = document.createElement("div");
+    n.className = "note";
+    seg.appendChild(n);
+  }
+  n.textContent = text;
+}
+
 function makeSegInteractive(seg, i, plan) {
   // a drag that moved must not ALSO open the details when the mouse comes up
   seg.addEventListener("mousedown", () => { delete seg.dataset.dragged; });
@@ -2718,16 +2739,17 @@ function makeSegInteractive(seg, i, plan) {
       if (snapped !== sc.frames) {
         sc.frames = snapped;
         seg.dataset.dragged = "1";     // so mouseup does not also open details
-        $("dragnote").textContent =
-          `chunk ${i + 1}: ${snapped}f = ${(snapped / 24).toFixed(2)}s` +
-          (AV_EXACT.has(snapped) ? "  · both clocks" : "  · off the audio grid");
+        segNote(seg,
+          `${snapped}f · ${(snapped / 24).toFixed(2)}s`
+          + (AV_EXACT.has(snapped) ? " · both clocks"
+                                   : " · off the audio grid"));
         drawScenes();
       }
     };
     const up = () => {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
-      $("dragnote").textContent = "";
+      segNote(seg, "");
       refreshPlan();
     };
     document.addEventListener("mousemove", move);
