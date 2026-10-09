@@ -618,6 +618,8 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                              f"than a legal run — trimmed to {run}, "
                              f"{dropped} frame(s) dropped")
             length = end - start
+            # cut-like continuity, resolved once and used by both fields below
+            _cut_here = bool((p > 0 or chunks) and here_name in CUT_LIKE)
             chunks.append({
                 "start": start, "end": end, "length": length, "run": run,
                 "keep_from": keep_from,
@@ -633,7 +635,17 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                 # wrong, and the runner used to do it regardless -- so a new shot
                 # opened on the frame it was meant to be cutting away from
                 # (measured 2026-08-31, workflow 17).
-                "cut": p == 0 and bool(chunks),
+                # A CONTINUITY CUT IS A CUT. This was computed from the
+                # shot-part index alone, which only knows about cuts that came
+                # from `cuts=` and split the take into shots. A cut named
+                # through `continuity` never moved `p`, so the chunk carried
+                # the label and none of the behaviour: `cut` stayed False and
+                # `seed_mask` stayed True, which seeds the mask tracker ACROSS
+                # the cut -- the exact thing chunkrun's own docstring forbids
+                # ("No mask seeding across a cut"). scene_plan had it right and
+                # these two planners disagreed, so a take behaved differently
+                # depending on which one built it.
+                "cut": (p == 0 and bool(chunks)) or _cut_here,
                 # The transition INTO this chunk, and whether the soundtrack
                 # crosses it. `cut` above stays what it always was -- does this
                 # chunk open a new shot -- because the runner reads it.
@@ -642,7 +654,7 @@ def plan(total_frames, chunk_frames=90, mode="fixed", cuts=None, min_chunk=39,
                 "shot": si if mode == "scene" else None,
                 "part": (p + 1, n_parts) if n_parts > 1 else None,
                 "both_clocks": on_both_clocks(run),
-                "seed_mask": p > 0,      # only within a shot, never across a cut
+                "seed_mask": p > 0 and not _cut_here,   # never across a cut
             })
 
     off = sum(1 for c in chunks if not c["both_clocks"])
