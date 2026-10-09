@@ -107,6 +107,48 @@ ck("but editing the row that OWNS the handle keeps it",
 CASTREF = [];
 ck("no clash, no suffix", H.uniqueHandle("Lily", "9"), "lily");
 
+console.log("\nRENAMING A HANDLE CARRIES ITS REFERENCES");
+// Without this, swapping which library entry a row points at silently
+// renames its handle and orphans every `@oldname` already written — the only
+// symptom being a refused render naming something the author no longer
+// recognises.
+{
+  const body = src.match(/function renameHandle\(from, to\)[\s\S]*?\n\}/)[0];
+  let SC = [], F = {};
+  const rename = new Function("getS", "getF", "set",
+    body.replace(/\$\("head"\)\.value = swap\(\$\("head"\)\.value\);/,
+                 'set("head", swap(getF("head")));')
+        .replace(/\$\("tail"\)\.value = swap\(\$\("tail"\)\.value\);/,
+                 'set("tail", swap(getF("tail")));')
+        .replace(/for \(const sc of SCENES\)/, "for (const sc of getS())")
+        .replace(/if \(n\) \{[^}]*\}/, "")
+    + "; return renameHandle;")(() => SC, (k) => F[k], (k, v) => { F[k] = v; });
+
+  const reset = () => {
+    SC = [{ beat: "@jen turns. @jenny waits." }, { beat: "@jen again" },
+          { beat: "no handles here" }];
+    F = { head: "@jen opens the door", tail: "@jenny closes it" };
+  };
+
+  reset();
+  ck("every use is rewritten", rename("jen", "lily"), 3);
+  ck("in the head", F.head, "@lily opens the door");
+  ck("and in the beats", SC[1].beat, "@lily again");
+  ck("A LONGER HANDLE IS NOT MAULED", F.tail, "@jenny closes it");
+  ck("and not inside a beat either", SC[0].beat, "@lily turns. @jenny waits.");
+
+  reset();
+  ck("renaming to itself does nothing", rename("jen", "jen"), 0);
+  ck("an empty name does nothing", rename("", "x"), 0);
+  ck("and so does renaming something nobody wrote", rename("ghost", "x"), 0);
+
+  reset();
+  // a handle with a regex metacharacter must not be treated as a pattern
+  SC[0].beat = "@a.b waits";
+  ck("a dot in a handle is literal, not any-character",
+     rename("a.b", "ab"), 1);
+}
+
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui cast: the page and takeapi order the cast identically");

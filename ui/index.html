@@ -1653,8 +1653,16 @@ function subjectModal(r, kind) {
       // created/hand-written subjects should have those added?" Right —
       // asking someone to invent a handle for a thing they already named is
       // a second name for one subject, and two names drift.
+      const wasKey = row.key || "";
       row.key = from ? handleFor(from, row.id)
                      : uniqueHandle(($("as_key").value || "").trim(), row.id);
+      // and every `@wasKey` already written becomes `@row.key`
+      const moved = renameHandle(wasKey, row.key);
+      if (moved) {
+        $("as_keyhint").innerHTML =
+          `Renamed to <code>@${escapeHTML(row.key)}</code> — ` +
+          `${moved} reference${moved === 1 ? "" : "s"} updated.`;
+      }
       if (from) {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;
@@ -2729,6 +2737,36 @@ function castOrder(rows) {
 // ones restored from storage, and ones dropped in without opening the modal.
 // A library row's handle is its stored name; a typed one falls back to the
 // first words of its description, which is at least guessable.
+// RENAMING A HANDLE REWRITES EVERY USE OF IT. Without this, changing a
+// subject -- swapping which library entry a row points at, or editing a typed
+// one's handle -- silently orphans every `@oldname` already written, and the
+// only symptom is the render refusing with a name the author no longer
+// recognises. A rename is a rename: the references come with it.
+//
+// It touches the take's head and tail and every chunk's beat, head and tail,
+// because those are the fields @handles resolve in. Word-bounded, so renaming
+// @jen does not maul @jenny.
+function renameHandle(from, to) {
+  const a = String(from || "").trim(), b = String(to || "").trim();
+  if (!a || !b || a === b) return 0;
+  const re = new RegExp("@" + a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                        + "(?![A-Za-z0-9_-])", "g");
+  let n = 0;
+  const swap = (t) => {
+    const out = String(t || "").replace(re, () => { n++; return "@" + b; });
+    return out;
+  };
+  $("head").value = swap($("head").value);
+  $("tail").value = swap($("tail").value);
+  for (const sc of SCENES) {
+    if (sc.beat) sc.beat = swap(sc.beat);
+    if (sc.head) sc.head = swap(sc.head);
+    if (sc.tail) sc.tail = swap(sc.tail);
+  }
+  if (n) { drawScenes(); checkHandles(); save(); }
+  return n;
+}
+
 function ensureHandles() {
   let changed = false;
   for (const r of CAST) {
