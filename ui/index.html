@@ -131,7 +131,7 @@
     font-size: 12.5px; line-height: 1.7;
   }
 
-  .tracks { --gut: 104px; --tail: 116px;
+  .tracks { --gut: 104px; --tail: 82px;
             display: flex; flex-direction: column; gap: 4px; margin: 10px 0 4px; }
   .trk > .tail { width: var(--tail); flex: none; display: flex; gap: 2px;
                  justify-content: flex-end; }
@@ -632,6 +632,8 @@
     <label for="tail">Tail — also repeated verbatim</label>
     <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
     <p class="hint" id="handlewarn" hidden style="color:var(--bad)"></p>
+    <div class="bar"><button id="swaph">Swap a handle…</button>
+      <span class="sub">point @someone at someone else, here or in one chunk</span></div>
     <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
 
     <h2>Sound</h2>
@@ -1353,13 +1355,6 @@ function laneRow(items, host, chunks, opts) {
     // "⋯" and "✕" told CJ nothing. Words do.
     const tail = document.createElement("div");
     tail.className = "tail";
-    if (opts.recast) {
-      const rc = document.createElement("button");
-      rc.className = "x"; rc.textContent = "swap";
-      rc.title = "use someone else everywhere this one is written";
-      rc.onclick = () => recast(r);
-      tail.appendChild(rc);
-    }
     const edit = document.createElement("button");
     edit.className = "x"; edit.textContent = "edit";
     edit.title = opts.editTitle || "change what this is";
@@ -1423,7 +1418,6 @@ function drawLanes() {
     edit: (r) => editSubject(r),
     drop: (r) => { dropRow(r.id); },
     editTitle: "open this subject in the Cast panel",
-    recast: true,
     empty: "no cast yet — + adds a person, or anything else the take names",
   });
 
@@ -1451,7 +1445,6 @@ function drawLanes() {
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "open this setting in the Cast panel",
-    recast: true,
       empty: "no setting — + describes where this happens. It is a <Subject> "
            + "to the model, which is why it still lives in the Cast panel.",
     });
@@ -1471,7 +1464,6 @@ function drawLanes() {
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "edit this prop",
-    recast: true,
       empty: "no props — + adds an object the take names. It is a <Subject> "
            + "to the model, like everything else here.",
     });
@@ -2756,94 +2748,136 @@ function castOrder(rows) {
 // It touches the take's head and tail and every chunk's beat, head and tail,
 // because those are the fields @handles resolve in. Word-bounded, so renaming
 // @jen does not maul @jenny.
-function renameHandle(from, to) {
+function handleRe(key) {
+  // word-bounded, and the handle is ESCAPED before it becomes a pattern, so
+  // renaming @jen leaves @jenny alone and a dot means a dot
+  return new RegExp("@" + String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                    + "(?![A-Za-z0-9_-])", "g");
+}
+
+// `only` is a chunk index, or null for the whole take. A rename from a
+// subject's own editor is always take-wide -- it is one thing changing its
+// name. A swap can be scoped, because "say Lily in chunk 3 and Jenny
+// elsewhere" is a real thing to want.
+function renameHandle(from, to, only = null) {
   const a = String(from || "").trim(), b = String(to || "").trim();
   if (!a || !b || a === b) return 0;
-  const re = new RegExp("@" + a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-                        + "(?![A-Za-z0-9_-])", "g");
+  const re = handleRe(a);
   let n = 0;
-  const swap = (t) => {
-    const out = String(t || "").replace(re, () => { n++; return "@" + b; });
-    return out;
-  };
-  $("head").value = swap($("head").value);
-  $("tail").value = swap($("tail").value);
-  for (const sc of SCENES) {
+  const swap = (t) => String(t || "").replace(re, () => { n++; return "@" + b; });
+
+  if (only === null) {
+    $("head").value = swap($("head").value);
+    $("tail").value = swap($("tail").value);
+  }
+  SCENES.forEach((sc, i) => {
+    if (only !== null && i !== only) return;
     if (sc.beat) sc.beat = swap(sc.beat);
     if (sc.head) sc.head = swap(sc.head);
     if (sc.tail) sc.tail = swap(sc.tail);
-  }
+  });
   if (n) { drawScenes(); checkHandles(); save(); }
   return n;
 }
 
-// RECASTING: every `@jenny` in the take becomes `@lily`. CJ: "I cast jenny and
-// prompt for her in the chunks. then decide I want to cast lily instead. how
-// do we mass change the prompted handle in the chunks from jenny to lily?"
+// SWAP A HANDLE, anywhere it is written. CJ: "include a swap button somewhere
+// that makes sense that allows user to pick an existing handle in the prompt
+// and then pick replacement handle from current included/active handles ...
+// and user can then choose to swap only specific chunk or swap all chunks."
 //
-// Repointing a row at a different LIBRARY entry already does this, because
-// the handle follows the name and renameHandle carries the references. What
-// this adds is the other half: swapping to someone ALREADY in the cast, where
-// repointing would collide and produce @lily2 rather than @lily.
-function recast(r) {
-  const me = String(r.key || "");
-  const others = castHandles().filter(h => h.key !== me);
-  const used = countHandle(me);
-  const libre = LIBRARY.filter(c => (LIBKIND[c] || "person") === castKind(r)
-                                 && slugHandle(c) !== me);
+// It works on what the TEXT says, not on what the cast holds, which is the
+// case the per-bar version missed entirely: drop Jenny, cast Lily, and every
+// @jenny is now an orphan the cast no longer knows about. Those are exactly
+// the ones that need repointing, so they are listed first.
+//
+// Changing a subject in its own editor still rewrites its references — that
+// is a rename and belongs there. This is for the other direction: text that
+// needs to point somewhere else.
+function handlesInText() {
+  const seen = new Map();
+  const add = (t, where) => {
+    for (const m of String(t || "").matchAll(/@([A-Za-z][A-Za-z0-9_-]*)/g)) {
+      const k = m[1];
+      if (!seen.has(k)) seen.set(k, new Set());
+      seen.get(k).add(where);
+    }
+  };
+  add($("head").value, "head");
+  add($("tail").value, "tail");
+  SCENES.forEach((sc, i) => {
+    add(sc.beat, i); add(sc.head, i); add(sc.tail, i);
+  });
+  return seen;
+}
+
+function swapHandles() {
+  const inText = handlesInText();
+  if (!inText.size) {
+    fail("No @handles are written yet, so there is nothing to swap.");
+    return;
+  }
+  const live = new Set(castHandles().map(h => h.key.toLowerCase()));
+  // orphans first: those are the ones a dropped subject left behind
+  const from = [...inText.keys()].sort((x, y) =>
+    (live.has(x.toLowerCase()) ? 1 : 0) - (live.has(y.toLowerCase()) ? 1 : 0)
+    || x.localeCompare(y));
 
   openInline(`
-    <p class="hint">Everywhere the take says <code>@${escapeHTML(me)}</code>
-    — ${used} time${used === 1 ? "" : "s"} — it will say the new handle
-    instead. Nothing else about the writing changes.</p>
-    <label for="rc_to">Use instead</label>
-    <select id="rc_to">
-      <optgroup label="already in the cast">
-        ${others.map(h => `<option value="cast:${escapeHTML(h.key)}">@${escapeHTML(h.key)} — ${escapeHTML(h.what.slice(0, 40))}</option>`).join("")}
-      </optgroup>
-      <optgroup label="from the library">
-        ${libre.map(c => `<option value="lib:${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("")}
-      </optgroup>
+    <div class="row two">
+      <div><label for="sw_from">Replace</label><select id="sw_from">
+        ${from.map(k => `<option value="${escapeHTML(k)}">@${escapeHTML(k)}`
+          + `${live.has(k.toLowerCase()) ? "" : "  — no longer cast"}</option>`).join("")}
+      </select></div>
+      <div><label for="sw_to">With</label><select id="sw_to">
+        ${castHandles().map(h => `<option value="${escapeHTML(h.key)}">`
+          + `@${escapeHTML(h.key)} — ${escapeHTML(h.what.slice(0, 36))}</option>`).join("")}
+      </select></div>
+    </div>
+    <label for="sw_where">Where</label>
+    <select id="sw_where">
+      <option value="all">every chunk, and the take's head and tail</option>
+      ${SCENES.map((sc, i) => `<option value="${i}">chunk ${i + 1} only`
+        + `${sc.beat ? " — " + escapeHTML(sc.beat.slice(0, 40)) : ""}</option>`).join("")}
     </select>
-    <label class="chk" style="margin-top:10px"><input type="checkbox" id="rc_drop" checked>
-      remove <b>@${escapeHTML(me)}</b> from the cast afterwards</label>
-    <p class="hint" id="rc_note"></p>
-    <div class="bar"><button type="button" id="rc_go">Recast</button></div>`,
-    `Recast @${me}`, null);
+    <p class="hint" id="sw_note"></p>
+    <div class="bar"><button type="button" id="sw_go">Swap</button></div>`,
+    "Swap a handle", null);
 
-  $("rc_go").onclick = () => {
-    const v = $("rc_to").value || "";
-    if (!v) return;
-    let to;
-    if (v.startsWith("cast:")) {
-      to = v.slice(5);
-    } else {
-      // a library entry that is not cast yet joins the cast, then takes over
-      const name = v.slice(4);
-      const row = addRow(castKind(r) === "place" ? "setting" : "library", {});
-      row.subkind = castKind(r);
-      row.from_library = name;
-      row.key = handleFor(name, row.id);
-      to = row.key;
-    }
-    const n = renameHandle(me, to);
-    if ($("rc_drop").checked) dropRow(r.id);
-    refreshCast(); drawLanes(); checkHandles(); save();
+  const note = () => {
+    const f = $("sw_from").value, w = $("sw_where").value;
+    const n = countHandle(f, w === "all" ? null : +w);
+    $("sw_note").textContent = n
+      ? `${n} occurrence${n === 1 ? "" : "s"} of @${f} ${w === "all"
+          ? "across the take" : "in chunk " + (+w + 1)}.`
+      : `@${f} does not appear ${w === "all" ? "anywhere" : "in that chunk"}.`;
+    $("sw_go").disabled = !n;
+  };
+  $("sw_from").onchange = note;
+  $("sw_where").onchange = note;
+  note();
+
+  $("sw_go").onclick = () => {
+    const f = $("sw_from").value, t = $("sw_to").value;
+    const w = $("sw_where").value;
+    if (!f || !t || f === t) { $("inline").close(); return; }
+    const n = renameHandle(f, t, w === "all" ? null : +w);
     $("inline").close();
-    fail(`Recast @${me} to @${to} — ${n} reference${n === 1 ? "" : "s"} `
-         + `rewritten.${$("rc_drop").checked ? " @" + me + " left the cast." : ""}`);
+    fail(`@${f} -> @${t}: ${n} rewritten`
+         + (w === "all" ? " across the take." : ` in chunk ${+w + 1}.`));
     $("err").style.color = "var(--ink-soft)";
   };
 }
 
 // how many times a handle is actually written, so Recast can say so
-function countHandle(key) {
-  const re = new RegExp("@" + String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-                        + "(?![A-Za-z0-9_-])", "g");
-  const text = [$("head").value, $("tail").value,
-                ...SCENES.flatMap(x => [x.beat, x.head, x.tail])]
-    .filter(Boolean).join("\n");
-  return (text.match(re) || []).length;
+// counts over the SAME scope the swap will touch, with the SAME pattern, so
+// the dialog cannot promise a number the rewrite does not deliver
+function countHandle(key, only = null) {
+  const parts = only === null
+    ? [$("head").value, $("tail").value,
+       ...SCENES.flatMap(x => [x.beat, x.head, x.tail])]
+    : [SCENES[only]?.beat, SCENES[only]?.head, SCENES[only]?.tail];
+  const text = parts.filter(Boolean).join("\n");
+  return (text.match(handleRe(key)) || []).length;
 }
 
 function ensureHandles() {
@@ -3763,6 +3797,8 @@ function wireControls() {
   $("addlora").onclick = () =>
     pickLora(n => { STATICS.push({ name: n, strength: 0.8 });
                     staticsChanged(); });
+
+  $("swaph").onclick = swapHandles;
 
   $("castsee").onclick = () => {
     // the compiled subject_definitions and retention, which used to sit in a
