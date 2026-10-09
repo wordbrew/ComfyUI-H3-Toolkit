@@ -643,8 +643,7 @@
   <div class="hd"><strong id="insptitle">Chunk</strong>
     <span class="sub" id="inspwhen"></span>
     <span style="flex:1"></span>
-    <button id="inspdel">Delete chunk</button>
-    <button id="chunkclose" class="primary">Done</button></div>
+    <button id="inspdel">Delete chunk</button></div>
   <div class="bd" id="chunkbody">
       <label for="i_beat">What happens in this chunk</label>
       <textarea id="i_beat" rows="4" placeholder="She turns toward the window and the light catches her face."></textarea>
@@ -763,9 +762,8 @@
 <dialog class="picker" id="inline">
   <div class="hd"><strong id="inline_title">Edit</strong></div>
   <div class="bd" style="padding:14px 16px" id="inline_body"></div>
-  <div class="ft"><span style="flex:1"></span>
-    <button id="inline_cancel">Cancel</button>
-    <button id="inline_ok" class="primary">Apply</button></div>
+  <div class="ft"><span class="sub" id="inline_note">saved as you type</span>
+    <span style="flex:1"></span></div>
 </dialog>
 
 <dialog class="picker" id="pick">
@@ -1362,9 +1360,20 @@ function openInline(html, title, done) {
   $("inline_title").textContent = title;
   $("inline_body").innerHTML = html;
   inlineDone = done;
-  // a readout has nothing to apply, so it gets one button that just closes
-  $("inline_ok").textContent = done ? "Apply" : "Close";
-  $("inline_cancel").hidden = !done;
+  $("inline_note").textContent = done ? "saved as you type" : "";
+  // EVERY FIELD WRITES AS IT CHANGES, which is what the panels did and what a
+  // modal has no excuse not to do. `done` is now "apply what is on screen",
+  // called on every edit rather than once at the end, so it must be safe to
+  // run repeatedly — which is why adding a thing creates it FIRST and then
+  // edits it, instead of creating it when a button is pressed.
+  if (done) {
+    for (const el of $("inline_body").querySelectorAll("input,select,textarea")) {
+      el.addEventListener("change", done);
+      if (el.tagName === "TEXTAREA" || el.type === "text") {
+        el.addEventListener("input", done);
+      }
+    }
+  }
   $("inline").showModal();
 }
 
@@ -1385,15 +1394,26 @@ function editSubject(r) {
 }
 
 function addSubject(kind = "person") {
-  subjectModal(null, kind);
+  // THE ROW IS CREATED FIRST, then edited. With the modal applying on every
+  // keystroke, a callback that creates the row would create one per character.
+  // It also means a half-filled subject survives a reload, which is what
+  // auto-save is supposed to mean.
+  const row = addRow(kind === "place" ? "setting" : "library", {});
+  row.subkind = kind;
+  if (kind === "thing") row.describe = "";
+  drawLanes();
+  subjectModal(row, kind);
 }
 
 function subjectModal(r, kind) {
-  const editing = !!r;
-  kind = kind || (r ? (r.kind === "setting" ? "place" : "person") : "person");
-  ADDPICS = editing ? (r.images || []).slice() : [];
-  ADDVOICE = editing ? (r.voice_path || null) : null;
-  const desc0 = editing ? (r.setting || r.describe || "") : "";
+  // `r` always exists: adding creates the row first so the modal can apply on
+  // every keystroke. "fresh" only decides the title.
+  kind = kind || r.subkind || (r.kind === "setting" ? "place" : "person");
+  const fresh = !r.from_library && !(r.describe || "").trim()
+                && !(r.setting || "").trim();
+  ADDPICS = (r.images || []).slice();
+  ADDVOICE = r.voice_path || null;
+  const desc0 = r.setting || r.describe || "";
   // ONLY THIS KIND. A person picker that offers places is how a setting ends
   // up cast as a character.
   const lib = LIBRARY.filter(c => (LIBKIND[c] || "person") === kind)
@@ -1417,11 +1437,11 @@ function subjectModal(r, kind) {
       <div class="row two">
         <div><label for="as_ret">Retention</label><select id="as_ret">
           <option value="">(default for this kind)</option>
-          ${RETENTIONS.map(v => `<option${editing && r.retention === v ? " selected" : ""}>${v}</option>`).join("")}
+          ${RETENTIONS.map(v => `<option${r.retention === v ? " selected" : ""}>${v}</option>`).join("")}
         </select></div>
         <div><label for="as_wears">Wears</label>
           <input type="text" id="as_wears" placeholder="a charcoal wool coat"
-            value="${editing ? escapeHTML(r.wears || "") : ""}"></div>
+            value="${escapeHTML(r.wears || "")}"></div>
       </div>
       <div class="row two">
         <div><label>Reference images</label>
@@ -1437,10 +1457,12 @@ function subjectModal(r, kind) {
         <label for="as_name">Save it as</label>
         <input type="text" id="as_name" placeholder="jen">
       </div>
-    </div>`, editing ? "Edit subject" : "Add a subject", () => {
+    </div>`, fresh ? `New ${kind}` : (r.from_library || desc0 || kind), () => {
+      // ALWAYS an edit -- `r` exists before this modal opens, so applying
+      // twice is applying the same thing twice
       const k = $("as_kind").value;
       const from = $("as_lib").value;
-      const row = editing ? r : addRow(k === "place" ? "setting" : "library", {});
+      const row = r;
       if (from) {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;
@@ -1456,14 +1478,16 @@ function subjectModal(r, kind) {
         row.images = ADDPICS.slice();
         row.voice_path = ADDVOICE || null;
         row.use_voice = !!ADDVOICE;
-        if ($("as_save").checked) {
+        // the library write is the one thing that must not repeat: it is a
+        // POST, so it fires when the box is ticked and not again
+        if ($("as_save").checked && !r._saved) {
+          r._saved = true;
           saveSubjectToLibrary($("as_name").value.trim()
                                || ($("as_desc").value.trim().split(/\s+/)
                                    .slice(0, 2).join("-") || "subject"),
                                k, $("as_desc").value.trim(), ADDPICS, ADDVOICE);
         }
       }
-      ADDPICS = []; ADDVOICE = null;
       refreshCast(); drawLanes();
     });
 
@@ -1471,7 +1495,14 @@ function subjectModal(r, kind) {
   const sync = () => {
     $("as_hand").hidden = !!$("as_lib").value;
   };
-  if (editing && r.from_library) $("as_lib").value = r.from_library;
+  $("inline").addEventListener("close", () => {
+    // an empty row left behind by opening + and changing your mind is litter
+    if (!r.from_library && !(r.describe || "").trim()
+        && !(r.setting || "").trim() && !(r.images || []).length) {
+      dropRow(r.id);
+    }
+  }, { once: true });
+  if (r.from_library) $("as_lib").value = r.from_library;
   $("as_lib").onchange = sync; sync();
   $("as_pics").onclick = () => openPicker({
     title: "Reference images", multi: true, chosen: ADDPICS,
@@ -2914,18 +2945,22 @@ function wireControls() {
       drawSceneLoras(); compileSchedule();
     });
   };
-  $("inline_cancel").onclick = () => { inlineDone = null; $("inline").close(); };
-  $("inline_ok").onclick = () => {
-    const fn = inlineDone; inlineDone = null; $("inline").close();
-    if (fn) fn();
-  };
 
   // ---- the three track + buttons
   $("addchunk").onclick = () => {
     addScene(SCENES.length ? SCENES.length - 1 : null);
     openChunk(SCENES.length - 1);        // straight into its details
   };
-  $("chunkclose").onclick = () => $("chunksheet").close();
+  // CLICK OUTSIDE TO LEAVE. CJ: "I don't want a done button ... I didn't have
+  // to have a done button before when it was a panel." The fields already
+  // write on change — a Done button implied the edits were pending until it
+  // was pressed, which was never true. A <dialog>'s backdrop is not a child,
+  // so a click whose target IS the dialog element landed outside its content.
+  for (const id of ["chunksheet", "inline"]) {
+    $(id).addEventListener("mousedown", (e) => {
+      if (e.target === $(id)) $(id).close();
+    });
+  }
   // ---- tabs. Generate is what exists; Library is the store, which was a
   // panel inside Generate and is not part of a take; Edit is declared and
   // empty rather than hidden, because a tab that says "not built yet" is more
