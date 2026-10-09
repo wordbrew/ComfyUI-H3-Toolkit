@@ -25,6 +25,7 @@ WHY A COMMITTED TEMPLATE AND NOT AN EXPORTED ONE
 import copy
 import json
 import pathlib
+import re
 
 from .chunkplan import CONTINUITY, CUT_LIKE
 
@@ -211,10 +212,30 @@ def build(req, template=None):
 
     # the prompt, as head/beats/tail -- the fields H3LongFormLinks repeats into
     # every chunk, which is what makes each link independent
+    # @HANDLES RESOLVE HERE, against the numbering the prompt will actually
+    # use -- which is why it happens after the cast is compiled and from the
+    # same sorted order. An author writes `@lily turns toward the window` and
+    # never has to know she is Subject 1, or notice when adding a prop would
+    # have made her Subject 2.
+    hmap = handle_map(req.get("cast") or [])
+    unknown = []
     for field in ("head", "beats", "tail", "subject_def_1", "retention_1",
                   "soundscape", "music", "task_type", "heads", "tails"):
-        if field in req:
-            _set(graph, "h3.links", field, req[field])
+        if field not in req:
+            continue
+        value = req[field]
+        if hmap and isinstance(value, str):
+            value, bad = apply_handles(value, hmap)
+            unknown += bad
+        _set(graph, "h3.links", field, value)
+
+    if unknown:
+        known = ", ".join("@" + k for k in sorted(hmap)) or "none"
+        raise TakeError(
+            f"{', '.join('@' + u for u in sorted(set(unknown)))} is not in the "
+            f"cast. A handle that names nobody would reach the model as "
+            f"literal text, so this stops rather than renders it. "
+            f"Cast handles: {known}.")
 
     # PER-CHUNK REFERENCES COME LAST, because they WIRE `retention_1` and the
     # loop above SETS it. Doing them first meant a request carrying both a cast
@@ -304,6 +325,82 @@ def placeholders_in(graph):
     return out
 
 # ------------------------------------------------------------------- the cast
+#: Subjects are numbered in THIS order, always: people, then the place, then
+#: things. CJ: "is there a way to always stack cast before setting and setting
+#: before props? so we can always assume Subject 1 or Subject 2 are characters?"
+#:
+#: It is safe because subject numbering and PICTURE numbering both come from
+#: one pass over the cast -- sort that pass and the two stay in step. Sorting
+#: for display only is what would break it, and is the failure this pack keeps
+#: paying for.
+KIND_ORDER = {"person": 0, "library": 0, "place": 1, "setting": 1, "thing": 2}
+
+
+def cast_kind(row):
+    """A row's sort class, from whichever field it actually carries."""
+    if row.get("setting") or row.get("kind") == "setting":
+        return "place"
+    sub = str(row.get("subkind") or "").lower()
+    if sub in ("place", "setting"):
+        return "place"
+    if sub == "thing":
+        return "thing"
+    return "person"
+
+
+def cast_order(cast):
+    """People, then the place, then things. STABLE within each group.
+
+    Stability matters: two characters keep their relative order, so adding a
+    prop never renumbers them. A plain sort by kind with no tiebreak would be
+    stable in CPython anyway, but saying so here is cheaper than finding out
+    the day someone ports it.
+    """
+    return sorted(cast or [], key=lambda r: KIND_ORDER.get(cast_kind(r), 0))
+
+
+def handle_map(cast):
+    """{handle: subject number}, in the SAME order the prompt is numbered in.
+
+    The handle is the row's `key` -- the thing the author types as `@lily`.
+    Numbers are 1-based and match what h3script emits, because both walk the
+    sorted list.
+    """
+    out = {}
+    for i, row in enumerate(cast_order(cast)):
+        key = str(row.get("key") or "").strip().lstrip("@").lower()
+        if key:
+            out[key] = i + 1
+    return out
+
+
+#: `@name` as an author writes it. Letters, digits, underscore and hyphen;
+#: stops at anything else so `@lily,` and `@lily.` both resolve.
+HANDLE_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_-]*)")
+
+
+def apply_handles(text, mapping):
+    """`@lily` -> `<Subject 1>`. -> (text, [unknown handles]).
+
+    WHY THIS EXISTS
+      So an author never types `<Subject 2>`. The number depends on how many
+      subjects there are and in what order, which changes when a prop is added
+      -- and a hand-typed number that is now wrong renders SILENTLY wrong: the
+      model is told about a subject that is someone else. A handle cannot go
+      stale, and one that names nobody is an error this can see.
+    """
+    unknown = []
+
+    def sub(m):
+        k = m.group(1).lower()
+        if k in mapping:
+            return f"<Subject {mapping[k]}>"
+        unknown.append(m.group(1))
+        return m.group(0)
+
+    return HANDLE_RE.sub(sub, str(text or "")), unknown
+
+
 def cast_to_script(cast):
     """Structured cast rows -> H3Script text. The ONE place that mapping lives.
 
@@ -322,7 +419,7 @@ def cast_to_script(cast):
               preserve?, allow?, pictures?, audio?}.
     """
     lines = []
-    for i, row in enumerate(cast or []):
+    for i, row in enumerate(cast_order(cast)):
         key = str(row.get("key") or f"s{i + 1}").strip().lstrip("@") or f"s{i + 1}"
         if row.get("setting"):
             lines.append(f"@{key} = setting. {row['setting']}")

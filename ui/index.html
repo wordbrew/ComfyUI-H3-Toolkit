@@ -1544,6 +1544,12 @@ function subjectModal(r, kind) {
          list is filtered to the same kind for the same reason. -->
     <input type="hidden" id="as_kind" value="${kind}">
     <div class="row two">
+      <div><label for="as_key">Call it</label>
+        <input type="text" id="as_key" placeholder="lily"
+          value="${escapeHTML(r.key || "")}">
+        <p class="hint">Write <code>@${escapeHTML(r.key || "lily")}</code> in a
+        beat and it becomes the right <code>&lt;Subject N&gt;</code>. The
+        number changes when the cast does; the handle never has to.</p></div>
       <div><label>From the library</label>
         <select id="as_lib">
           <option value="">— write it by hand instead —</option>${lib}
@@ -1585,10 +1591,14 @@ function subjectModal(r, kind) {
       const k = $("as_kind").value;
       const from = $("as_lib").value;
       const row = r;
+      // the handle is what @lily resolves against, so it must be a word
+      row.key = ($("as_key").value || "").trim().replace(/^@/, "")
+        .replace(/[^A-Za-z0-9_-]/g, "");
       if (from) {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;
         row.from_library = from;
+        if (!row.key) row.key = from.toLowerCase().replace(/[^a-z0-9]+/g, "");
       } else {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;                 // person / place / thing
@@ -2432,11 +2442,32 @@ async function stageLibraryRows() {
 }
 
 /* REFERENCES ARE THE CAST'S IMAGES, in subject order. One source of truth. */
+// THE SAME ORDER THE SERVER NUMBERS IN. takeapi sorts the cast person ->
+// place -> thing before compiling subject_definitions, so <Subject 1> is
+// always a character. The PICTURES have to be built in that same order or
+// <Picture 1> is the lamp while <Subject 1> is Lily — two numbering passes
+// over one list, disagreeing. This mirrors takeapi.cast_order exactly; the
+// two are asserted against each other in test_ui_cast.js.
+const CAST_KIND_ORDER = { person: 0, place: 1, thing: 2 };
+function castKind(r) {
+  if (r.setting || r.kind === "setting") return "place";
+  const sub = String(r.subkind || "").toLowerCase();
+  if (sub === "place" || sub === "setting") return "place";
+  if (sub === "thing") return "thing";
+  return "person";
+}
+function castOrder(rows) {
+  // stable: two characters keep their order when a prop is added
+  return rows.map((r, i) => [r, i]).sort(
+    (a, b) => (CAST_KIND_ORDER[castKind(a[0])] - CAST_KIND_ORDER[castKind(b[0])])
+              || (a[1] - b[1])).map(x => x[0]);
+}
+
 function deriveRefs() {
   REFS = [];
   VOICES = [];
   SCOPED = [];
-  CAST.forEach((r, i) => {
+  castOrder(CAST).forEach((r, i) => {
     const who = r.from_library || r.describe || r.setting || `subject ${i + 1}`;
     // A SCOPED CAST MEMBER IS A GATED REFERENCE. Dragging a subject's bar
     // shorter has to mean something, so anything narrower than the whole take
@@ -2477,7 +2508,8 @@ let castTimer;
 function refreshCast() {
   clearTimeout(castTimer);
   castTimer = setTimeout(async () => {
-    const rows = CAST.filter(r => r.from_library || r.describe || r.setting);
+    const rows = castOrder(CAST)
+    .filter(r => r.from_library || r.describe || r.setting);
     if (!rows.length) {
       $("castpreview").textContent = "add a subject to see it";
       save(); return;
