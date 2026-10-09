@@ -68,8 +68,12 @@ global.localStorage = { getItem(){ return null; }, setItem(){} };
      /<details id="refpanel">/],
     ["and models are another",
      /<details id="setup">[\s\S]{0,120}<summary>Models<\/summary>/],
-    ["no Done or Apply button survives",
-     /^(?!.*id="(chunkclose|inline_ok|inline_cancel)")[\s\S]*$/],
+    ["every model dropdown re-applies its saved value",
+     /fill\(\$\("unet"\)[^;]*was\.unet[\s\S]{0,400}was\.lora/],
+    ["references sits below models",
+     /<details id="setup">[\s\S]*<details id="refpanel">/],
+    ["no Apply or Cancel survives; Done is redundant and may stay",
+     /^(?!.*id="(inline_ok|inline_cancel)")[\s\S]*$/],
   ];
   let bad2 = 0;
   for (const [label, re2] of must) {

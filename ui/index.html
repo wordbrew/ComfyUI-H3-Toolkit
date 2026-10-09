@@ -165,13 +165,13 @@
      26px to make room: a face below about 20px is a smudge, and the point of
      this is recognising who a bar is without reading it. */
   .lane .cap {
-    position: absolute; left: 3px; top: 3px; bottom: 3px; display: flex;
-    align-items: center; gap: 6px; white-space: nowrap;
-    pointer-events: none; font-size: 10.5px; color: var(--ink);
+    position: absolute; left: 3px; top: 2px; bottom: 2px; display: flex;
+    align-items: center; gap: 7px; white-space: nowrap;
+    pointer-events: none; font-size: 11px; color: var(--ink);
     max-width: 60vw; overflow: hidden; z-index: 2;
   }
   .lane .cap img, .lane .cap .ph {
-    width: 20px; height: 20px; flex: none; border-radius: 2px;
+    width: 34px; height: 34px; flex: none; border-radius: 3px;
     object-fit: cover;
     /* FACES SIT HIGH IN A PORTRAIT, so a centre crop takes the chin and the
        chest. Anchoring the crop to the top is the difference between a
@@ -181,7 +181,7 @@
   }
   .lane .cap .ph {
     display: flex; align-items: center; justify-content: center;
-    font: 10px/1 var(--mono); color: var(--ink-faint);
+    font: 15px/1 var(--mono); color: var(--ink-faint);
   }
   .lane .cap .t { overflow: hidden; text-overflow: ellipsis; }
   .lane .cap em { font-style: normal; color: var(--ink-faint);
@@ -190,7 +190,7 @@
   .lane .cell.on { border-left-width: 3px; }
   .lane .track .sp { width: 0; flex: none; }
   .lane .cell {
-    position: relative; height: 26px; background: var(--ground-2); border-radius: 2px;
+    position: relative; height: 40px; background: var(--ground-2); border-radius: 2px;
     cursor: pointer; min-width: 0; border: 1px solid transparent;
   }
   .lane .cell:hover { border-color: var(--line-strong); }
@@ -584,14 +584,6 @@
 
   <section class="col">
     <h2>Render</h2>
-    <details id="refpanel">
-      <summary>References — everything the model is sent</summary>
-      <div class="body">
-        <p class="hint" id="refnote"></p>
-        <div class="slots" id="refslots"></div>
-        <span class="sub" id="refcount"></span>
-      </div>
-    </details>
     <details id="setup">
       <summary>Models</summary>
       <div class="body">
@@ -643,6 +635,14 @@
             </div></div>
           <div><label for="prefix">Output prefix</label><input type="text" id="prefix" value="H3/longtake/take"></div>
         </div>
+      </div>
+    </details>
+    <details id="refpanel">
+      <summary>References — everything the model is sent</summary>
+      <div class="body">
+        <p class="hint" id="refnote"></p>
+        <div class="slots" id="refslots"></div>
+        <span class="sub" id="refcount"></span>
       </div>
     </details>
 
@@ -1271,7 +1271,7 @@ function laneRow(items, host, chunks, opts) {
         const thumb = opts.thumb ? opts.thumb(r) : null;
         cap.innerHTML =
           (thumb
-            ? `<img src="${assetURL(thumb, 60)}" alt="" loading="lazy">`
+            ? `<img src="${assetURL(thumb, 75)}" alt="" loading="lazy">`
             : `<span class="ph">${escapeHTML(opts.glyph || "·")}</span>`) +
           `<span class="t">${escapeHTML(opts.name(r))}` +
           (opts.note(r) ? ` <em>${escapeHTML(opts.note(r))}</em>` : "") +
@@ -3270,12 +3270,18 @@ function wireControls() {
       return a.slice().sort((x, y) => score(x) - score(y));
     };
     const CORRUPT = /beta[_-]?[34]/i;
-    fill($("unet"), rank(unets, /minimax_h3|10eros/i, CORRUPT));
-    fill($("clip"), rank(clips, /qwen3vl.*minimax|minimax_h3/i));
-    fill($("vae"), rank(vaes, /minimax_h3_video|video_vae/i, /audio/i));
-    fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i));
+    // THE SAVED CHOICE, RE-APPLIED. restore() runs before these lists exist,
+    // and a <select> silently refuses a value none of its options carry — so
+    // every model reverted to whatever ranked first on each reload. Passing
+    // the saved value as `chosen` is the whole fix; fill() already keeps the
+    // ranking when the value is absent.
+    const was = saved();
+    fill($("unet"), rank(unets, /minimax_h3|10eros/i, CORRUPT), was.unet);
+    fill($("clip"), rank(clips, /qwen3vl.*minimax|minimax_h3/i), was.clip);
+    fill($("vae"), rank(vaes, /minimax_h3_video|video_vae/i, /audio/i), was.vae);
+    fill($("avae"), rank(vaes, /minimax_h3_audio|audio_vae/i), was.avae);
     fill($("lora"), ["(none)"].concat(
-      rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)));
+      rank(loras, /(^|[\\/])h3[\\/]|minimax_h3/i)), was.lora);
     LORAS = loras;
     fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
     await loadLibrary();
