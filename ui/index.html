@@ -161,16 +161,36 @@
      positioned inside the first cell of a run and allowed to overflow across
      the rest, which keeps every cell on the chunk grid -- a name column inside
      the track would push every bar out of line with the strip above. */
+  /* A THUMBNAIL AND A NAME, riding on the clip. The lane grew from 17px to
+     26px to make room: a face below about 20px is a smudge, and the point of
+     this is recognising who a bar is without reading it. */
   .lane .cap {
-    position: absolute; left: 5px; top: 1px; white-space: nowrap;
-    pointer-events: none; font-size: 10.5px; line-height: 15px;
-    color: var(--ink); max-width: 60vw; overflow: hidden;
-    text-overflow: ellipsis; z-index: 2;
+    position: absolute; left: 3px; top: 3px; bottom: 3px; display: flex;
+    align-items: center; gap: 6px; white-space: nowrap;
+    pointer-events: none; font-size: 10.5px; color: var(--ink);
+    max-width: 60vw; overflow: hidden; z-index: 2;
   }
-  .lane .cap em { font-style: normal; color: var(--ink-faint); }
+  .lane .cap img, .lane .cap .ph {
+    width: 20px; height: 20px; flex: none; border-radius: 2px;
+    object-fit: cover;
+    /* FACES SIT HIGH IN A PORTRAIT, so a centre crop takes the chin and the
+       chest. Anchoring the crop to the top is the difference between a
+       recognisable thumbnail and a square of neck. */
+    object-position: top center;
+    background: var(--ground); border: 1px solid var(--line);
+  }
+  .lane .cap .ph {
+    display: flex; align-items: center; justify-content: center;
+    font: 10px/1 var(--mono); color: var(--ink-faint);
+  }
+  .lane .cap .t { overflow: hidden; text-overflow: ellipsis; }
+  .lane .cap em { font-style: normal; color: var(--ink-faint);
+                  margin-left: 5px; }
+  /* a stable hue per subject, so two bars are told apart before they are read */
+  .lane .cell.on { border-left-width: 3px; }
   .lane .track .sp { width: 0; flex: none; }
   .lane .cell {
-    position: relative; height: 17px; background: var(--ground-2); border-radius: 2px;
+    position: relative; height: 26px; background: var(--ground-2); border-radius: 2px;
     cursor: pointer; min-width: 0; border: 1px solid transparent;
   }
   .lane .cell:hover { border-color: var(--line-strong); }
@@ -1172,6 +1192,15 @@ function refsChanged() {
   refreshPlan();
 }
 
+// A name to a colour, deterministically. Not random, not by index: an index
+// reshuffles every colour when a row is deleted, and random means the same
+// character looks different tomorrow.
+function hueOf(name) {
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return `hsl(${h} 58% 58%)`;
+}
+
 function laneRow(items, host, chunks, opts) {
   // ONE ROW PER ITEM, cells on the chunk grid. `items` is whatever the track
   // holds -- a reference or a cast member -- and `opts` says how to read and
@@ -1212,6 +1241,12 @@ function laneRow(items, host, chunks, opts) {
       const cell = document.createElement("div");
       cell.className = "cell" + (set.has(i) ? " on" + (opts.cls || "") : "");
       cell.style.flex = String(c.frames);
+      // A STABLE HUE PER THING, derived from its name rather than its
+      // position: two subjects stay their own colours when one is deleted,
+      // and the same character is the same colour in every take. The left
+      // border carries it, so the fill stays the neutral selected/not
+      // distinction and the colour never fights the text on top of it.
+      if (set.has(i)) cell.style.borderLeftColor = hueOf(opts.name(r));
       cell.title = `${opts.name(r)} — chunk ${c.number}`
         + (set.has(i) ? "" : " (not used here)");
       // GRAB AN EDGE AND PULL, rather than clicking every chunk in turn.
@@ -1233,8 +1268,14 @@ function laneRow(items, host, chunks, opts) {
       if (set.has(i) && !set.has(i - 1)) {
         const cap = document.createElement("div");
         cap.className = "cap";
-        cap.innerHTML = escapeHTML(opts.name(r))
-          + (opts.note(r) ? ` <em>${escapeHTML(opts.note(r))}</em>` : "");
+        const thumb = opts.thumb ? opts.thumb(r) : null;
+        cap.innerHTML =
+          (thumb
+            ? `<img src="${assetURL(thumb, 60)}" alt="" loading="lazy">`
+            : `<span class="ph">${escapeHTML(opts.glyph || "·")}</span>`) +
+          `<span class="t">${escapeHTML(opts.name(r))}` +
+          (opts.note(r) ? ` <em>${escapeHTML(opts.note(r))}</em>` : "") +
+          `</span>`;
         cell.appendChild(cap);
       }
       t.appendChild(cell);
@@ -1298,6 +1339,11 @@ function drawLanes() {
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.from_library || r.describe || r.setting || "subject",
     note: (r) => `${(r.images || []).length} pic`,
+    // the FIRST anchor stands for the subject: it is the one the store lists
+    // first and the one <Picture 1> cites, so the thumbnail and the prompt
+    // agree about who this is
+    thumb: (r) => (r.images || [])[0] || null,
+    glyph: "◯",
     edit: (r) => editSubject(r),
     drop: (r) => { dropRow(r.id); },
     editTitle: "open this subject in the Cast panel",
@@ -1323,6 +1369,8 @@ function drawLanes() {
       name: (r) => r.from_library || (r.setting || "").trim()
                    || "(describe this setting)",
       note: (r) => `${(r.images || []).length} pic`,
+      thumb: (r) => (r.images || [])[0] || null,
+      glyph: "⬚",
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "open this setting in the Cast panel",
@@ -1340,6 +1388,8 @@ function drawLanes() {
       setSpan: (r, v) => { r.chunks = v; },
       name: (r) => r.from_library || r.describe || "a thing",
       note: (r) => `${(r.images || []).length} pic`,
+      thumb: (r) => (r.images || [])[0] || null,
+      glyph: "▢",
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "edit this prop",
@@ -1354,6 +1404,10 @@ function drawLanes() {
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.label || r.source,
     note: (r) => r.role,
+    // a clip has no still to show, so it gets the play glyph rather than a
+    // broken image box -- /view cannot thumbnail a video
+    thumb: (r) => r.kind === "video" ? null : r.source,
+    glyph: "▶",
     edit: (r) => editRef(r),
     drop: (r) => { CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
                    refsChanged(); },
