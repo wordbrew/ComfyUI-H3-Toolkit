@@ -131,7 +131,7 @@
     font-size: 12.5px; line-height: 1.7;
   }
 
-  .tracks { --gut: 104px; --tail: 82px;
+  .tracks { --gut: 104px; --tail: 116px;
             display: flex; flex-direction: column; gap: 4px; margin: 10px 0 4px; }
   .trk > .tail { width: var(--tail); flex: none; display: flex; gap: 2px;
                  justify-content: flex-end; }
@@ -1353,6 +1353,13 @@ function laneRow(items, host, chunks, opts) {
     // "⋯" and "✕" told CJ nothing. Words do.
     const tail = document.createElement("div");
     tail.className = "tail";
+    if (opts.recast) {
+      const rc = document.createElement("button");
+      rc.className = "x"; rc.textContent = "swap";
+      rc.title = "use someone else everywhere this one is written";
+      rc.onclick = () => recast(r);
+      tail.appendChild(rc);
+    }
     const edit = document.createElement("button");
     edit.className = "x"; edit.textContent = "edit";
     edit.title = opts.editTitle || "change what this is";
@@ -1416,6 +1423,7 @@ function drawLanes() {
     edit: (r) => editSubject(r),
     drop: (r) => { dropRow(r.id); },
     editTitle: "open this subject in the Cast panel",
+    recast: true,
     empty: "no cast yet — + adds a person, or anything else the take names",
   });
 
@@ -1443,6 +1451,7 @@ function drawLanes() {
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "open this setting in the Cast panel",
+    recast: true,
       empty: "no setting — + describes where this happens. It is a <Subject> "
            + "to the model, which is why it still lives in the Cast panel.",
     });
@@ -1462,6 +1471,7 @@ function drawLanes() {
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "edit this prop",
+    recast: true,
       empty: "no props — + adds an object the take names. It is a <Subject> "
            + "to the model, like everything else here.",
     });
@@ -2765,6 +2775,75 @@ function renameHandle(from, to) {
   }
   if (n) { drawScenes(); checkHandles(); save(); }
   return n;
+}
+
+// RECASTING: every `@jenny` in the take becomes `@lily`. CJ: "I cast jenny and
+// prompt for her in the chunks. then decide I want to cast lily instead. how
+// do we mass change the prompted handle in the chunks from jenny to lily?"
+//
+// Repointing a row at a different LIBRARY entry already does this, because
+// the handle follows the name and renameHandle carries the references. What
+// this adds is the other half: swapping to someone ALREADY in the cast, where
+// repointing would collide and produce @lily2 rather than @lily.
+function recast(r) {
+  const me = String(r.key || "");
+  const others = castHandles().filter(h => h.key !== me);
+  const used = countHandle(me);
+  const libre = LIBRARY.filter(c => (LIBKIND[c] || "person") === castKind(r)
+                                 && slugHandle(c) !== me);
+
+  openInline(`
+    <p class="hint">Everywhere the take says <code>@${escapeHTML(me)}</code>
+    — ${used} time${used === 1 ? "" : "s"} — it will say the new handle
+    instead. Nothing else about the writing changes.</p>
+    <label for="rc_to">Use instead</label>
+    <select id="rc_to">
+      <optgroup label="already in the cast">
+        ${others.map(h => `<option value="cast:${escapeHTML(h.key)}">@${escapeHTML(h.key)} — ${escapeHTML(h.what.slice(0, 40))}</option>`).join("")}
+      </optgroup>
+      <optgroup label="from the library">
+        ${libre.map(c => `<option value="lib:${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("")}
+      </optgroup>
+    </select>
+    <label class="chk" style="margin-top:10px"><input type="checkbox" id="rc_drop" checked>
+      remove <b>@${escapeHTML(me)}</b> from the cast afterwards</label>
+    <p class="hint" id="rc_note"></p>
+    <div class="bar"><button type="button" id="rc_go">Recast</button></div>`,
+    `Recast @${me}`, null);
+
+  $("rc_go").onclick = () => {
+    const v = $("rc_to").value || "";
+    if (!v) return;
+    let to;
+    if (v.startsWith("cast:")) {
+      to = v.slice(5);
+    } else {
+      // a library entry that is not cast yet joins the cast, then takes over
+      const name = v.slice(4);
+      const row = addRow(castKind(r) === "place" ? "setting" : "library", {});
+      row.subkind = castKind(r);
+      row.from_library = name;
+      row.key = handleFor(name, row.id);
+      to = row.key;
+    }
+    const n = renameHandle(me, to);
+    if ($("rc_drop").checked) dropRow(r.id);
+    refreshCast(); drawLanes(); checkHandles(); save();
+    $("inline").close();
+    fail(`Recast @${me} to @${to} — ${n} reference${n === 1 ? "" : "s"} `
+         + `rewritten.${$("rc_drop").checked ? " @" + me + " left the cast." : ""}`);
+    $("err").style.color = "var(--ink-soft)";
+  };
+}
+
+// how many times a handle is actually written, so Recast can say so
+function countHandle(key) {
+  const re = new RegExp("@" + String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                        + "(?![A-Za-z0-9_-])", "g");
+  const text = [$("head").value, $("tail").value,
+                ...SCENES.flatMap(x => [x.beat, x.head, x.tail])]
+    .filter(Boolean).join("\n");
+  return (text.match(re) || []).length;
 }
 
 function ensureHandles() {

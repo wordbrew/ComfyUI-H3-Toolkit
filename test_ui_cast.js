@@ -149,6 +149,29 @@ console.log("\nRENAMING A HANDLE CARRIES ITS REFERENCES");
      rename("a.b", "ab"), 1);
 }
 
+console.log("\nRECAST counts only whole handles");
+// Recast tells you how many references it is about to rewrite, and that
+// number has to be the number it actually rewrites -- the same word boundary
+// renameHandle uses, or the dialog promises one thing and does another.
+{
+  const body = src.match(/function countHandle\(key\)[\s\S]*?\n\}/)[0];
+  const F = { head: "@jenny opens the door", tail: "quiet" };
+  const SC = [{ beat: "@jenny turns" }, { beat: "@jenny and @lily" },
+              { beat: "@jennyfer waits" }];
+  const count = new Function("getF", "getS",
+    body.replace(/\$\("head"\)\.value/, 'getF("head")')
+        .replace(/\$\("tail"\)\.value/, 'getF("tail")')
+        .replace(/SCENES\.flatMap/, "getS().flatMap")
+    + "; return countHandle;")((k) => F[k], () => SC);
+  ck("@jenny, not @jennyfer", count("jenny"), 3);
+  ck("@lily once", count("lily"), 1);
+  ck("and nobody is zero", count("nobody"), 0);
+}
+
+console.log("\nand every subject track offers it");
+const tracks = (src.match(/recast: true,/g) || []).length;
+ck("cast, setting and props all have swap", tracks, 3);
+
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui cast: the page and takeapi order the cast identically");
