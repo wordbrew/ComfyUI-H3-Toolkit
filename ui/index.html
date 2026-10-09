@@ -473,6 +473,18 @@
   .dz.dropping { color: var(--accent); }
   /* a clip has no thumbnail from /view, so it gets a glyph instead of a
      broken image box */
+  /* @handle completion */
+  .hmenu {
+    position: absolute; z-index: 90; background: var(--panel);
+    border: 1px solid var(--line-strong); border-radius: var(--r);
+    box-shadow: 0 6px 22px #0007; overflow: hidden; max-height: 230px;
+    overflow-y: auto;
+  }
+  .hrow { padding: 6px 10px; cursor: pointer; font-size: 12px; }
+  .hrow.on, .hrow:hover { background: var(--ground-2); }
+  .hrow b { color: var(--accent); font-weight: 600; margin-right: 8px; }
+  .hrow span { color: var(--ink-faint); font-size: 11px; }
+
   /* the in-page trimmer */
   .trim { display: flex; flex-direction: column; gap: 8px; }
   .trim video { width: 100%; max-height: 260px; background: #000;
@@ -598,6 +610,7 @@
 
     <label for="tail">Tail — also repeated verbatim</label>
     <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
+    <p class="hint" id="handlewarn" hidden style="color:var(--bad)"></p>
     <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
 
     <h2>Sound</h2>
@@ -1620,7 +1633,7 @@ function subjectModal(r, kind) {
                                k, $("as_desc").value.trim(), ADDPICS, ADDVOICE);
         }
       }
-      refreshCast(); drawLanes();
+      refreshCast(); drawLanes(); checkHandles();
     });
 
   // the hand-written half hides when a library entry is chosen
@@ -2010,6 +2023,7 @@ function checkFrameSize() {
 // Every scene edit ends here: redraw the strip, recompile the schedule, update
 // the plan from the server, recheck the frame-size budget, and persist.
 function sceneChanged() {
+  checkHandles();
   drawScenes();
   drawInspector();          // the explanation lagged a full render without this
   compileSchedule();
@@ -2075,6 +2089,117 @@ function pickLora(done) {
     .filter(v => v && v !== "(none)");
   openPicker({ title: "LoRA", multi: false, chosen: [], assets: all,
                text: true, done: v => { if (v[0]) done(v[0]); } });
+}
+
+/* ------------------------------------------------------- @handle support */
+/* CJ: "im in a chunk 2 and trying to type in @lily for the character stuff.
+   But the form isn't smart so it doesn't pick it up." Right — the handles
+   resolved on the server at build time and the page said nothing while you
+   typed, so the only way to find out a handle was wrong was a failed build.
+   Now every prompt field completes them and flags the ones that name nobody. */
+
+function castHandles() {
+  return castOrder(CAST)
+    .map((r, i) => ({
+      key: String(r.key || "").replace(/^@/, ""),
+      n: i + 1,
+      what: r.from_library || r.describe || r.setting || "",
+      kind: castKind(r),
+    }))
+    .filter(h => h.key);
+}
+
+function attachHandles(el) {
+  if (!el || el.dataset.handles) return;
+  el.dataset.handles = "1";
+
+  const menu = document.createElement("div");
+  menu.className = "hmenu"; menu.hidden = true;
+  document.body.appendChild(menu);
+  let items = [], sel = 0, at = -1;
+
+  const hide = () => { menu.hidden = true; at = -1; };
+
+  const place = () => {
+    const b = el.getBoundingClientRect();
+    menu.style.left = (b.left + window.scrollX) + "px";
+    menu.style.top = (b.bottom + window.scrollY + 2) + "px";
+    menu.style.minWidth = Math.min(b.width, 340) + "px";
+  };
+
+  const draw = () => {
+    menu.innerHTML = "";
+    items.forEach((h, i) => {
+      const row = document.createElement("div");
+      row.className = "hrow" + (i === sel ? " on" : "");
+      row.innerHTML = `<b>@${escapeHTML(h.key)}</b>` +
+        `<span>&lt;Subject ${h.n}&gt; · ${escapeHTML(h.kind)}` +
+        (h.what ? ` · ${escapeHTML(h.what.slice(0, 40))}` : "") + `</span>`;
+      row.onmousedown = (e) => { e.preventDefault(); take(i); };
+      menu.appendChild(row);
+    });
+    menu.hidden = !items.length;
+    if (items.length) place();
+  };
+
+  const take = (i) => {
+    const h = items[i];
+    if (!h) return;
+    const v = el.value, c = el.selectionStart;
+    el.value = v.slice(0, at) + "@" + h.key + v.slice(c);
+    const pos = at + h.key.length + 1;
+    el.setSelectionRange(pos, pos);
+    hide();
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  el.addEventListener("input", () => {
+    const c = el.selectionStart;
+    // the @ that starts the word the cursor is in, if there is one
+    const upto = el.value.slice(0, c);
+    const m = /@([A-Za-z0-9_-]*)$/.exec(upto);
+    if (!m) { hide(); return; }
+    at = c - m[0].length;
+    const q = m[1].toLowerCase();
+    items = castHandles().filter(h => h.key.toLowerCase().startsWith(q));
+    sel = 0;
+    draw();
+  });
+
+  el.addEventListener("keydown", (e) => {
+    if (menu.hidden) return;
+    if (e.key === "ArrowDown") { sel = (sel + 1) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { sel = (sel - 1 + items.length) % items.length; draw(); e.preventDefault(); }
+    else if (e.key === "Enter" || e.key === "Tab") { take(sel); e.preventDefault(); }
+    else if (e.key === "Escape") { hide(); }
+  });
+  el.addEventListener("blur", () => setTimeout(hide, 120));
+}
+
+// every handle in a field that names nobody, so it is caught here and not by
+// a failed build
+function unknownHandles(text) {
+  const known = new Set(castHandles().map(h => h.key.toLowerCase()));
+  const out = [];
+  for (const m of String(text || "").matchAll(/@([A-Za-z][A-Za-z0-9_-]*)/g)) {
+    if (!known.has(m[1].toLowerCase())) out.push(m[1]);
+  }
+  return [...new Set(out)];
+}
+
+function checkHandles() {
+  const text = [$("head").value, $("tail").value,
+                ...SCENES.map(x => x.beat || "")].join("\n");
+  const bad = unknownHandles(text);
+  const el = $("handlewarn");
+  if (!el) return;
+  el.hidden = !bad.length;
+  if (bad.length) {
+    const have = castHandles().map(h => "@" + h.key).join(", ") || "none yet";
+    el.textContent = `${bad.map(b => "@" + b).join(", ")} ` +
+      `${bad.length === 1 ? "is" : "are"} not in the cast, so the render will ` +
+      `refuse rather than send the text as written. Handles: ${have}.`;
+  }
 }
 
 function compileSchedule() {
@@ -3240,6 +3365,42 @@ function checkModel() {
 
 /* Every control, attached before anything is fetched. */
 function wireControls() {
+  // THE CHUNK EDITOR'S FIELDS WRITE BACK. Every i_* field was read INTO by
+  // drawInspector and read FROM by nothing, so typing a beat changed the
+  // textarea and not the take. The handlers existed when this was a side
+  // panel and were lost moving it into a modal. One table now, so a field
+  // cannot be added without a writer, and test_ui_inspector.js asserts that
+  // every i_* control in the page appears here.
+  const INSPECTOR = [
+    ["i_beat", "input",  (sc, el) => { sc.beat = el.value; }],
+    ["i_head", "input",  (sc, el) => { sc.head = el.value; }],
+    ["i_tail", "input",  (sc, el) => { sc.tail = el.value; }],
+    ["i_seed", "change", (sc, el) => { sc.seed_offset = +el.value || 0; }],
+    ["i_len",  "change", (sc, el) => { sc.frames = +el.value; }],
+    ["i_cont", "change", (sc, el) => { sc.continuity = el.value; }],
+    ["i_pin",  "change", (sc, el) => {
+      sc.pin = el.value === "" ? undefined : +el.value;
+    }],
+  ];
+  for (const [id, ev, write] of INSPECTOR) {
+    const el = $(id);
+    if (!el) continue;
+    el.addEventListener(ev, () => {
+      const sc = SCENES[SEL];
+      if (!sc) return;
+      write(sc, el);
+      sceneChanged();
+    });
+  }
+
+  // @handle completion, on every field that reaches the prompt
+  for (const id of ["head", "tail", "i_beat", "i_head", "i_tail"]) {
+    attachHandles($(id));
+  }
+  for (const id of ["head", "tail"]) {
+    $(id).addEventListener("input", checkHandles);
+  }
+
   $("e_pick").onclick = () => openPicker({
     title: "Anchor images", multi: true, chosen: anchorPaths(),
     done: setAnchorPaths,
