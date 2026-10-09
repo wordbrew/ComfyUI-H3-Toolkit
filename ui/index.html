@@ -629,12 +629,11 @@
           <div><label for="vae">Video VAE</label><select id="vae"></select></div>
           <div><label for="avae">Audio VAE</label><select id="avae"></select></div>
         </div>
-        <div class="row two">
-          <div><label>Static LoRA — on every chunk</label>
-               <select id="lora" hidden></select>
-               <div class="lorarow"><span class="nm" id="lorapick">(none)</span></div></div>
-          <div><label for="lstr">Strength</label><input type="number" id="lstr" value="0.8" step="0.05" min="0" max="2"></div>
-        </div>
+        <label>Static LoRAs — every one of these applies to every chunk</label>
+        <div id="statics"></div>
+        <div class="bar"><button id="addlora">+ LoRA</button></div>
+        <select id="lora" hidden></select>
+        <input type="number" id="lstr" value="0.8" hidden>
         <label>References — derived from the Cast</label>
         <p class="hint">These come from the cast, in subject order, and are cited
         as &lt;Picture 1&gt;, &lt;Picture 2&gt;… in that same order. A library
@@ -935,6 +934,7 @@ function save() {
   s.cont = CONT;
   s.scenes = SCENES;
   s.chunkrefs = CHUNKREFS;
+  s.statics = STATICS;
   try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
 }
 function restore() {
@@ -951,6 +951,7 @@ function restore() {
   if (Array.isArray(s.cast)) CAST = s.cast;
   if (Array.isArray(s.cont)) CONT = s.cont;
   if (Array.isArray(s.chunkrefs)) CHUNKREFS = s.chunkrefs;
+  if (Array.isArray(s.statics)) STATICS = s.statics;
   if (Array.isArray(s.scenes)) SCENES = s.scenes;
   if (typeof drawRefSlots === "function") drawRefSlots();
 }
@@ -2029,6 +2030,43 @@ function advanceSeed() {
   save();
 }
 
+function drawStatics() {
+  const host = $("statics");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!STATICS.length) {
+    host.innerHTML = `<p class="hint">None — the base model, unmodified.</p>`;
+  }
+  STATICS.forEach((l, i) => {
+    const row = document.createElement("div");
+    row.className = "lorarow";
+    const nm = document.createElement("button");
+    nm.type = "button"; nm.className = "nm";
+    nm.textContent = l.name.split(/[\\/]/).pop();
+    nm.title = l.name + " — click to change";
+    nm.onclick = () => pickLora(n => { STATICS[i].name = n; staticsChanged(); });
+    const st = document.createElement("input");
+    st.type = "number"; st.value = l.strength; st.step = "0.05";
+    st.min = "0"; st.max = "2"; st.style.width = "76px";
+    st.title = "strength";
+    st.onchange = () => { STATICS[i].strength = +st.value; staticsChanged(); };
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "del";
+    x.onclick = () => { STATICS.splice(i, 1); staticsChanged(); };
+    row.append(nm, st, x);
+    host.appendChild(row);
+  });
+}
+
+function staticsChanged() { drawStatics(); save(); }
+
+function pickLora(done) {
+  const all = [...$("lora").options].map(o => o.value)
+    .filter(v => v && v !== "(none)");
+  openPicker({ title: "LoRA", multi: false, chosen: [], assets: all,
+               text: true, done: v => { if (v[0]) done(v[0]); } });
+}
+
 function compileSchedule() {
   // Rows are generated FROM the scene list, so they cannot point past it --
   // which is the stale-reference the node used to die on and now only skips.
@@ -2496,6 +2534,10 @@ function refreshCast() {
    files, so this costs one <img> per asset and no new endpoint. Subfolders are
    the bins -- /upload/image takes a `subfolder` and creates it -- so there is no
    project metadata layer to invent.  */
+// Static LoRAs: a LIST now. One was never a limit of the model -- a
+// LoraLoaderModelOnly takes a MODEL and returns one, so they chain -- it was a
+// limit of the template, which carries a single loader and mints the rest.
+let STATICS = [];
 let LIBKIND = {};                // library name -> person | place | thing
 let VIDEOS = [];                 // LoadVideo's folder, for motion references
 let ASSETS = [];                 // "name.png" or "project/name.png", from core
@@ -2935,8 +2977,8 @@ function request() {
     models: {
       unet: $("unet").value, clip: $("clip").value,
       vae: $("vae").value, audio_vae: $("avae").value,
-      loras: $("lora").value && $("lora").value !== "(none)"
-        ? [{ name: $("lora").value, strength: +$("lstr").value }] : [],
+      loras: STATICS.map(l => ({ name: l.name,
+                                 strength: +l.strength || 0.8 })),
     },
   };
   const rows = CAST.filter(r => r.from_library || r.describe || r.setting);
@@ -3153,17 +3195,11 @@ async function poll(id) {
 }
 
 /* -------------------------------------------------------------------- init */
-/* These two are called from BOTH wireControls() and init(), so they live at
-   module scope. They were swept inside wireControls() when it was split out of
-   init, and init's call then failed with "paintStatic is not defined" — the
-   controls worked and the model lists silently kept their raw labels. */
-function paintStatic() {
-  const v = $("lora").value;
-  $("lorapick").textContent = !v || v === "(none)"
-    ? "(none) — click to choose" : v.split(/[\\/]/).pop();
-  $("lorapick").title = v || "";
-}
-
+/* checkModel is called from BOTH wireControls() and init(), so it lives at
+   module scope — it was swept inside wireControls() once and init's call then
+   failed with "is not defined".
+   (paintStatic went with the single-LoRA slot it painted; drawStatics draws
+   the list that replaced it.) */
 function checkModel() {
   // 10Eros's author states beta_3 and beta_4 are corrupted test builds
   const v = $("unet").value || "";
@@ -3207,13 +3243,6 @@ function wireControls() {
     $("e_dz").textContent = r.failed.length
       ? `uploaded ${r.ok}, failed: ${r.failed.join(", ")}`
       : "Drop image files here to upload them";
-  });
-  $("lorapick").onclick = () => pickLora(n => {
-    if (![...$("lora").options].some(o => o.value === n)) {
-      const o = document.createElement("option");
-      o.value = n; o.textContent = n; $("lora").appendChild(o);
-    }
-    $("lora").value = n; paintStatic(); save();
   });
   $("i_addlora").onclick = () => {
     sceneLoras(SEL).push({ name: "", strength: 0.8 });
@@ -3264,6 +3293,10 @@ function wireControls() {
     const want = localStorage.getItem(LS + ":tab");
     if (want) document.querySelector(`#tabs button[data-tab="${want}"]`)?.click();
   } catch {}
+
+  $("addlora").onclick = () =>
+    pickLora(n => { STATICS.push({ name: n, strength: 0.8 });
+                    staticsChanged(); });
 
   $("castsee").onclick = () => {
     // the compiled subject_definitions and retention, which used to sit in a
@@ -3427,7 +3460,7 @@ function wireControls() {
     LORAS = loras;
     fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
     await loadLibrary();
-    paintStatic();
+    drawStatics();
     drawRefSlots();
     drawAnchorTiles();
     checkModel();

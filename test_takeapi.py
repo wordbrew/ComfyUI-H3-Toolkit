@@ -176,9 +176,52 @@ _cond = ta._one(_g, "h3.conditioning")
 check("references are numbered from zero, contiguously (5 + the sampler)",
       sorted(int(k.rsplit("_", 1)[1]) for k in _g[_cond]["inputs"]
              if k.startswith("ref_images.ref_image_")), [0, 1, 2, 3, 4, 5])
-raises("two static loras", lambda: ta.build(
-    dict(REQ, models=dict(REQ["models"], loras=[{"name": "1"}, {"name": "2"}]))),
-    "static LoRA")
+print("\nSTATIC LoRAs CHAIN, as many as asked for")
+# This used to REFUSE a second one: the template wires a single loader, and I
+# read that as a limit. A LoraLoaderModelOnly takes a MODEL and returns one, so
+# a chain of length 1 is a chain, not a ceiling.
+for _n in (0, 1, 3, 6):
+    _g = ta.build(dict(REQ, models=dict(
+        REQ["models"], loras=[{"name": f"h3/l{i}.safetensors",
+                               "strength": 0.5} for i in range(_n)])))
+    _ll = [k for k, v in _g.items() if v["class_type"] == "LoraLoaderModelOnly"]
+    check(f"{_n} requested", len(_ll), _n)
+    ok(f"  no placeholder survives at {_n}", ta.placeholders_in(_g) == [])
+    # every loader must read the one before it, or the later ones do nothing
+    _srcs = [(_g[k]["inputs"] or {}).get("model") for k in _ll]
+    ok("  each reads the previous",
+       all(isinstance(_srcs[i], list) and _srcs[i][0] == _ll[i - 1]
+           for i in range(1, len(_ll))))
+    # and whoever consumed the chain must now consume its END
+    if _ll:
+        _cons = [k for k, v in _g.items()
+                 for vv in (v.get("inputs") or {}).values()
+                 if isinstance(vv, list) and vv[0] == _ll[-1]]
+        ok("  and the sampler reads the last one", bool(_cons))
+    else:
+        ok("  with none, nothing points at a dropped loader",
+           not any(isinstance(vv, list) and vv[0] not in _g
+                   for v in _g.values()
+                   for vv in (v.get("inputs") or {}).values()))
+
+print("\na cast retention AND a reference in one request")
+# CJ: "h3.links.retention_1 is WIRED in the template, so a request cannot set
+# it". set_chunk_references WIRED retention_1 and the text loop then tried to
+# SET it -- _set correctly refusing to overwrite wiring this same function had
+# just created. References are wired last now, and the cast's retention text
+# SEEDS the gate chain instead of being dropped for it.
+_both = ta.build(dict(REQ,
+    retention_1="<Subject 1> fully_preserved: facial identity.",
+    chunk_references=[{"source": "p.png", "kind": "image",
+                       "role": "composition"}]))
+_gates = [k for k, v in _both.items() if v["class_type"] == "H3ChunkRef"]
+ok("it builds at all", bool(_gates))
+check("the cast's retention opens the chain",
+      _both[_gates[0]]["inputs"].get("retention_in"),
+      "<Subject 1> fully_preserved: facial identity.")
+_lk = ta._one(_both, "h3.links")
+ok("and retention_1 ends up wired to the last gate",
+   isinstance(_both[_lk]["inputs"]["retention_1"], list))
 raises("an unknown template", lambda: ta.build(dict(REQ, template="nope")),
        "no template")
 

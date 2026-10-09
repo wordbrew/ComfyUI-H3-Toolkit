@@ -165,21 +165,13 @@ def build(req, template=None):
         if models.get(key):
             _set(graph, role, field, models[key])
 
-    # STATIC LoRAs. The template carries ONE loader because an API export omits
-    # bypassed nodes, so a request asking for more than one is asking for
-    # wiring the template does not have -- say so rather than silently dropping
-    # the extras.
-    loras = models.get("loras") or []
-    slots = roles_of(graph).get("h3.lora.static") or []
-    if len(loras) > len(slots):
-        raise TakeError(f"{len(loras)} static LoRA(s) requested but the template "
-                        f"wires {len(slots)}. Schedule the rest through "
-                        f"`lora_schedule`, which has no limit.")
-    for nid, spec in zip(slots, loras):
-        ins = graph[nid].setdefault("inputs", {})
-        ins["lora_name"] = spec["name"] if isinstance(spec, dict) else spec
-        if isinstance(spec, dict) and "strength" in spec:
-            ins["strength_model"] = float(spec["strength"])
+    # STATIC LoRAs, AS MANY AS ASKED FOR. The template carries one loader and
+    # this used to refuse a second, on the reasoning that more was "wiring the
+    # template does not have". That was true of the export and false of the
+    # model: a LoraLoaderModelOnly takes a MODEL and returns one, so they
+    # chain, and minting the extra links is the same job set_references
+    # already does for reference loaders.
+    set_static_loras(graph, models.get("loras") or [])
 
     # REFERENCES ARE NOT CAPPED. `ref_images` is one autogrow input addressed as
     # ref_image_0, ref_image_1 ... with no declared maximum, so the number of
@@ -205,18 +197,6 @@ def build(req, template=None):
                         "video, and a lone voice is dropped")
     set_audio_references(graph, voices)
 
-    # PER-CHUNK REFERENCES, after the cast's so the image slots they take are
-    # the ones left over. The last gate's retention text feeds the links node:
-    # that is how a composition clause reaches the prompt at all.
-    gate, ref_lint = set_chunk_references(graph, req.get("chunk_references")
-                                          or []) or (None, [])
-    if gate is not None:
-        # a LINK, not a value, so it bypasses _set -- which exists to stop a
-        # request overwriting template wiring, and this is the wiring
-        links = _one(graph, "h3.links", required=False)
-        if links is not None:
-            graph[links].setdefault("inputs", {})["retention_1"] = [gate, 2]
-
     # A CAST BEATS TWO TEXT BOXES. When `cast` is given it is compiled through
     # h3script and OVERRIDES subject_def_1 / retention_1, so a caller never
     # types `<Subject 2>` or a retention clause by hand. Explicit text still
@@ -235,6 +215,25 @@ def build(req, template=None):
                   "soundscape", "music", "task_type", "heads", "tails"):
         if field in req:
             _set(graph, "h3.links", field, req[field])
+
+    # PER-CHUNK REFERENCES COME LAST, because they WIRE `retention_1` and the
+    # loop above SETS it. Doing them first meant a request carrying both a cast
+    # and one reference raised "h3.links.retention_1 is WIRED in the template,
+    # so a request cannot set it" -- _set correctly refusing to overwrite
+    # wiring that this same function had just put there a dozen lines earlier.
+    #
+    # And the cast's retention text is not discarded to make room: it SEEDS the
+    # chain as the first gate's `retention_in`, so the subjects' retention and
+    # the references' clauses both reach the prompt. Dropping one for the other
+    # would have been the quiet version of this bug.
+    gate, ref_lint = set_chunk_references(
+        graph, req.get("chunk_references") or [],
+        seed=req.get("retention_1") or "") or (None, [])
+    if gate is not None:
+        links = _one(graph, "h3.links", required=False)
+        if links is not None:
+            # a LINK, not a value, so it bypasses _set deliberately
+            graph[links].setdefault("inputs", {})["retention_1"] = [gate, 2]
 
     for field, key in (("chunk_frames", "chunk_frames"),
                        ("chunk_count", "chunk_count")):
@@ -365,6 +364,72 @@ def compile_cast(cast, parse, emit, lint=None):
         "lint": notes,
     }
 
+def set_static_loras(graph, loras):
+    """Chain N static LoRAs between the attention backend and the sampler.
+
+    The template wires exactly one:
+
+        Model Attention Backend -> h3.lora.static -> ModelSamplingMiniMaxH3
+
+    which is a chain of length one, not a limit. Each extra loader takes the
+    previous one's MODEL, and whatever consumed the first one's output now
+    consumes the last one's -- found by LINK rather than by role, so this
+    keeps working if the template puts something else after the LoRA.
+
+    Zero LoRAs is a real answer too: the loaders come out and the consumer is
+    wired straight to the source, rather than left pointing at a loader
+    holding a REPLACE_ME placeholder that fails validation.
+    """
+    slots = sorted((r for r in roles_of(graph) if r == "h3.lora.static"
+                    or r.startswith("h3.lora.static.")),
+                   key=lambda r: (len(r), r))
+    ids = [n for r in slots for n in roles_of(graph)[r]]
+    if not ids:
+        if loras:
+            raise TakeError("the template has no h3.lora.static node, so "
+                            "static LoRAs cannot be wired")
+        return
+
+    first = ids[0]
+    source = (graph[first].get("inputs") or {}).get("model")
+
+    # whoever reads the LAST loader today is who must read the new last one
+    tail = ids[-1]
+    consumers = [(nid, field)
+                 for nid, node in graph.items()
+                 for field, v in (node.get("inputs") or {}).items()
+                 if isinstance(v, list) and v[0] == tail]
+
+    for nid in ids[1:]:
+        graph.pop(nid, None)
+
+    if not loras:
+        graph.pop(first, None)
+        for nid, field in consumers:
+            graph[nid]["inputs"][field] = source
+        return
+
+    next_id = max((int(k) for k in graph if k.isdigit()), default=0) + 1
+    prev, last = source, first
+    for i, spec in enumerate(loras):
+        if i == 0:
+            nid = first
+        else:
+            nid = str(next_id); next_id += 1
+            graph[nid] = {"class_type": graph[first]["class_type"],
+                          "inputs": dict(graph[first].get("inputs") or {}),
+                          "_meta": {"title": f"h3.lora.static.{i}"}}
+        ins = graph[nid].setdefault("inputs", {})
+        ins["model"] = prev
+        ins["lora_name"] = spec["name"] if isinstance(spec, dict) else spec
+        ins["strength_model"] = float(spec.get("strength", 0.8)) \
+            if isinstance(spec, dict) else 0.8
+        prev, last = [nid, 0], nid
+
+    for nid, field in consumers:
+        graph[nid]["inputs"][field] = [last, 0]
+
+
 def set_audio_references(graph, names):
     """Wire exactly len(names) VOICE references into ref_audios.* -> [node ids].
 
@@ -417,7 +482,7 @@ from .chunkref import ROLES_FOR, canonical as canonical_role
 from .chunkref import depth_for_role as role_wants_depth
 
 
-def set_chunk_references(graph, refs):
+def set_chunk_references(graph, refs, seed=""):
     """Wire per-chunk references: loader -> [trim] -> [depth] -> gate -> slot.
 
     Each entry is
@@ -542,6 +607,10 @@ def set_chunk_references(graph, refs):
             gate_in["chunk_plan"] = [plan_node, 0]
         if last_ret is not None:
             gate_in["retention_in"] = [last_ret, 2]
+        elif seed:
+            # the cast's own retention_analysis opens the chain, so the
+            # subjects' wording survives alongside the references' clauses
+            gate_in["retention_in"] = str(seed)
         gate = mint("H3ChunkRef", gate_in, f"h3.chunkref.{i}")
         last_ret = gate
 
