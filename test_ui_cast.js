@@ -52,6 +52,11 @@ print(json.dumps([[r["key"] for r in ta.cast_order(c)] for c in cases]))
 `, JSON.stringify(CASES)], { cwd: __dirname, encoding: "utf8" }).trim());
 
 let bad = 0;
+const ck = (label, got, want) => {
+  const o = JSON.stringify(got) === JSON.stringify(want);
+  console.log(`  ${o ? "ok  " : "FAIL"} ${label}: ${JSON.stringify(got)}`);
+  if (!o) { bad++; console.log(`       wanted ${JSON.stringify(want)}`); }
+};
 CASES.forEach((c, i) => {
   const ok = JSON.stringify(mine[i]) === JSON.stringify(theirs[i]);
   console.log(`  ${ok ? "ok  " : "FAIL"} case ${i + 1}: ${JSON.stringify(mine[i])}`);
@@ -74,6 +79,33 @@ const two = castOrder([{ key: "a", describe: "1" }, { key: "b", describe: "2" },
 const stable = two[0] === "a" && two[1] === "b";
 console.log(`  ${stable ? "ok  " : "FAIL"} adding a prop does not renumber the people: ${two.join(" ")}`);
 if (!stable) bad++;
+
+console.log("\nA LIBRARY SUBJECT'S HANDLE COMES FROM ITS NAME");
+// CJ: "shouldn't pre-saved subjects have pre-saved @handles? only newly
+// created/hand-written subjects should have those added?" Asking someone to
+// invent a handle for a thing they already named gives one subject two names,
+// and two names drift.
+let CASTREF = [];
+const H = new Function("getCAST", `
+  ${src.match(/function slugHandle[\s\S]*?\n\}/)[0]}
+  ${src.match(/function uniqueHandle[\s\S]*?\n\}/)[0].replace("CAST.filter", "getCAST().filter")}
+  return { slugHandle, uniqueHandle };`)(() => CASTREF);
+
+ck("a name with a space", H.slugHandle("living room"), "livingroom");
+ck("case is dropped", H.slugHandle("Lily"), "lily");
+ck("underscores survive, because a filename may carry one",
+   H.slugHandle("jen_s"), "jen_s");
+ck("punctuation does not", H.slugHandle("Jen's room!"), "jensroom");
+ck("an empty name still yields something usable",
+   H.uniqueHandle("", "x"), "subject");
+
+console.log("\nand two subjects never share one handle");
+CASTREF = [{ id: "1", key: "lily" }, { id: "2", key: "lily2" }];
+ck("a clash gets the next free suffix", H.uniqueHandle("Lily", "3"), "lily3");
+ck("but editing the row that OWNS the handle keeps it",
+   H.uniqueHandle("Lily", "1"), "lily");
+CASTREF = [];
+ck("no clash, no suffix", H.uniqueHandle("Lily", "9"), "lily");
 
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }

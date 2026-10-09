@@ -1537,6 +1537,29 @@ const PLACEHOLD = {
   thing: "a brass desk lamp with a green glass shade",
 };
 
+// A name to a handle: lowercase, word characters only. "living room" becomes
+// @livingroom, which is what an author would type anyway.
+function slugHandle(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+}
+
+// ...and unique among the cast, because two handles that resolve the same way
+// would make @lily ambiguous. The owning row is excluded so re-opening a
+// subject does not renumber its own handle.
+function uniqueHandle(want, ownId) {
+  let base = slugHandle(String(want || "").replace(/^@/, "")) || "subject";
+  const taken = new Set(CAST.filter(x => x.id !== ownId)
+                            .map(x => String(x.key || "").toLowerCase()));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(base + n)) n++;
+  return base + n;
+}
+
+function handleFor(libraryName, ownId) {
+  return uniqueHandle(libraryName, ownId);
+}
+
 function subjectModal(r, kind) {
   // `r` always exists: adding creates the row first so the modal can apply on
   // every keystroke. "fresh" only decides the title.
@@ -1560,9 +1583,7 @@ function subjectModal(r, kind) {
       <div><label for="as_key">Call it</label>
         <input type="text" id="as_key" placeholder="lily"
           value="${escapeHTML(r.key || "")}">
-        <p class="hint">Write <code>@${escapeHTML(r.key || "lily")}</code> in a
-        beat and it becomes the right <code>&lt;Subject N&gt;</code>. The
-        number changes when the cast does; the handle never has to.</p></div>
+        <p class="hint" id="as_keyhint"></p></div>
       <div><label>From the library</label>
         <select id="as_lib">
           <option value="">— write it by hand instead —</option>${lib}
@@ -1605,13 +1626,18 @@ function subjectModal(r, kind) {
       const from = $("as_lib").value;
       const row = r;
       // the handle is what @lily resolves against, so it must be a word
-      row.key = ($("as_key").value || "").trim().replace(/^@/, "")
-        .replace(/[^A-Za-z0-9_-]/g, "");
+      // A LIBRARY SUBJECT ALREADY HAS A NAME, and that name IS the handle.
+      // CJ: "shouldn't pre-saved subjects have pre-saved @handles? only newly
+      // created/hand-written subjects should have those added?" Right —
+      // asking someone to invent a handle for a thing they already named is
+      // a second name for one subject, and two names drift.
+      row.key = from ? handleFor(from, row.id)
+                     : uniqueHandle(($("as_key").value || "").trim(), row.id);
       if (from) {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;
         row.from_library = from;
-        if (!row.key) row.key = from.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
       } else {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;                 // person / place / thing
@@ -1648,7 +1674,30 @@ function subjectModal(r, kind) {
     }
   }, { once: true });
   if (r.from_library) $("as_lib").value = r.from_library;
-  $("as_lib").onchange = sync; sync();
+  const syncKey = () => {
+    const from = $("as_lib").value;
+    const k = $("as_key");
+    if (from) {
+      // derived, not typed: the store already named this thing
+      k.value = handleFor(from, r.id);
+      k.readOnly = true;
+      $("as_keyhint").innerHTML =
+        `Write <code>@${escapeHTML(k.value)}</code> in a beat. It comes from ` +
+        `the library name, so it is the same handle in every take.`;
+    } else {
+      k.readOnly = false;
+      $("as_keyhint").innerHTML =
+        `Write <code>@${escapeHTML(k.value || "lily")}</code> in a beat and it ` +
+        `becomes the right <code>&lt;Subject N&gt;</code>. The number changes ` +
+        `when the cast does; the handle never has to.`;
+    }
+  };
+  $("as_key").addEventListener("input", () => {
+    if (!$("as_lib").value) syncKey();
+  });
+  $("as_lib").addEventListener("change", syncKey);
+  $("as_lib").onchange = () => { sync(); syncKey(); };
+  sync(); syncKey();
   $("as_pics").onclick = () => openPicker({
     title: "Reference images", multi: true, chosen: ADDPICS,
     done: paths => { ADDPICS = paths;
@@ -2588,7 +2637,25 @@ function castOrder(rows) {
               || (a[1] - b[1])).map(x => x[0]);
 }
 
+// EVERY CAST ROW NEEDS A HANDLE, including ones added before handles existed,
+// ones restored from storage, and ones dropped in without opening the modal.
+// A library row's handle is its stored name; a typed one falls back to the
+// first words of its description, which is at least guessable.
+function ensureHandles() {
+  let changed = false;
+  for (const r of CAST) {
+    if (String(r.key || "").trim()) continue;
+    const from = r.from_library
+      || (r.describe || r.setting || "").split(/\s+/).slice(0, 2).join("")
+      || "subject";
+    r.key = uniqueHandle(from, r.id);
+    changed = true;
+  }
+  return changed;
+}
+
 function deriveRefs() {
+  ensureHandles();
   REFS = [];
   VOICES = [];
   SCOPED = [];
