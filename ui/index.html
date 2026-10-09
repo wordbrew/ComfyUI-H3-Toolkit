@@ -473,6 +473,30 @@
   .dz.dropping { color: var(--accent); }
   /* a clip has no thumbnail from /view, so it gets a glyph instead of a
      broken image box */
+  /* the in-page trimmer */
+  .trim { display: flex; flex-direction: column; gap: 8px; }
+  .trim video { width: 100%; max-height: 260px; background: #000;
+                border-radius: var(--r); }
+  .trim .tbar {
+    position: relative; height: 22px; background: var(--ground-2);
+    border-radius: 3px; cursor: col-resize; overflow: hidden;
+  }
+  .trim .tbar .sel {
+    position: absolute; top: 0; bottom: 0; background: var(--accent);
+    opacity: .35;
+  }
+  .trim .tbar .ph {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--ink); margin-left: -1px;
+  }
+
+  .picker .tile .vthumb, .lane .cap video, .slot video {
+    width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
+    background: var(--ground);
+  }
+  .lane .cap video { width: 34px; height: 34px; border-radius: 3px;
+                     object-position: top center; flex: none;
+                     border: 1px solid var(--line); }
   .picker .tile .vid {
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
     background: var(--ground-2); color: var(--ink-faint); font-size: 20px;
@@ -1655,16 +1679,24 @@ function editRef(r) {
     <label>What the model takes from it</label>
     ${roleField}
     ${kind === "video" ? `
-      <label for="ed_spans" style="margin-top:12px">Trim</label>
-      <textarea id="ed_spans" rows="3" placeholder="0 0">${escapeHTML(r.spans || "")}</textarea>
-      <p class="hint">One span per line: <code>start count</code>, in frames,
-      with an optional label. <code>0 0</code> is the whole clip. This is the
-      same <code>spans</code> the pack's Video Trim node takes, so a span set
-      here reads identically on the node — and it lands in the rendered mp4's
-      metadata, which is the only record of which part of which file a clip
-      came from.</p>
-      <div class="bar"><button type="button" id="ed_open">Open it in the
-        Video Trim node to mark visually…</button></div>` : ""}
+      <label style="margin-top:12px">Trim</label>
+      <div class="trim">
+        <video id="ed_vid" src="${rawURL(r.source)}" preload="metadata"
+               muted playsinline></video>
+        <div class="tbar" id="ed_bar">
+          <div class="sel" id="ed_sel"></div>
+          <div class="ph" id="ed_ph"></div>
+        </div>
+        <div class="bar">
+          <button type="button" id="ed_in">Mark in</button>
+          <button type="button" id="ed_out">Mark out</button>
+          <button type="button" id="ed_play">Play the span</button>
+          <span class="sub" id="ed_read"></span>
+        </div>
+      </div>
+      <input type="hidden" id="ed_spans" value="${escapeHTML(r.spans || "")}">
+      <p class="hint">Scrub the bar to move the playhead; Mark in and Mark out
+      set the span. H3 wants 2–15s of reference, at 24fps.</p>` : ""}
     <p class="hint" style="margin-top:12px">${escapeHTML(r.source)}</p>`,
     r.label || r.source,
     () => {
@@ -1673,18 +1705,95 @@ function editRef(r) {
       refsChanged();
     });
 
-  if (kind === "video") {
-    $("ed_open").onclick = () => {
-      // The visual marker is the node's own DOM widget, which lives in the
-      // ComfyUI graph rather than in this page. Pointing at it beats
-      // reimplementing a scrubber here badly.
-      window.open("/", "_blank");
-      fail("Add a `Video Trim Load` node in ComfyUI, pick " + r.source
-           + ", mark the span on its timeline, then copy the `spans` text "
-           + "back into this box. A scrubber in this page would be a second, "
-           + "worse copy of a widget the pack already has.");
+  if (kind === "video") trimmer(r);
+}
+
+// THE TRIMMER, IN THIS PAGE. CJ: "I told you to build it properly into the ui
+// directly. I want to visualize it there, not go somewhere else." The previous
+// version opened ComfyUI in a new tab and told him to copy a number back,
+// which is not a feature.
+//
+// It writes the SAME `spans` text VideoTrimLoad takes -- `start count` in
+// FRAMES at 24fps -- so what is marked here is exactly what the node loads,
+// and the text still lands in the rendered mp4's metadata.
+function trimmer(r) {
+  const vid = $("ed_vid"), bar = $("ed_bar");
+  const FPS = 24;
+  let dur = 0, inF = 0, outF = 0;
+
+  const parse = () => {
+    const m = /^\s*(\d+)\s+(\d+)/.exec($("ed_spans").value || "");
+    if (!m) return [0, 0];
+    return [+m[1], +m[2]];
+  };
+  const write = () => {
+    // 0 count means "to the end", which is VideoTrimLoad's own convention --
+    // a span that reaches the last frame stays open rather than freezing a
+    // length that a re-encoded source would invalidate
+    const total = Math.max(0, Math.round(dur * FPS));
+    const count = (outF >= total - 1 && inF === 0) ? 0 : Math.max(1, outF - inF);
+    $("ed_spans").value = `${inF} ${count}`;
+    if (inlineDone) inlineDone();
+    paint();
+  };
+  const paint = () => {
+    const total = Math.max(1, Math.round(dur * FPS));
+    const a = (inF / total) * 100, b = (outF / total) * 100;
+    $("ed_sel").style.left = a + "%";
+    $("ed_sel").style.width = Math.max(0.6, b - a) + "%";
+    $("ed_ph").style.left =
+      ((vid.currentTime * FPS) / total) * 100 + "%";
+    const n = Math.max(0, outF - inF);
+    $("ed_read").textContent =
+      `${inF}–${outF}  ·  ${n} frames  ·  ${(n / FPS).toFixed(2)}s`
+      + (n && (n < 2 * FPS || n > 15 * FPS) ? "  ·  outside H3's 2–15s" : "");
+  };
+
+  vid.addEventListener("loadedmetadata", () => {
+    dur = vid.duration || 0;
+    const [st, ct] = parse();
+    const total = Math.max(1, Math.round(dur * FPS));
+    inF = Math.min(st, total - 1);
+    outF = ct ? Math.min(st + ct, total) : total;
+    vid.currentTime = inF / FPS;
+    paint();
+  });
+  vid.addEventListener("timeupdate", paint);
+
+  const seek = (ev) => {
+    const box = bar.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
+    vid.currentTime = f * (dur || 0);
+    paint();
+  };
+  bar.onmousedown = (ev) => {
+    seek(ev);
+    const mv = (e2) => seek(e2);
+    const up = () => { document.removeEventListener("mousemove", mv);
+                       document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", mv);
+    document.addEventListener("mouseup", up);
+  };
+
+  $("ed_in").onclick = () => {
+    inF = Math.round(vid.currentTime * FPS);
+    if (outF <= inF) outF = Math.round((dur || 0) * FPS);
+    write();
+  };
+  $("ed_out").onclick = () => {
+    outF = Math.round(vid.currentTime * FPS);
+    if (outF <= inF) inF = 0;
+    write();
+  };
+  $("ed_play").onclick = () => {
+    vid.currentTime = inF / FPS;
+    vid.play();
+    const stop = () => {
+      if (vid.currentTime * FPS >= outF) { vid.pause();
+        vid.removeEventListener("timeupdate", stop); }
     };
-  }
+    vid.addEventListener("timeupdate", stop);
+  };
 }
 
 function drawContList() {
@@ -2404,6 +2513,17 @@ function assetURL(path, quality = 40) {
          `&subfolder=${encodeURIComponent(sub)}&type=input` +
          `&preview=webp%3B${quality}`;
 }
+// THE RAW FILE, no preview re-encode. /view's `preview` parameter asks the
+// server to transcode to webp, which is right for a still and wrong for a
+// clip -- a <video> needs the actual mp4 to seek in.
+function rawURL(path) {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const sub = i < 0 ? "" : path.slice(0, i);
+  const file = i < 0 ? path : path.slice(i + 1);
+  return `/view?filename=${encodeURIComponent(file)}` +
+         `&subfolder=${encodeURIComponent(sub)}&type=input`;
+}
+
 function folderOf(path) {
   const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return i < 0 ? "" : path.slice(0, i);
