@@ -101,6 +101,58 @@ ok("live with nothing wired says so", "nothing is wired" in _n[3])
 ok("and a depth role reminds you to pass it through depth first",
    "DEPTH pass upstream" in _r[3])
 
+
+print("\nseveral references chain into one retention_1")
+# H3LongFormLinks has ONE retention input and an input takes ONE wire, so the
+# nodes chain: each appends its clause and passes the whole thing on.
+_a = run(role="composition", chunks="all", chunk_index=0, ordinal=1)[2]
+_b = run(role="motion", chunks="all", chunk_index=0, ordinal=1,
+         retention_in=_a)[2]
+check("two clauses, one per line", len(_b.splitlines()), 2)
+ok("the earlier one is kept", "follow only the composition, ignore" in _b)
+ok("and the later one added", "composition and motion" in _b)
+_c = run(role="identity", chunks="all", chunk_index=0, retention_in=_b)[2]
+check("a clause-less role passes the chain through unchanged", _c, _b)
+_d = run(role="motion", chunks="2", chunk_index=0, retention_in=_a)[2]
+check("and so does a reference that is not live here", _d, _a)
+
+print("\nspanning a cut is WARNED, never refused")
+# CJ: "yes, a reference should be able to span a cut. leave it to the user, i
+# would say you warn them, but don't prevent."
+_cut, _ = cp.plan(cp.total_for_count(192, 4, 39), 192, "fixed", context=39,
+                  grow_tail=True, continuity=["carry", "cut", "carry"])
+_cp = {"chunks": _cut}
+_r = N().go(role="composition", chunks="1-4", chunk_index=0, image="I",
+            ordinal=1, chunk_plan=_cp)["result"]
+ok("it says which chunk the cut is at", "spans a cut at chunk 3" in _r[3])
+check("and still emits the image", _r[0], "I")
+check("and still emits the clause", bool(_r[2]), True)
+_q = N().go(role="composition", chunks="1-2", chunk_index=0, image="I",
+            ordinal=1, chunk_plan=_cp)["result"]
+ok("a reference inside one shot is not warned", "spans a cut" not in _q[3])
+ok("and a MOTION reference is not warned, since movement across a cut is "
+   "a normal thing to ask for",
+   "spans a cut" not in N().go(role="motion", chunks="1-4", chunk_index=0,
+                               image="V", chunk_plan=_cp)["result"][3])
+
+print("\nA CONTINUITY CUT IS A CUT, in both planners")
+# plan() computed `cut` from the shot-part index alone, so a cut named through
+# `continuity` carried the label and none of the behaviour -- seed_mask stayed
+# True and the mask tracker seeded ACROSS the cut, which chunkrun's own
+# docstring forbids. scene_plan had it right and the two disagreed.
+check("plan() marks the cut chunk", [c["cut"] for c in _cut],
+      [False, False, True, False])
+check("and does not seed the mask across it",
+      [c["seed_mask"] for c in _cut], [False, True, False, True])
+_sp = cp.scene_plan([{"frames": 192},
+                     {"frames": 192, "continuity": "carry"},
+                     {"frames": 192, "continuity": "cut"},
+                     {"frames": 192, "continuity": "carry"}],
+                    context=39)["scenes"]
+check("and scene_plan says the same thing",
+      [(c["cut"], c["seed_mask"]) for c in _sp],
+      [(c["cut"], c["seed_mask"]) for c in _cut])
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

@@ -139,6 +139,18 @@ class H3ChunkRef:
                 "label": ("STRING", {"default": "",
                           "tooltip": "A name for the report only. Never "
                                      "reaches the prompt."}),
+                "retention_in": ("STRING", {"default": "", "forceInput": True,
+                                 "tooltip": "The retention text from the "
+                                            "reference BEFORE this one.\n\n"
+                                            "Several references have to reach "
+                                            "one `retention_1` on H3 Long-Form "
+                                            "Links, and an input takes one "
+                                            "wire — so they chain: each node "
+                                            "appends its own clause and passes "
+                                            "the whole thing on. Wire the last "
+                                            "one's `retention` to the links "
+                                            "node. Order here is presentation "
+                                            "order."}),
             },
         }
 
@@ -152,7 +164,7 @@ class H3ChunkRef:
     AUDIT_UNREAD_OK = ("image",)
 
     def go(self, role, chunks, chunk_index, image=None, ordinal=1,
-           chunk_plan=None, label=""):
+           chunk_plan=None, label="", retention_in=""):
         plan = (chunk_plan or {}).get("chunks") or []
         total = len(plan) or 1
         live, note = active_here(chunks, chunk_index, total)
@@ -174,8 +186,33 @@ class H3ChunkRef:
         if live and image is None:
             lines.append("  WARNING: live here but nothing is wired to `image`")
 
+        # SPANNING A CUT IS ALLOWED, and warned about. A composition reference
+        # carried across a cut is usually a mistake -- the new shot has its own
+        # framing -- but it is a legitimate choice for a match cut or a repeated
+        # setup, so this says so and gets out of the way. CJ: "leave it to the
+        # user, i would say you warn them, but don't prevent."
+        if live and plan and role in ("composition", "frame 0"):
+            spec = parse_chunks(str(chunks or "").strip().lower()) \
+                if str(chunks or "").strip().lower() not in ("", "all", "every",
+                                                             "*") else None
+            span = (chunk_indices(spec, total)[0] if spec
+                    else set(range(total)))
+            cuts = [k + 1 for k in sorted(span)
+                    if k and k < len(plan) and plan[k].get("cut")]
+            if cuts:
+                lines.append(f"  NOTE: this spans a cut at chunk "
+                             f"{', '.join(str(c) for c in cuts)}. The shot "
+                             f"after a cut has its own framing, so a "
+                             f"composition reference carried across one is "
+                             f"usually not what you want — unless it is a "
+                             f"match cut or the same setup returning.")
+
+        # the chain: each reference appends to the one before it
+        joined = "\n".join(x for x in (str(retention_in or "").strip(),
+                                       clause) if x)
+
         return {"ui": {"h3char": ["\n".join(lines)]},
-                "result": (image if live else None, live, clause,
+                "result": (image if live else None, live, joined,
                            "\n".join(lines))}
 
 
