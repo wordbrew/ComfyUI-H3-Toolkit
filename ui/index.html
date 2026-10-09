@@ -771,8 +771,8 @@
 <dialog class="picker" id="inline">
   <div class="hd"><strong id="inline_title">Edit</strong></div>
   <div class="bd" style="padding:14px 16px" id="inline_body"></div>
-  <div class="ft"><span class="sub" id="inline_note">saved as you type</span>
-    <span style="flex:1"></span></div>
+  <div class="ft"><span style="flex:1"></span>
+    <button id="inline_done" class="primary">Done</button></div>
 </dialog>
 
 <dialog class="picker" id="pick">
@@ -854,7 +854,17 @@ async function optionsFor(cls, field) {
     const d = await getJSON(`/object_info/${cls}`);
     const req = (d[cls] || {}).input || {};
     const decl = (req.required || {})[field] || (req.optional || {})[field];
-    return Array.isArray(decl?.[0]) ? decl[0] : [];
+    if (!decl) return [];
+    // TWO SHAPES. A legacy INPUT_TYPES combo serialises as [[...options], {}],
+    // and a V3 io.Combo.Input as ["COMBO", { options: [...] }]. This only read
+    // the first, so EVERY V3 node came back empty and silently: LoadVideo gave
+    // no clips at all ("no clips in ComfyUI/input", with 459 sitting there),
+    // LoadAudio no voices, and ResolutionSelector no aspect ratios — which is
+    // why the hardcoded fallback list I should never have written appeared to
+    // work.
+    if (Array.isArray(decl[0])) return decl[0];
+    const opts = (decl[1] || {}).options;
+    return Array.isArray(opts) ? opts : [];
   } catch { return []; }
 }
 
@@ -1306,7 +1316,12 @@ function drawLanes() {
       cls: " subject",
       spanOf: (r) => r.chunks || "all",
       setSpan: (r, v) => { r.chunks = v; },
-      name: (r) => (r.setting || "").trim() || "(describe this setting)",
+      // A LIBRARY SETTING HAS NO `setting` TEXT -- it has a name in the
+      // store, which is the thing to show. This only read the typed
+      // description, so "living room" picked from the library rendered as
+      // "(describe this setting)" with its picture count at zero.
+      name: (r) => r.from_library || (r.setting || "").trim()
+                   || "(describe this setting)",
       note: (r) => `${(r.images || []).length} pic`,
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
@@ -1323,7 +1338,7 @@ function drawLanes() {
       cls: " subject",
       spanOf: (r) => r.chunks || "all",
       setSpan: (r, v) => { r.chunks = v; },
-      name: (r) => r.describe || "a thing",
+      name: (r) => r.from_library || r.describe || "a thing",
       note: (r) => `${(r.images || []).length} pic`,
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
@@ -1369,7 +1384,7 @@ function openInline(html, title, done) {
   $("inline_title").textContent = title;
   $("inline_body").innerHTML = html;
   inlineDone = done;
-  $("inline_note").textContent = done ? "saved as you type" : "";
+
   // EVERY FIELD WRITES AS IT CHANGES, which is what the panels did and what a
   // modal has no excuse not to do. `done` is now "apply what is on screen",
   // called on every edit rather than once at the end, so it must be safe to
@@ -2267,6 +2282,10 @@ function refreshCast() {
       const pics = (out.counts || {}).pictures || 0;
       const problem = await stageLibraryRows();
       deriveRefs();
+      // STAGING IS WHAT FILLS r.images, and it is awaited -- so the tracks
+      // drawn before it ran showed "0 pic" for a library subject that has
+      // three. Redraw once the pictures are actually known.
+      drawLanes();
       const note = $("refnote");
       if (problem) {
         note.textContent = problem;
@@ -3025,6 +3044,11 @@ function wireControls() {
       if (e.target === $(id)) $(id).close();
     });
   }
+  // Done is REDUNDANT and that is the point: everything is already saved, so
+  // this is just a second way out for anyone who would rather press a button
+  // than click away.
+  $("inline_done").onclick = () => $("inline").close();
+
   // ---- tabs. Generate is what exists; Library is the store, which was a
   // panel inside Generate and is not part of a take; Edit is declared and
   // empty rather than hidden, because a tab that says "not built yet" is more
