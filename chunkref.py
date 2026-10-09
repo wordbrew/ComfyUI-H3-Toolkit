@@ -176,7 +176,7 @@ class H3ChunkRef:
                                        "retention clause names the right one. "
                                        "References are numbered per type, from "
                                        "1, in the order they are wired."}),
-                "chunk_plan": ("H3CHUNKPLAN", {"tooltip": "The plan, so `last` "
+                "chunk_plan": ("H3_CHUNK_PLAN", {"tooltip": "The plan, so `last` "
                                "and out-of-range chunks can be resolved."}),
                 "label": ("STRING", {"default": "",
                           "tooltip": "A name for the report only. Never "
