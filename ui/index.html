@@ -117,6 +117,13 @@
      on every track, including Chunks, which has neither -- the cast and
      reference rows carried trailing buttons and the chunk strip did not, so
      their cells were narrower by exactly that width and drifted left. */
+  /* the server is older than its files */
+  #stalebar {
+    padding: 10px 20px; background: var(--bad); color: #fff;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  #stalebar b { font-weight: 600; }
+
   .tabs { display: flex; gap: 2px; margin-left: 18px; }
   .tabs button {
     background: none; border: 0; border-bottom: 2px solid transparent;
@@ -563,6 +570,8 @@
     <button id="theme" title="Light / dark">◐</button>
   </div>
 </header>
+
+<div id="stalebar" hidden></div>
 
 <main id="tab-generate" class="tabpane">
   <section class="col">
@@ -4140,6 +4149,27 @@ function wireControls() {
     // the node's own aspect list, so a hand-typed string can never reach submit
     const shapes = (await optionsFor("ResolutionSelector", "aspect_ratio"))
       .filter(x => !/^Auto/i.test(x));     // Auto needs an input image
+    // IS THE SERVER RUNNING THE CODE ON DISK? ComfyUI imports a node pack
+    // once, at startup, while this page is re-read from disk every request --
+    // so a front-end fix lands on refresh and a server-side one waits for a
+    // restart. That asymmetry cost a full day of "still broken" reports about
+    // things that were already fixed. The timestamps were always checkable;
+    // now they are checked.
+    try {
+      const v = await getJSON(`${API}/version`);
+      if (v && v.stale) {
+        const el = $("stalebar");
+        el.hidden = false;
+        const age = Math.round((v.disk_stamp - v.loaded_stamp) / 60);
+        el.innerHTML = `<b>ComfyUI is running older code.</b> `
+          + `${escapeHTML(v.newest_file)} on disk is `
+          + `${age < 60 ? age + " minutes" : Math.round(age / 60) + " hours"} `
+          + `newer than what the server loaded at startup. Python is imported `
+          + `once, so a restart is the only way to pick it up — this page is `
+          + `already current.`;
+      }
+    } catch { /* an old server has no /version; the connection dot covers it */ }
+
     fillQuickJoin();
     if (shapes.length) {
       SHAPES = shapes;

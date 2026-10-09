@@ -9,7 +9,9 @@ cropplan, avlatent — carry the arithmetic the nodes share, and are kept torch-
 where possible so they can be tested without ComfyUI.
 """
 
+import os
 import pathlib
+import time
 from .audio import (NODE_CLASS_MAPPINGS as _AUDIO_CLASSES,
                     NODE_DISPLAY_NAME_MAPPINGS as _AUDIO_NAMES, PRESETS)
 from .analysis import (NODE_CLASS_MAPPINGS as _ANALYSIS_CLASSES,
@@ -88,6 +90,16 @@ _PARTS = (
     (_VT_CLASSES, _VT_NAMES),
     (_WIN_CLASSES, _WIN_NAMES),
 )
+
+#: The newest .py in this pack AT THE MOMENT PYTHON IMPORTED IT. Compared
+#: against the files on disk by /version, which is how the page can tell that
+#: a fix has been deployed and not loaded.
+HERE = pathlib.Path(__file__).resolve().parent
+try:
+    STAMP = max((f.stat().st_mtime for f in HERE.glob("*.py")), default=0.0)
+except OSError:                                                 # noqa: BLE001
+    STAMP = 0.0
+LOADED_AT = time.time()
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
@@ -201,6 +213,39 @@ def _register_routes():
         except Exception as exc:                                # noqa: BLE001
             return web.json_response({"ok": False, "subjects": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
+
+    @routes.get(ROUTE_PREFIX + "/version")
+    async def _version(request):
+        """Is the Python running here the Python on disk?
+
+        WHY THIS EXISTS
+          ComfyUI imports a node pack ONCE, at startup. The UI is re-read from
+          disk on every request, so a front-end fix lands on refresh while a
+          server-side one sits in the file doing nothing until a restart. That
+          asymmetry cost a whole day: CJ reported the same errors three times
+          because the fixes were deployed and not loaded, and every answer I
+          gave ended with "restart ComfyUI" as a throwaway line rather than
+          something anyone could verify.
+
+          The file timestamps were checkable the entire time. So now the app
+          checks them: STAMP is the newest .py when this module was imported,
+          and the scan below is the newest .py right now. If the second is
+          later, the server is running code older than the files and the page
+          says so in a banner instead of behaving strangely.
+        """
+        newest, which = 0.0, ""
+        for f in sorted(HERE.glob("*.py")):
+            m = f.stat().st_mtime
+            if m > newest:
+                newest, which = m, f.name
+        return web.json_response({
+            "ok": True,
+            "loaded_stamp": STAMP,
+            "disk_stamp": newest,
+            "newest_file": which,
+            "stale": newest > STAMP + 1.0,     # a second of slack for copies
+            "loaded_at": LOADED_AT,
+        })
 
     @routes.post(ROUTE_PREFIX + "/subject/anchors")
     async def _subject_anchors(request):
