@@ -22,6 +22,8 @@ from .checkpoint import (NODE_CLASS_MAPPINGS as _CKPT_CLASSES,
                          NODE_DISPLAY_NAME_MAPPINGS as _CKPT_NAMES)
 from .chunklora import (NODE_CLASS_MAPPINGS as _CL_CLASSES,
                         NODE_DISPLAY_NAME_MAPPINGS as _CL_NAMES)
+from .chunkref import (NODE_CLASS_MAPPINGS as _REF_CLASSES,
+                      NODE_DISPLAY_NAME_MAPPINGS as _REF_NAMES)
 from .chunkrun import (NODE_CLASS_MAPPINGS as _RUN_CLASSES,
                       NODE_DISPLAY_NAME_MAPPINGS as _RUN_NAMES)
 from .crop import (NODE_CLASS_MAPPINGS as _CROP_CLASSES,
@@ -69,6 +71,7 @@ _PARTS = (
     (_ENC_CLASSES, _ENC_NAMES),
     (_CKPT_CLASSES, _CKPT_NAMES),
     (_CL_CLASSES, _CL_NAMES),
+    (_REF_CLASSES, _REF_NAMES),
     (_RUN_CLASSES, _RUN_NAMES),
     (_SCRIPT_CLASSES, _SCRIPT_NAMES),
     (_SEM_CLASSES, _SEM_NAMES),
