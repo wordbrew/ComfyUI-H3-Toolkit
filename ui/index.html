@@ -475,12 +475,17 @@
          thing + on the Chunks track does in one click, and it REPLACED the
          scene list, which made it dangerous as well as redundant. Carry stays:
          it is a real take-wide default and it has nowhere else to live. -->
-    <div class="row two" style="margin-bottom:12px">
-      <div><label for="ctx">Carry — how much of the previous scene a
-        continuing one reproduces</label><select id="ctx"></select></div>
-      <div><label for="qcont">New chunks join with</label>
-        <select id="qcont"></select></div>
-    </div>
+    <details id="defaults">
+      <summary>Defaults</summary>
+      <div class="body">
+        <div class="row two">
+          <div><label for="ctx">Carry — how much of the previous chunk a
+            continuing one reproduces</label><select id="ctx"></select></div>
+          <div><label for="qcont">New chunks join with</label>
+            <select id="qcont"></select></div>
+        </div>
+      </div>
+    </details>
     <input type="number" id="cc" value="3" hidden>
     <input type="number" id="qn" value="4" hidden>
     <select id="cf" hidden></select>
@@ -2146,7 +2151,13 @@ function drawRowImages(r, el) {
    LoadImage cannot read, so they are STAGED into input/ once and then behave
    like any other asset. The store stays authoritative; this is a cache. */
 async function stageLibraryRows() {
-  const names = [...new Set(CAST.filter(r => r.kind === "library" && r.from_library)
+  // ANY ROW THAT CAME FROM THE LIBRARY, whatever track it sits on. This
+  // filtered on kind === "library", and a setting row's kind is "setting" --
+  // so a library SETTING or PROP was cited in the prompt and its anchors were
+  // never staged, never reached input/, and never reached the model. That is
+  // the "cites 7 but carries 6" CJ kept seeing, and the gap grew by one for
+  // every place or thing he cast from the library.
+  const names = [...new Set(CAST.filter(r => r.from_library)
                                 .map(r => r.from_library))];
   if (!names.length) return null;
   // IT MUST SAY WHEN IT FAILS. This swallowed every error, so a library subject
@@ -2174,7 +2185,7 @@ async function stageLibraryRows() {
   }
   const missing = [];
   for (const r of CAST) {
-    if (r.kind !== "library" || !r.from_library) continue;
+    if (!r.from_library) continue;          // kind does not decide this
     const got = (out.staged || {})[r.from_library];
     if (got && got.length) {
       r.images = got;                         // the store decides the order

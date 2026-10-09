@@ -94,6 +94,32 @@ ck("a gap survives the round trip",
 ck("toggling the middle off leaves two runs",
    setToSpec(new Set([0, 2, 3]), 4), "1,3-4");
 
+console.log("\nA LIBRARY ROW STAGES WHATEVER TRACK IT IS ON");
+// CJ, twice: "the prompt cites 7 picture(s) but the cast carries 6 ... your
+// references aren't including setting/props/etc." stageLibraryRows filtered on
+// `kind === "library"`, and a setting row's kind is "setting" — so a library
+// SETTING or PROP was cited in the prompt and its anchors never reached
+// input/, never reached the model, and never appeared in the references
+// panel. The gap grew by one for every place or thing cast from the library.
+// strip line comments first: a static check must read CODE, not the prose
+// explaining it — the first version of this failed on its own comment.
+const decomment = (t) => t.replace(/^\s*\/\/.*$/gm, "");
+const stage = src.slice(src.indexOf("function stageLibraryRows"));
+const stageBody = decomment(stage.slice(0, stage.indexOf("\nfunction ")));
+ck("staging selects on from_library",
+   /CAST\.filter\(r => r\.from_library\)/.test(stageBody), true);
+ck("and NOT on kind", /kind === "library"/.test(stageBody), false);
+ck("the write-back does not filter on kind either",
+   /r\.kind !== "library"/.test(stageBody), false);
+
+console.log("\nthe picture count compares against everything sent");
+const refresh = src.slice(src.indexOf("function refreshCast"));
+const refreshBody = decomment(refresh.slice(0, refresh.indexOf("\n}")));
+ck("scoped cast images are counted too",
+   /REFS\.length \+ SCOPED\.length/.test(refreshBody), true);
+ck("and the bare REFS.length comparison is gone",
+   /pics !== REFS\.length/.test(refreshBody), false);
+
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui lanes: spans survive the round trip, and a drop takes its shot");
