@@ -836,6 +836,42 @@
           <span class="sub" id="e_picked"></span>
         </div>
         <div class="dz" id="e_dz">Drop image files here to upload them</div>
+
+        <!-- ADDING pictures is a different operation from SAVING a subject,
+             and the difference matters: Save replaces the whole set, Add
+             keeps what is there and continues the numbering an older take's
+             <Picture N> already cites. This is the half a persistent
+             companion needs. -->
+        <details id="e_more">
+          <summary>Add more pictures to this subject</summary>
+          <div class="body">
+            <p class="hint">Keeps the pictures already saved and adds to them.
+            Use this for a new look of someone the library already knows —
+            the existing anchors keep their numbers, so takes that cite them
+            do not shift.</p>
+            <div class="bar">
+              <button id="e_addpick" type="button">Choose images…</button>
+              <span class="sub" id="e_addn">none chosen</span>
+            </div>
+            <div class="row two">
+              <div><label for="e_gen">Where they came from</label>
+                <select id="e_gen">
+                  <option value="hand">added by hand</option>
+                  <option value="krea2">krea2 companion</option>
+                  <option value="comfy">a ComfyUI render</option>
+                </select></div>
+              <div><label for="e_srcid">Reference</label>
+                <input type="text" id="e_srcid"
+                  placeholder="companion id, prompt, or seed"></div>
+            </div>
+            <p class="hint">Recorded as PROVENANCE, not a link. The pictures
+            are copied and frozen — a take that rendered against one face must
+            not acquire another because the companion was edited later. What
+            this buys is making another like it, on purpose.</p>
+            <div class="bar"><button id="e_addgo" type="button">Add pictures</button>
+              <span class="sub" id="e_addmsg"></span></div>
+          </div>
+        </details>
         <p class="hint">Three anchors measurably beat one for identity; a fourth
         reference broke subject motion in testing. Vary angle and lighting —
         near-duplicates spend tokens without adding information.</p>
@@ -3805,6 +3841,40 @@ function wireControls() {
   for (const id of ["head", "tail"]) {
     $(id).addEventListener("input", checkHandles);
   }
+
+  // ---- adding pictures to an existing subject
+  let ADDMORE = [];
+  $("e_addpick").onclick = () => openPicker({
+    title: "Pictures to add", multi: true, chosen: ADDMORE,
+    done: paths => {
+      ADDMORE = paths;
+      $("e_addn").textContent = paths.length
+        ? `${paths.length} chosen` : "none chosen";
+    },
+  });
+  $("e_addgo").onclick = async () => {
+    const name = ($("e_name").value || "").trim();
+    if (!name) { $("e_addmsg").textContent = "name the subject first"; return; }
+    if (!ADDMORE.length) { $("e_addmsg").textContent = "choose some pictures"; return; }
+    $("e_addmsg").textContent = "adding…";
+    const r = await post("/subject/anchors", {
+      name, images: ADDMORE,
+      source: {
+        generator: $("e_gen").value,
+        ref: ($("e_srcid").value || "").trim(),
+        at: new Date().toISOString().slice(0, 10),
+      },
+    });
+    if (!r || !r.ok) {
+      $("e_addmsg").textContent = (r && r.error) || "could not add them";
+      return;
+    }
+    $("e_addmsg").textContent =
+      `added ${r.added.join(", ")} — ${r.card.anchors} picture(s) now`;
+    ADDMORE = [];
+    $("e_addn").textContent = "none chosen";
+    await loadLibrary();
+  };
 
   $("e_pick").onclick = () => openPicker({
     title: "Anchor images", multi: true, chosen: anchorPaths(),

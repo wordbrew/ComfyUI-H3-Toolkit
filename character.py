@@ -136,20 +136,29 @@ def sanitise(name):
 
 
 def card_of(name, kind="person", description="", voice_description="",
-            retention="fully_preserved", anchors=0, has_voice=False):
+            retention="fully_preserved", anchors=0, has_voice=False,
+            source=None):
     """The card dict, in ONE place, so the node and the HTTP route agree."""
     # `voice` is the DESCRIPTION of how they sound; `has_voice` is whether a
     # sample exists on disk. Two different things that both have to reach the
     # UI -- it can describe a voice it cannot play, and it must not offer to
     # use a sample that was never recorded.
+    #
+    # `source` is PROVENANCE: where this subject came from and, for a generated
+    # one, enough to make another like it. It is deliberately NOT a live link.
+    # A take that rendered against one face must not acquire another because
+    # the companion it came from was edited -- so anchors are copied and
+    # frozen, and this records how to reproduce them on purpose rather than by
+    # accident. See docs: three artifacts, three lifetimes.
     return {"name": name, "kind": kind, "description": str(description).strip(),
             "voice": str(voice_description).strip(), "retention": retention,
-            "anchors": int(anchors), "has_voice": bool(has_voice)}
+            "anchors": int(anchors), "has_voice": bool(has_voice),
+            "source": dict(source or {})}
 
 
 def save_subject(name, kind="person", description="", voice_description="",
                  retention="fully_preserved", image_paths=(), voice_path=None,
-                 overwrite=False):
+                 overwrite=False, source=None):
     """Write a subject to the store from FILES on disk. -> the card.
 
     The node's save() takes IMAGE tensors because that is what a graph carries.
@@ -182,11 +191,73 @@ def save_subject(name, kind="person", description="", voice_description="",
     card = card_of(safe, kind, description, voice_description, retention, n,
                    has_voice=any(
                        os.path.isfile(os.path.join(d, "voice" + e))
-                       for e in (".wav", ".flac", ".mp3")))
+                       for e in (".wav", ".flac", ".mp3")),
+                   source=source)
     with open(os.path.join(d, "card.json"), "w", encoding="utf-8") as f:
         json.dump(card, f, indent=2)
     _CACHE.pop(safe, None)
     return card
+
+
+def add_anchors(name, image_paths, source=None):
+    """Add pictures to a subject that already exists. -> the updated card.
+
+    WHY THIS IS SEPARATE FROM save_subject
+      save_subject WRITES a subject: it takes the whole set of pictures and the
+      directory is what it says. This ADDS, which is the operation a persistent
+      companion needs -- make three more looks next week, keep the ones from
+      before, and do not disturb the numbering the prompt already cites.
+
+      Numbering continues from the highest file present rather than from the
+      count, so a subject whose 002 was deleted does not get a second 002 that
+      an older take's <Picture 2> would now resolve to differently.
+
+    `source` is merged into the card rather than replacing it, so a subject
+    made by hand and later extended from a companion records both.
+    """
+    import shutil
+    safe = sanitise(name)
+    d = os.path.join(characters_dir(), safe)
+    if not os.path.isdir(d):
+        raise ValueError(f"no subject {name!r} to add to")
+    img_dir = os.path.join(d, "images")
+    os.makedirs(img_dir, exist_ok=True)
+
+    # continue from the highest EXISTING number, never from the count
+    nums = []
+    for f in os.listdir(img_dir):
+        stem = os.path.splitext(f)[0]
+        if stem.isdigit():
+            nums.append(int(stem))
+    n = max(nums) if nums else 0
+
+    added = []
+    for src in image_paths or []:
+        if not os.path.isfile(src):
+            continue
+        ext = os.path.splitext(src)[1].lower()
+        if ext not in IMAGE_EXT:
+            continue
+        n += 1
+        dest = os.path.join(img_dir, f"{n:03d}{ext}")
+        shutil.copyfile(src, dest)
+        added.append(dest)
+
+    card = read_card(safe) or {}
+    card["anchors"] = len([f for f in os.listdir(img_dir)
+                           if f.lower().endswith(IMAGE_EXT)])
+    if source:
+        merged = dict(card.get("source") or {})
+        merged.update(source)
+        # a history of WHERE the pictures came from, since a subject can be
+        # extended more than once and from more than one place
+        runs = list(merged.get("runs") or [])
+        runs.append({k: v for k, v in dict(source).items() if k != "runs"})
+        merged["runs"] = runs[-20:]
+        card["source"] = merged
+    with open(os.path.join(d, "card.json"), "w", encoding="utf-8") as f:
+        json.dump(card, f, indent=2)
+    return card, added
 
 
 def stage_subject(name, input_dir, folder="h3_subjects"):

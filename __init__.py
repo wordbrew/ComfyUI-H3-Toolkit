@@ -202,6 +202,56 @@ def _register_routes():
             return web.json_response({"ok": False, "subjects": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
 
+    @routes.post(ROUTE_PREFIX + "/subject/anchors")
+    async def _subject_anchors(request):
+        """Add pictures to a subject that already exists.
+
+        POST {"name": "lily",
+              "images": ["gen_001.png", "gen_002.png"],   # names in input/
+              "source": {"generator": "krea2",
+                         "companion_id": "...", "prompt": "...", "seed": 42}}
+
+        THIS IS WHAT MAKES A SUBJECT PERSISTENT. save_subject writes a whole
+        subject; this ADDS to one, which is the operation a companion needs --
+        three more looks next week, keeping the ones from before and the
+        numbering the prompt already cites.
+
+        `source` is PROVENANCE, not a link. The pictures are copied and frozen:
+        a take that rendered against one face must not acquire another because
+        the companion was edited later. What the provenance buys is
+        reproducibility on purpose -- enough to make another like this one, or
+        this one again.
+        """
+        from .character import add_anchors
+        data = await _body(request)
+        name = str(data.get("name") or "").strip()
+        if not name:
+            return web.json_response({"ok": False, "error": "no name"})
+        try:
+            import folder_paths
+            indir = folder_paths.get_input_directory()
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI input directory"})
+
+        def resolve(f):
+            cand = os.path.join(indir, str(f).replace("\\", "/"))
+            return cand if os.path.isfile(cand) else None
+
+        paths = [r for r in (resolve(f) for f in data.get("images") or []) if r]
+        missing = [f for f in (data.get("images") or []) if not resolve(f)]
+        if not paths:
+            return web.json_response({"ok": False,
+                                      "error": f"none of those files are in "
+                                               f"input/: {missing}"})
+        try:
+            card, added = add_anchors(name, paths, source=data.get("source"))
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+        return web.json_response({"ok": True, "card": card,
+                                  "added": [os.path.basename(a) for a in added],
+                                  "missing": missing})
+
     @routes.post(ROUTE_PREFIX + "/subject/save")
     async def _subject_save(request):
         """Create or replace a subject. People, places and things.
