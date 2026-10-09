@@ -64,6 +64,36 @@ ck("with no cuts at all, the shot is the whole take",
 console.log("\nand what a drop writes is what the node will read");
 ck("a shot becomes a spec", setToSpec(shotSpan(2, CH), CH.length), "3-4");
 
+console.log("\nONE handler owns a segment's click");
+// renderPlan assigns the handler that opens a chunk's details, and
+// makeSegInteractive used to assign `seg.onclick = () => { SEL = i; ... }`
+// AFTER it — so clicking a chunk silently re-selected a row in a list that no
+// longer exists, and the details never opened. Two assignments to the same
+// property is the bug; there must be exactly one.
+const assigns = (src.match(/\bseg\.onclick\s*=/g) || []).length;
+ck("seg.onclick is assigned exactly once", assigns, 1);
+const inInteractive = src
+  .slice(src.indexOf("function makeSegInteractive"))
+  .slice(0, src.slice(src.indexOf("function makeSegInteractive")).indexOf("\nfunction "));
+ck("and not inside makeSegInteractive", /\bseg\.onclick\s*=/.test(inInteractive), false);
+ck("the one that exists opens the chunk", /seg\.onclick[\s\S]{0,200}openChunk/.test(src), true);
+
+console.log("\na lane click TOGGLES one chunk, it does not replace the span");
+// CJ: "click on a subject/setting/prop in chunk 1, it disappears. click the
+// open space again and it reappears. independent for each chunk." My edge-drag
+// set the span to the range between the press and the cursor, so a single
+// click wiped every other chunk.
+const paint = src.slice(src.indexOf("const paint = (i) =>"));
+const paintBody = paint.slice(0, paint.indexOf("};") + 2);
+ck("paint adds or deletes the one cell",
+   /set\.add\(i\)\s*:\s*set\.delete\(i\)/.test(paintBody), true);
+ck("and never clears the whole set", /set\.clear\(\)/.test(paintBody), false);
+// and the spec format has to be able to SAY a non-contiguous span
+ck("a gap survives the round trip",
+   setToSpec(specToSet("1,3", 4), 4), "1,3");
+ck("toggling the middle off leaves two runs",
+   setToSpec(new Set([0, 2, 3]), 4), "1,3-4");
+
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui lanes: spans survive the round trip, and a drop takes its shot");

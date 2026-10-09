@@ -1172,14 +1172,17 @@ function laneRow(items, host, chunks, opts) {
       refsChanged();
     };
 
-    // the span becomes everything between the anchor and wherever the cursor
-    // is -- one contiguous run, which is the only shape a bar can draw and
-    // the only shape `2-4` can say
+    // A CLICK TOGGLES ONE CHUNK. Dragging carries that same decision across
+    // the cells it passes over -- press on a filled cell and you are erasing,
+    // press on an empty one and you are filling.
+    //
+    // This replaced the span with the range from the press to the cursor,
+    // which meant a single click wiped every other chunk: CJ clicked chunk 1
+    // and chunk 3 vanished. The range idea was mine and it was wrong; the set
+    // does not have to be contiguous, and setToSpec already writes "1,3".
     const paint = (i) => {
       if (!LANEDRAG) return;
-      const a = Math.min(LANEDRAG.anchor, i), b = Math.max(LANEDRAG.anchor, i);
-      set.clear();
-      for (let k = a; k <= b; k++) set.add(k);
+      LANEDRAG.add ? set.add(i) : set.delete(i);
       commit();
     };
 
@@ -1200,17 +1203,8 @@ function laneRow(items, host, chunks, opts) {
       // follows the cursor, so a four-chunk reference is one gesture.
       cell.onmousedown = (e) => {
         e.preventDefault();
-        const on = [...set].sort((a, b) => a - b);
-        if (set.has(i) && on.length > 1) {
-          // which end is nearer? that is the one being moved
-          const lo = on[0], hi = on[on.length - 1];
-          LANEDRAG = { r, mode: "edge",
-                       anchor: (i - lo) <= (hi - i) ? hi : lo };
-        } else if (set.has(i)) {
-          LANEDRAG = { r, mode: "edge", anchor: i };
-        } else {
-          LANEDRAG = { r, mode: "edge", anchor: i };
-        }
+        // what this gesture DOES is decided by the cell it started on
+        LANEDRAG = { r, add: !set.has(i) };
         document.addEventListener("mouseup", () => { LANEDRAG = null; },
                                   { once: true });
         paint(i);
@@ -2531,7 +2525,10 @@ function makeSegInteractive(seg, i, plan) {
   const sc = SCENES[i];
   if (!sc) return;
   if (i === SEL) seg.classList.add("sel");
-  seg.onclick = () => { SEL = i; drawScenes(); };
+  // DO NOT set seg.onclick here. renderPlan already assigned the handler that
+  // opens the chunk's details, and this line -- left over from when clicking a
+  // segment only moved the selection in the old scene list -- ran after it and
+  // replaced it. Clicking a chunk did nothing but re-select an invisible row.
 
   const grip = document.createElement("div");
   grip.className = "grip";
