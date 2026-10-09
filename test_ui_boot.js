@@ -122,7 +122,7 @@ realTimeout(() => {
   for (const [id, el] of Object.entries(store)) {
     if (typeof el.onclick === "function") WIRED.add(id + ":onclick");
   }
-  const need = ["render:click", "addscene:onclick", "i_addlora:onclick",
+  const need = ["render:click", "i_addlora:onclick",
                 "newsubj:onclick", "dry:click",
                 // the three timeline + buttons replaced Quick setup's one
                 "addchunk:onclick", "addcast2:onclick", "addref:onclick"];

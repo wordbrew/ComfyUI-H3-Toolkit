@@ -242,6 +242,17 @@
     content: " not wired"; color: var(--bad); font-weight: 400;
   }
 
+  .tl .seg { cursor: pointer; }
+  .tl .seg .segx {
+    position: absolute; top: 3px; right: 3px; width: 15px; height: 15px;
+    padding: 0; font-size: 9px; line-height: 1; border-radius: 3px;
+    background: var(--panel); border: 1px solid var(--line);
+    color: var(--ink-faint); cursor: pointer; opacity: 0; z-index: 5;
+  }
+  .tl .seg:hover .segx { opacity: 1; }
+  .tl .seg .segx:hover { background: var(--bad); color: #fff;
+                         border-color: var(--bad); }
+
   .tl .seg .grip {
     position: absolute; inset: 0 -4px 0 auto; width: 14px; cursor: col-resize;
     z-index: 4; display: flex; align-items: center; justify-content: center;
@@ -439,7 +450,7 @@
   <section class="col">
     <h2>Plan</h2>
     <p class="hint">A readout, not a second place to set things. Length and
-    transition live on each scene; this is what they add up to.</p>
+    transition live on each chunk; this is what they add up to.</p>
     <!-- QUICK SETUP IS GONE. CJ: "there's literally no reason to use it at all
          really when a user can just manually add chunks. what's the point of
          it?" There was none. It generated N identical scenes, which is the one
@@ -449,7 +460,7 @@
     <div class="row two" style="margin-bottom:12px">
       <div><label for="ctx">Carry — how much of the previous scene a
         continuing one reproduces</label><select id="ctx"></select></div>
-      <div><label for="qcont">New scenes join with</label>
+      <div><label for="qcont">New chunks join with</label>
         <select id="qcont"></select></div>
     </div>
     <input type="number" id="cc" value="3" hidden>
@@ -460,7 +471,7 @@
         <div id="ruler" class="ruler"></div><div class="tail"></div></div>
       <div class="trk">
         <div class="gut"><span>Chunks</span>
-          <button id="addchunk" title="add a scene at the end">+</button></div>
+          <button id="addchunk" title="add a chunk at the end">+</button></div>
         <div id="tl" class="tl"></div><div class="tail"></div>
       </div>
       <div class="trk top"><div class="gut"><span>Cast</span>
@@ -475,7 +486,7 @@
     </div>
     <div class="dragnote" id="dragnote"></div>
     <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
-    segment's right edge to change that scene's length. Drag a segment itself to
+    segment's right edge to change that chunk's length. Drag a segment itself to
     reorder. Click the round button between two segments for the transition. The
     inspector's <em>Length</em> dropdown does the same thing if you prefer
     typing.</p>
@@ -489,57 +500,13 @@
     <textarea id="head" rows="3" placeholder="Realistic video. A woman kneeling on an unmade bed, flat overcast daylight through a window at frame left."></textarea>
     <p class="hint">Subject, wardrobe, set, lighting, camera. Every chunk is generated with no memory of the one before, so anything not restated here is re-invented — wardrobe especially, which nothing but the words holds.</p>
 
-    <label>Scenes — click one to edit it</label>
-    <div id="scenelist"></div>
-    <div class="bar">
-      <button id="addscene">+ Scene</button>
-      <button id="dupscene">Duplicate</button>
-      <span class="sub" id="scenesum"></span>
-    </div>
+    <!-- THE SCENE LIST IS GONE. CJ, more than once: "we are going timeline
+         focused here ... we can do away with the Scenes - Click one to edit it
+         list." It drew the same chunks the timeline draws, so it was a second
+         place for the same thing to be wrong. Clicking a chunk on the strip
+         opens its details as a modal; the hidden fields below are still the
+         ones those details write into. -->
     <textarea id="beats" hidden></textarea>
-
-    <div id="inspector" class="insp" hidden>
-      <div class="insphd">
-        <strong id="insptitle">Scene</strong>
-        <span class="sub" id="inspwhen"></span>
-        <button id="inspdel" style="margin-left:auto">Delete scene</button>
-      </div>
-      <label for="i_beat">What happens in this scene</label>
-      <textarea id="i_beat" rows="4" placeholder="She turns toward the window and the light catches her face."></textarea>
-      <p class="hint">One continuous moment. “And then…” reads as a cut
-      instruction — if two things happen in sequence, that is two scenes.</p>
-      <div class="row three">
-        <div><label for="i_len">Length</label><select id="i_len"></select></div>
-        <div><label for="i_cont">Transition in</label><select id="i_cont"></select></div>
-        <div><label for="i_pin">Carry in</label><select id="i_pin"></select></div>
-      </div>
-      <p class="hint" id="i_contwhat"></p>
-      <details id="contguide"><summary>What each transition does</summary>
-        <div class="body"><div id="contlist" class="contlist"></div></div>
-      </details>
-      <input type="number" id="i_seed" value="0" hidden>
-      <div id="i_shotbox">
-        <label for="i_head">This shot's setting — subject, wardrobe, room, light, camera</label>
-        <textarea id="i_head" rows="3" placeholder="leave empty to use the take's Head"></textarea>
-        <label for="i_tail">This shot's closing direction</label>
-        <textarea id="i_tail" rows="2" placeholder="leave empty to use the take's Tail"></textarea>
-        <p class="hint">Repeated byte-identically into every scene of this shot.
-        Varying it <em>within</em> a shot dragged wardrobe and set description
-        along with whatever was being changed, so only a scene that starts a shot
-        can set it — the others inherit.</p>
-      </div>
-      <p class="hint" id="i_inherits" hidden></p>
-
-      <label style="margin-top:10px">LoRAs for this scene only</label>
-      <div id="i_loras"></div>
-      <div class="bar"><button id="i_addlora">+ LoRA</button>
-        <span class="sub">applied to this scene alone — the schedule is built for you</span>
-      </div>
-    </div>
-
-    <label for="tail">Tail — also repeated verbatim</label>
-    <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
-    <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
 
     <h2>Cast</h2>
     <p class="hint">A subject is anyone or anywhere the prompt names. Pick a saved
@@ -646,7 +613,7 @@
           <div><label for="avae">Audio VAE</label><select id="avae"></select></div>
         </div>
         <div class="row two">
-          <div><label>Static LoRA — on every scene</label>
+          <div><label>Static LoRA — on every chunk</label>
                <select id="lora" hidden></select>
                <div class="lorarow"><span class="nm" id="lorapick">(none)</span></div></div>
           <div><label for="lstr">Strength</label><input type="number" id="lstr" value="0.8" step="0.05" min="0" max="2"></div>
@@ -711,6 +678,52 @@
     <h2>Jobs</h2>
     <div id="jobs"></div>
   </section>
+
+<dialog class="picker sheet" id="chunksheet">
+  <div class="hd"><strong id="insptitle">Chunk</strong>
+    <span class="sub" id="inspwhen"></span>
+    <span style="flex:1"></span>
+    <button id="inspdel">Delete chunk</button>
+    <button id="chunkclose" class="primary">Done</button></div>
+  <div class="bd" id="chunkbody">
+      <label for="i_beat">What happens in this chunk</label>
+      <textarea id="i_beat" rows="4" placeholder="She turns toward the window and the light catches her face."></textarea>
+      <p class="hint">One continuous moment. “And then…” reads as a cut
+      instruction — if two things happen in sequence, that is two scenes.</p>
+      <div class="row three">
+        <div><label for="i_len">Length</label><select id="i_len"></select></div>
+        <div><label for="i_cont">Transition in</label><select id="i_cont"></select></div>
+        <div><label for="i_pin">Carry in</label><select id="i_pin"></select></div>
+      </div>
+      <p class="hint" id="i_contwhat"></p>
+      <details id="contguide"><summary>What each transition does</summary>
+        <div class="body"><div id="contlist" class="contlist"></div></div>
+      </details>
+      <input type="number" id="i_seed" value="0" hidden>
+      <div id="i_shotbox">
+        <label for="i_head">This shot's setting — subject, wardrobe, room, light, camera</label>
+        <textarea id="i_head" rows="3" placeholder="leave empty to use the take's Head"></textarea>
+        <label for="i_tail">This shot's closing direction</label>
+        <textarea id="i_tail" rows="2" placeholder="leave empty to use the take's Tail"></textarea>
+        <p class="hint">Repeated byte-identically into every scene of this shot.
+        Varying it <em>within</em> a shot dragged wardrobe and set description
+        along with whatever was being changed, so only a scene that starts a shot
+        can set it — the others inherit.</p>
+      </div>
+      <p class="hint" id="i_inherits" hidden></p>
+
+      <label style="margin-top:10px">LoRAs for this chunk only</label>
+      <div id="i_loras"></div>
+      <div class="bar"><button id="i_addlora">+ LoRA</button>
+        <span class="sub">applied to this chunk alone — the schedule is built for you</span>
+      </div>
+    </div>
+
+    <label for="tail">Tail — also repeated verbatim</label>
+    <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
+    <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
+  
+</dialog>
 </main>
 
 <dialog class="picker" id="inline">
@@ -957,39 +970,32 @@ function delScene(i) {
   drawScenes(); refreshPlan();
 }
 
+// THE TIMELINE IS THE SCENE LIST. This used to draw a second, parallel list of
+// the same chunks with its own selection and its own inspector hanging off it.
+// CJ asked three times for it to go. What is left is what the rest of the app
+// actually needs from it: keep the derived fields current and redraw the strip.
 function drawScenes() {
   if ($("mp")) checkFrameSize();
-  const host = $("scenelist");
-  host.innerHTML = "";
-  if (!SCENES.length) {
-    host.innerHTML = `<p class="hint">No scenes yet. “+ Scene” adds the first.</p>`;
-    $("inspector").hidden = true;
-    return;
-  }
-  SCENES.forEach((sc, i) => {
-    const el = document.createElement("div");
-    el.className = "scene" + (i === SEL ? " on" : "");
-    const t = TRANSITIONS.find(x => x.id === sc.continuity) || TRANSITIONS[0];
-    el.dataset.cut = i === 0 ? "" : (t.id === "carry" ? "0" : "1");
-    el.innerHTML =
-      `<span class="no">${i + 1}</span>` +
-      `<span class="cn" title="${i ? escapeHTML(t.label) : "opens the take"}">` +
-      `${i ? (GLYPH[sc.continuity] || "→") : "▶"}</span>` +
-      `<span class="tx${sc.beat ? "" : " empty"}">` +
-      (sc.beat ? escapeHTML(sc.beat) : "nothing written yet") + `</span>` +
-      `<span class="du">${(sc.frames / 24).toFixed(2)}s</span>` +
-      `<span class="cn" title="shot ${(shotOf(i) + 1)}">S${shotOf(i) + 1}</span>`;
-    el.onclick = () => { SEL = i; drawScenes(); };
-    host.appendChild(el);
-  });
-  drawInspector();
-  // the beats textarea stays the thing the graph receives, one line per scene
-  $("beats").value = SCENES.map(s => (s.beat || "").replace(/\n/g, " ")).join("\n");
+  SEL = Math.max(0, Math.min(SEL, SCENES.length - 1));
+  $("beats").value = SCENES.map(x => (x.beat || "").trim()).join("\n");
+  CONT = SCENES.slice(1).map(x => x.continuity || "carry");
+  $("cc").value = String(SCENES.length || 1);
+  if ($("chunksheet").open) drawInspector();
+  save();
 }
 
-/* SHOTS, computed the same way the planner does: a run from one cut to the
-   next. Head and tail belong to the SHOT, because varying them within a
-   continuing run drags wardrobe and set description along with the change. */
+// Clicking a chunk opens its details over the page. CJ: "if I click on
+// something, for example a chunk in the timeline, it pops up the scene details
+// over the screen for me to edit, auto-saving after field change just like we
+// have now." The fields are the same ones the side panel held, so every
+// handler that wrote to them still does.
+function openChunk(i) {
+  if (!SCENES.length) return;
+  SEL = Math.max(0, Math.min(i, SCENES.length - 1));
+  drawInspector();
+  if (!$("chunksheet").open) $("chunksheet").showModal();
+}
+
 function cutLike(id) {
   const t = TRANSITIONS.find(x => x.id === id);
   return !!t && t.id !== "carry" && t.id !== "refresh";
@@ -1298,6 +1304,118 @@ function openInline(html, title, done) {
   $("inline").showModal();
 }
 
+// ADDING A SUBJECT IS ONE MODAL, not a row that appears and then has to be
+// filled in from three different places. CJ: "it needs to give me the option
+// of pre-saved character from the library OR a hand-written subject. And it
+// should give us the option of adding reference images or audio for that
+// subject AND option to save them permanently to the library."
+//
+// `kind` is person / place / thing — the same three the subject vocabulary
+// already has, which is why a setting is still a <Subject> to the model even
+// though it gets its own track.
+function addSubject(kind = "person") {
+  const lib = LIBRARY.map(c =>
+    `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+  openInline(`
+    <div class="row two">
+      <div><label>What is it</label>
+        <select id="as_kind">
+          <option value="person"${kind === "person" ? " selected" : ""}>a person</option>
+          <option value="place"${kind === "place" ? " selected" : ""}>a place — the setting</option>
+          <option value="thing"${kind === "thing" ? " selected" : ""}>a thing</option>
+        </select></div>
+      <div><label>From the library</label>
+        <select id="as_lib">
+          <option value="">— write it by hand instead —</option>${lib}
+        </select></div>
+    </div>
+    <div id="as_hand">
+      <label for="as_desc">Describe it</label>
+      <textarea id="as_desc" rows="2"
+        placeholder="a woman in her thirties, dark hair cut at the jaw"></textarea>
+      <div class="row two">
+        <div><label>Reference images</label>
+          <button id="as_pics" type="button">Choose images…</button>
+          <p class="hint" id="as_picn">none chosen</p></div>
+        <div><label>Voice sample</label>
+          <button id="as_voice" type="button">Choose a clip…</button>
+          <p class="hint" id="as_voicen">none chosen</p></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="as_save">
+        also save to the library, so other takes can use it</label>
+      <div id="as_namebox" hidden>
+        <label for="as_name">Save it as</label>
+        <input type="text" id="as_name" placeholder="jen">
+      </div>
+    </div>`, "Add a subject", () => {
+      const k = $("as_kind").value;
+      const from = $("as_lib").value;
+      const row = addRow(k === "place" ? "setting" : "library", {});
+      if (from) {
+        row.kind = "library"; row.from_library = from;
+      } else {
+        row.kind = k === "place" ? "setting" : "library";
+        row.from_library = "";
+        if (k === "place") row.setting = $("as_desc").value.trim();
+        else row.describe = $("as_desc").value.trim();
+        row.images = ADDPICS.slice();
+        row.voice_path = ADDVOICE || null;
+        row.use_voice = !!ADDVOICE;
+        if ($("as_save").checked) {
+          saveSubjectToLibrary($("as_name").value.trim()
+                               || ($("as_desc").value.trim().split(/\s+/)
+                                   .slice(0, 2).join("-") || "subject"),
+                               k, $("as_desc").value.trim(), ADDPICS, ADDVOICE);
+        }
+      }
+      ADDPICS = []; ADDVOICE = null;
+      refreshCast(); drawLanes();
+    });
+
+  // the hand-written half hides when a library entry is chosen
+  const sync = () => {
+    $("as_hand").hidden = !!$("as_lib").value;
+  };
+  $("as_lib").onchange = sync; sync();
+  $("as_pics").onclick = () => openPicker({
+    title: "Reference images", multi: true, chosen: ADDPICS,
+    done: paths => { ADDPICS = paths;
+      $("as_picn").textContent = paths.length
+        ? `${paths.length} chosen` : "none chosen"; },
+  });
+  $("as_voice").onclick = async () => {
+    if (!AUDIOS.length) AUDIOS = await optionsFor("LoadAudio", "audio");
+    openPicker({
+      title: "Voice sample", multi: false, chosen: [], assets: AUDIOS,
+      done: paths => { ADDVOICE = paths[0] || null;
+        $("as_voicen").textContent = ADDVOICE || "none chosen"; },
+    });
+  };
+  $("as_save").onchange = () => {
+    $("as_namebox").hidden = !$("as_save").checked;
+  };
+}
+
+let ADDPICS = [], ADDVOICE = null, AUDIOS = [];
+
+async function saveSubjectToLibrary(name, kind, description, images, voice) {
+  try {
+    const r = await post("/subject/save", {
+      name, kind: kind === "place" ? "place" : kind,
+      description, images,
+      // the voice is saved WITH the subject, so the next take that casts them
+      // gets the sample without being asked for it again
+      ...(voice ? { voice } : {}),
+    });
+    if (!r || !r.ok) {
+      fail(`could not save ${name} to the library: `
+           + ((r && r.error) || "no reason given"));
+      return;
+    }
+    await loadLibrary();
+  } catch (e) { fail(String(e)); }
+}
+
 function editRef(r) {
   const roles = REF_ROLES.map(x =>
     `<option value="${x}"${x === r.role ? " selected" : ""}>${x}</option>`).join("");
@@ -1360,9 +1478,12 @@ function drawContList() {
 
 function drawInspector() {
   const sc = SCENES[SEL];
-  if (!sc) { $("inspector").hidden = true; return; }
-  $("inspector").hidden = false;
-  $("insptitle").textContent = `Scene ${SEL + 1} of ${SCENES.length}`;
+  if (!sc) { $("chunksheet").close(); return; }
+  // THEY ARE CHUNKS, not scenes. CJ: "Scene details (like Delete chunk) isn't
+  // correct. It's chunks. Chunk 1 of 3. Delete chunk." The API field is still
+  // `scenes` because that is what the route is called; what the user reads is
+  // what the user called it.
+  $("insptitle").textContent = `Chunk ${SEL + 1} of ${SCENES.length}`;
   $("i_beat").value = sc.beat || "";
   fill($("i_len"), legalRuns(39, 396).map(r => ({
     v: r, t: `${(r / 24).toFixed(2)}s — ${r}f${AV_EXACT.has(r) ? " · both clocks" : ""}`,
@@ -1378,7 +1499,7 @@ function drawInspector() {
   $("i_seed").value = sc.seed_offset || 0;
   const t = TRANSITIONS.find(x => x.id === sc.continuity) || TRANSITIONS[0];
   $("i_contwhat").textContent = SEL === 0
-    ? "The first scene opens the take, so it has no transition in."
+    ? "The first chunk opens the take, so it has no transition in."
     : `${t.label} — ${t.hint}`;
   drawContList();
   $("contguide").hidden = SEL === 0;
@@ -1421,7 +1542,7 @@ function drawSceneLoras() {
   const rows = sceneLoras(SEL);
   host.innerHTML = "";
   if (!rows.length) {
-    host.innerHTML = `<p class="hint">None — this scene uses the static stack only.</p>`;
+    host.innerHTML = `<p class="hint">None — this chunk uses the static stack only.</p>`;
   }
   rows.forEach((l, k) => {
     const el = document.createElement("div");
@@ -1565,7 +1686,7 @@ function compileSchedule() {
   });
   const text = lines.length > 1 ? lines.join("\n") : "";
   $("sched").value = text;
-  $("schedview").textContent = text || "none — no scene has a LoRA";
+  $("schedview").textContent = text || "none — no chunk has a LoRA";
   save();
 }
 
@@ -1650,8 +1771,7 @@ async function refreshPlan() {
         })),
       };
       CONT = SCENES.slice(1).map(s => s.continuity);
-      $("scenesum").textContent =
-        `${r.scenes.length} scene(s) · ${r.total_seconds}s`;
+      // (the scene-count readout went with the list; `total` says it)
     } catch { setConn(false); return; }
     renderPlan(p);
     drawInspector();
@@ -1694,8 +1814,24 @@ function renderPlan(p) {
       `<div class="d">${dur}s</div>` +
       `<div class="b${c.beat ? "" : " none"}">` +
       (c.beat ? escapeHTML(c.beat) : "no beat written") + `</div>`;
-    seg.title = `${c.frames} frames · ${c.start_seconds}s → ${c.end_seconds}s`;
-    if (SCENES.length) makeSegInteractive(seg, i, p);
+    seg.title = `${c.frames} frames · ${c.start_seconds}s → ${c.end_seconds}s`
+      + " — click to edit";
+    if (SCENES.length) {
+      // CLICK A CHUNK, GET ITS DETAILS. The strip is the only list now, so it
+      // has to be the way in. mousedown is taken by the resize and reorder
+      // drags, so this fires on click and only when neither of those ran.
+      seg.onclick = (e) => {
+        if (e.target.closest(".grip") || seg.dataset.dragged) return;
+        openChunk(i);
+      };
+      // and a way out of it that does not need the details at all
+      const kill = document.createElement("button");
+      kill.className = "segx"; kill.textContent = "✕";
+      kill.title = `delete chunk ${c.number}`;
+      kill.onclick = (e) => { e.stopPropagation(); delScene(i); };
+      seg.appendChild(kill);
+      makeSegInteractive(seg, i, p);
+    }
     $("tl").appendChild(seg);
   });
   drawRuler(p);
@@ -1744,8 +1880,13 @@ function addRow(kind, seed = {}) {
     retention: seed.retention || "", wears: seed.wears || "", open: false,
   });
   drawCast();
+  return CAST[CAST.length - 1];     // the modal fills this in
 }
-function dropRow(id) { CAST = CAST.filter(r => r.id !== id); drawCast(); }
+function dropRow(id) {
+  CAST = CAST.filter(r => r.id !== id);
+  drawCast();
+  drawLanes();                      // the Cast and Setting tracks follow
+}
 
 function drawCast() {
   const host = $("cast");
@@ -2244,6 +2385,8 @@ function drawRefSlots() {
    the body to reorder. Lengths SNAP to legal runs -- there is no such thing as
    a 100-frame scene, so the drag lands on 90 or 107 and the readout says which. */
 function makeSegInteractive(seg, i, plan) {
+  // a drag that moved must not ALSO open the details when the mouse comes up
+  seg.addEventListener("mousedown", () => { delete seg.dataset.dragged; });
   const sc = SCENES[i];
   if (!sc) return;
   if (i === SEL) seg.classList.add("sel");
@@ -2251,7 +2394,7 @@ function makeSegInteractive(seg, i, plan) {
 
   const grip = document.createElement("div");
   grip.className = "grip";
-  grip.title = "drag to set this scene's length";
+  grip.title = "drag to set this chunk's length";
   seg.appendChild(grip);
 
   // ---- resize -------------------------------------------------------- //
@@ -2268,8 +2411,9 @@ function makeSegInteractive(seg, i, plan) {
         Math.abs(b - want) < Math.abs(a - want) ? b : a, runs[0]);
       if (snapped !== sc.frames) {
         sc.frames = snapped;
+        seg.dataset.dragged = "1";     // so mouseup does not also open details
         $("dragnote").textContent =
-          `scene ${i + 1}: ${snapped}f = ${(snapped / 24).toFixed(2)}s` +
+          `chunk ${i + 1}: ${snapped}f = ${(snapped / 24).toFixed(2)}s` +
           (AV_EXACT.has(snapped) ? "  · both clocks" : "  · off the audio grid");
         drawScenes();
       }
@@ -2629,34 +2773,6 @@ function wireControls() {
       drawSceneLoras(); compileSchedule();
     });
   };
-  $("addscene").onclick = () => addScene();
-  $("dupscene").onclick = () => SCENES.length && addScene(SEL);
-  $("inspdel").onclick = () => SCENES.length && delScene(SEL);
-  $("i_beat").addEventListener("input", () => {
-    if (!SCENES[SEL]) return;
-    SCENES[SEL].beat = $("i_beat").value;
-    clearTimeout(window._sb);
-    window._sb = setTimeout(() => { drawScenes(); refreshPlan(); }, 300);
-  });
-  // CHANGING A SCENE HAS TO REACH EVERYTHING THAT DESCRIBES IT. These two wrote
-  // into SCENES and stopped there: the timeline kept its old widths, the plan
-  // kept its old totals, the frame-size budget kept its old length, and nothing
-  // was persisted -- so a reload silently threw the edit away. `sceneChanged`
-  // is now the single path every scene edit goes through, including the drag
-  // handles, so they cannot drift apart again.
-  $("i_len").addEventListener("change", () => {
-    if (!SCENES[SEL]) return;
-    SCENES[SEL].frames = +$("i_len").value;
-    sceneChanged();
-  });
-  $("i_cont").addEventListener("change", () => {
-    if (!SCENES[SEL]) return;
-    SCENES[SEL].continuity = $("i_cont").value;
-    sceneChanged();
-  });
-  for (const id of ["sound", "music"]) {
-    $(id).addEventListener("input", checkSound);
-  }
   $("inline_cancel").onclick = () => { inlineDone = null; $("inline").close(); };
   $("inline_ok").onclick = () => {
     const fn = inlineDone; inlineDone = null; $("inline").close();
@@ -2666,9 +2782,11 @@ function wireControls() {
   // ---- the three track + buttons
   $("addchunk").onclick = () => {
     addScene(SCENES.length ? SCENES.length - 1 : null);
+    openChunk(SCENES.length - 1);        // straight into its details
   };
-  $("addcast2").onclick = () => { addRow("library"); };
-  $("addset").onclick = () => { addRow("setting"); };
+  $("chunkclose").onclick = () => $("chunksheet").close();
+  $("addcast2").onclick = () => addSubject("person");
+  $("addset").onclick = () => addSubject("place");
   $("addref").onclick = async () => {
     // IMAGES AND CLIPS BOTH. The cast picker lists LoadImage's folder; a
     // reference can equally be a video, so the two lists are merged here.
