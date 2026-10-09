@@ -468,8 +468,7 @@
 <main id="tab-generate" class="tabpane">
   <section class="col">
     <h2>Plan</h2>
-    <p class="hint">A readout, not a second place to set things. Length and
-    transition live on each chunk; this is what they add up to.</p>
+
     <!-- QUICK SETUP IS GONE. CJ: "there's literally no reason to use it at all
          really when a user can just manually add chunks. what's the point of
          it?" There was none. It generated N identical scenes, which is the one
@@ -560,8 +559,16 @@
 
   <section class="col">
     <h2>Render</h2>
+    <details id="refpanel">
+      <summary>References — everything the model is sent</summary>
+      <div class="body">
+        <p class="hint" id="refnote"></p>
+        <div class="slots" id="refslots"></div>
+        <span class="sub" id="refcount"></span>
+      </div>
+    </details>
     <details id="setup">
-      <summary>Models and references</summary>
+      <summary>Models</summary>
       <div class="body">
         <label for="unet">Diffusion model</label><select id="unet"></select>
         <p class="hint" id="modelwarn" hidden style="color:var(--bad)">This looks
@@ -584,12 +591,9 @@
         subject brings its own anchors; a typed one gets images in its cast row.
         Nothing is picked here, so the pictures CITED in the prompt and the
         pictures SENT to the model cannot be different files.</p>
-        <p class="hint" id="refnote"></p>
-        <div class="slots" id="refslots"></div>
-        <span class="sub" id="refcount"></span>
         <textarea id="sched" rows="3" hidden></textarea>
-        <p class="hint">Per-scene LoRAs live on the scenes themselves — open a
-        scene and use <strong>+ LoRA</strong>. The schedule below is what they
+        <p class="hint">Per-chunk LoRAs live on the chunks themselves — open a
+        chunk and use <strong>+ LoRA</strong>. The schedule below is what they
         compile to.</p>
         <details><summary>Compiled LoRA schedule</summary>
           <div class="body"><div class="gutter" id="schedview">none</div></div>
@@ -1126,7 +1130,7 @@ function shotSpan(i, chunks) {
   return new Set(Array.from({ length: b - a + 1 }, (_, k) => a + k));
 }
 
-function addChunkRef(source, kind, atChunk) {
+function addChunkRef(source, kind, atChunk, open = true) {
   // CJ: "we also need to add the Role and other editing details to the initial
   // use screen. It shouldn't require me to go into edit to set that." So an
   // added reference goes straight into its editor with the chunk span already
@@ -1144,7 +1148,7 @@ function addChunkRef(source, kind, atChunk) {
     spans: "", span_index: 0,
   });
   refsChanged();
-  editRef(CHUNKREFS[CHUNKREFS.length - 1]);
+  if (open) editRef(CHUNKREFS[CHUNKREFS.length - 1]);
 }
 
 function refsChanged() {
@@ -1297,7 +1301,7 @@ function drawLanes() {
       cls: " subject",
       spanOf: (r) => r.chunks || "all",
       setSpan: (r, v) => { r.chunks = v; },
-      name: (r) => r.setting || "the setting",
+      name: (r) => (r.setting || "").trim() || "(describe this setting)",
       note: (r) => `${(r.images || []).length} pic`,
       edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
@@ -1340,7 +1344,7 @@ function drawLanes() {
       if (!path) return;
       const box = ev.currentTarget.getBoundingClientRect();
       const frac = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
-      addChunkRef(path, isVideoPath(path),
+      addChunkRef(path, isVideoPath(path) ? "video" : "image",
                   Math.min(chunks.length - 1, Math.floor(frac * chunks.length)));
     },
   });
@@ -1374,6 +1378,7 @@ function openInline(html, title, done) {
       }
     }
   }
+  if ($("inline").open) $("inline").close();
   $("inline").showModal();
 }
 
@@ -1405,6 +1410,12 @@ function addSubject(kind = "person") {
   subjectModal(row, kind);
 }
 
+const PLACEHOLD = {
+  person: "a woman in her thirties, dark hair cut at the jaw",
+  place: "a bedroom in warm low light, curtains half drawn",
+  thing: "a brass desk lamp with a green glass shade",
+};
+
 function subjectModal(r, kind) {
   // `r` always exists: adding creates the row first so the modal can apply on
   // every keystroke. "fresh" only decides the title.
@@ -1433,23 +1444,26 @@ function subjectModal(r, kind) {
     <div id="as_hand">
       <label for="as_desc">Describe it</label>
       <textarea id="as_desc" rows="2"
-        placeholder="a woman in her thirties, dark hair cut at the jaw">${escapeHTML(desc0)}</textarea>
+        placeholder="${PLACEHOLD[kind]}">${escapeHTML(desc0)}</textarea>
       <div class="row two">
         <div><label for="as_ret">Retention</label><select id="as_ret">
           <option value="">(default for this kind)</option>
           ${RETENTIONS.map(v => `<option${r.retention === v ? " selected" : ""}>${v}</option>`).join("")}
         </select></div>
+        ${kind === "person" ? `
         <div><label for="as_wears">Wears</label>
           <input type="text" id="as_wears" placeholder="a charcoal wool coat"
-            value="${escapeHTML(r.wears || "")}"></div>
+            value="${escapeHTML(r.wears || "")}"></div>` : `<div></div>`}
       </div>
       <div class="row two">
         <div><label>Reference images</label>
           <button id="as_pics" type="button">Choose images…</button>
           <p class="hint" id="as_picn">${ADDPICS.length ? ADDPICS.length + " chosen" : "none chosen"}</p></div>
+        ${kind === "person" ? `
         <div><label>Voice sample</label>
           <button id="as_voice" type="button">Choose a clip…</button>
-          <p class="hint" id="as_voicen">${ADDVOICE || "none chosen"}</p></div>
+          <p class="hint" id="as_voicen">${ADDVOICE || "none chosen"}</p></div>`
+        : `<div></div>`}
       </div>
       <label class="chk"><input type="checkbox" id="as_save">
         also save to the library, so other takes can use it</label>
@@ -1472,12 +1486,12 @@ function subjectModal(r, kind) {
         row.subkind = k;                 // person / place / thing
         row.from_library = "";
         row.retention = $("as_ret").value;
-        row.wears = $("as_wears").value.trim();
+        if ($("as_wears")) row.wears = $("as_wears").value.trim();
         if (k === "place") row.setting = $("as_desc").value.trim();
         else row.describe = $("as_desc").value.trim();
         row.images = ADDPICS.slice();
-        row.voice_path = ADDVOICE || null;
-        row.use_voice = !!ADDVOICE;
+        row.voice_path = kind === "person" ? (ADDVOICE || null) : null;
+        row.use_voice = kind === "person" && !!ADDVOICE;
         // the library write is the one thing that must not repeat: it is a
         // POST, so it fires when the box is ticked and not again
         if ($("as_save").checked && !r._saved) {
@@ -1510,7 +1524,7 @@ function subjectModal(r, kind) {
       $("as_picn").textContent = paths.length
         ? `${paths.length} chosen` : "none chosen"; },
   });
-  $("as_voice").onclick = async () => {
+  if ($("as_voice")) $("as_voice").onclick = async () => {
     if (!AUDIOS.length) AUDIOS = await optionsFor("LoadAudio", "audio");
     openPicker({
       title: "Voice sample", multi: false, chosen: [], assets: AUDIOS,
@@ -2246,19 +2260,28 @@ function refreshCast() {
       if (problem) {
         note.textContent = problem;
         note.style.color = "var(--bad)";
-      } else if (pics !== REFS.length) {
+      } else {
+      // EVERY PICTURE THE CAST CARRIES, however it is wired. A subject
+      // narrowed to some chunks goes through a gate instead of a plain
+      // reference slot, which moved it from REFS to SCOPED -- and this check
+      // still counted only REFS, so it reported 7 cited against 6 sent the
+      // moment anyone dragged a cast bar. The model is sent both.
+      const sent = REFS.length + SCOPED.length;
+      if (pics !== sent) {
         // THE ONE THING THAT MUST NEVER BE SILENT: the prompt citing a
         // different number of pictures than the model is sent.
         note.textContent =
           `the prompt cites ${pics} picture(s) but the cast carries ` +
-          `${REFS.length} image(s). Those must match, or <Picture N> refers to ` +
+          `${sent} image(s). Those must match, or <Picture N> refers to ` +
           `something the model never saw.`;
         note.style.color = "var(--bad)";
       } else {
         note.textContent = pics
-          ? `${pics} picture(s) cited, ${REFS.length} sent — they match`
+          ? `${pics} picture(s) cited, ${sent} sent — they match`
+            + (SCOPED.length ? ` (${SCOPED.length} scoped to some chunks)` : "")
           : "";
         note.style.color = "var(--ink-faint)";
+      }
       }
     } catch { /* offline; the plan strip already says so */ }
     save();
@@ -2527,6 +2550,20 @@ let SCOPED = [];
 function drawRefSlots() {
   const host = $("refslots");
   host.innerHTML = "";
+  // EVERYTHING THE MODEL IS SENT, in one place: the cast's plain references,
+  // the ones scoped to some chunks, every voice, and the additional image and
+  // clip references. The panel used to show only REFS, which was the cast's
+  // unscoped pictures — so a setting, a prop, a scoped subject and every
+  // composition reference were all invisible here while being sent.
+  const extra = [
+    ...SCOPED.map(x => ({ path: x.source, from: x.label,
+                          tag: "scoped", chunks: x.chunks })),
+    ...CHUNKREFS.map(x => ({ path: x.source, from: x.label || x.source,
+                             tag: x.role, chunks: x.chunks,
+                             video: x.kind === "video" })),
+    ...VOICES.map(x => ({ path: x.path, from: x.from, tag: "voice",
+                          audio: true })),
+  ];
   REFS.forEach((r, i) => {
     const el = document.createElement("div");
     el.className = "slot";
@@ -2536,6 +2573,22 @@ function drawRefSlots() {
       `color:#fff;font:9.5px/1.3 var(--mono);padding:2px 3px">` +
       `P${i + 1} · ${escapeHTML(r.from)}</span>`;
     el.title = `<Picture ${i + 1}> — from ${r.from}\n${r.path}`;
+    host.appendChild(el);
+  });
+  extra.forEach(r => {
+    const el = document.createElement("div");
+    el.className = "slot";
+    el.style.cursor = "default";
+    const face = r.audio ? `<div class="vid">♪</div>`
+               : r.video ? `<div class="vid">▶</div>`
+               : `<img src="${assetURL(r.path, 75)}" alt="">`;
+    el.innerHTML = face +
+      `<span class="cap" style="position:absolute;inset:auto 0 0 0;background:#000a;` +
+      `color:#fff;font:9.5px/1.3 var(--mono);padding:2px 3px">` +
+      `${escapeHTML(r.tag)}${r.chunks && r.chunks !== "all"
+        ? " · " + escapeHTML(r.chunks) : ""}</span>`;
+    el.title = `${r.tag} — ${r.from}\n${r.path}`
+      + (r.chunks ? `\nchunks: ${r.chunks}` : "");
     host.appendChild(el);
   });
   const n = REFS.length;
@@ -2990,7 +3043,21 @@ function wireControls() {
       + `</div>`, "What the model will be told", null);
   };
   $("addcast2").onclick = () => addSubject("person");
-  $("addset").onclick = () => addSubject("place");
+  $("addset").onclick = () => {
+    // ONE PLACE, UNLESS THE PLACES TAKE TURNS. A take in two locations is a
+    // real thing, but only if each setting is scoped to part of the take --
+    // two settings both covering every chunk is the model being told the
+    // scene is in two places at once, which is a mistake rather than a style.
+    const places = CAST.filter(x => x.kind === "setting");
+    const covering = places.filter(x => !x.chunks || x.chunks === "all");
+    if (places.length && covering.length) {
+      fail("There is already a setting on every chunk. Narrow it on the "
+           + "Setting track first — drag its bar to the chunks it covers — "
+           + "and then a second one has somewhere to go.");
+      return;
+    }
+    addSubject("place");
+  };
   $("addprop").onclick = () => addSubject("thing");
   $("addref").onclick = async () => {
     // IMAGES AND CLIPS BOTH. The cast picker lists LoadImage's folder; a
@@ -3004,7 +3071,15 @@ function wireControls() {
       title: "Reference — an image or a clip",
       multi: true, chosen: [], assets: [...ASSETS, ...VIDEOS],
       done: paths => {
-        for (const path of paths) addChunkRef(path, isVideoPath(path), 0);
+        // isVideoPath returns a BOOLEAN and this argument is the KIND, so
+        // every picked clip was being added as an image -- wrong role, wrong
+        // loader, no trim. And addChunkRef opens the editor, so picking two
+        // called showModal() on an already-open dialog, which THROWS: that is
+        // why + appeared to do nothing at all.
+        paths.forEach((path, n) => {
+          addChunkRef(path, isVideoPath(path) ? "video" : "image", 0,
+                      n === paths.length - 1);   // only the last one opens
+        });
       },
     });
   };
