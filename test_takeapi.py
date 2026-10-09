@@ -268,6 +268,83 @@ print("a voice with no picture anywhere is refused, not silently dropped")
 raises("lone voice", lambda: ta.build(
     dict(REQ, references=[], audio_references=["v.wav"])), "picture")
 
+
+# ------------------------------------------- per-chunk references, with depth
+# CJ: "ability to add references both in terms of images and videos per chunk
+# Or overall for the whole video ... use as inspiration/composition only for
+# frame 0 (use a depth version of itself)."
+print("\na reference becomes loader -> [trim] -> [depth] -> gate -> slot")
+_CR = dict(REQ, chunk_references=[
+    {"source": "plate.png", "kind": "image", "role": "composition",
+     "chunks": "1"},
+    {"source": "move.mp4", "kind": "video", "role": "motion", "chunks": "2",
+     "start": 0, "length": 96},
+])
+_g = ta.build(_CR)
+_cls = [v["class_type"] for v in _g.values()]
+ok("the image loads", _cls.count("LoadImage") >= 1)
+ok("the video loads through GetVideoComponents",
+   "LoadVideo" in _cls and "GetVideoComponents" in _cls)
+ok("the trim is ImageFromBatch, in FRAMES", "ImageFromBatch" in _cls)
+check("both get a depth pass", _cls.count("DepthAnything_V2"), 2)
+check("sharing ONE model loader, since the weights are the same",
+      _cls.count("DownloadAndLoadDepthAnythingV2Model"), 1)
+check("and two gates", _cls.count("H3ChunkRef"), 2)
+
+print("the depth model is the one CJ's own graphs load")
+_dm = [v for v in _g.values()
+       if v["class_type"] == "DownloadAndLoadDepthAnythingV2Model"][0]
+check("model", _dm["inputs"]["model"], "depth_anything_v2_vitl_fp32.safetensors")
+check("precision", _dm["inputs"]["precision"], "auto")
+
+print("each lands in the slot its KIND belongs to")
+_cond = ta._one(_g, "h3.conditioning")
+_ins = _g[_cond]["inputs"]
+_gates = {k: v for k, v in _g.items() if v["class_type"] == "H3ChunkRef"}
+_img_gate = [k for k, v in _gates.items() if v["inputs"]["role"] == "composition"][0]
+_vid_gate = [k for k, v in _gates.items() if v["inputs"]["role"] == "motion"][0]
+ok("the composition reference is an IMAGE reference",
+   any(v == [_img_gate, 0] for k, v in _ins.items()
+       if k.startswith("ref_images.")))
+ok("the motion reference is a VIDEO reference",
+   any(v == [_vid_gate, 0] for k, v in _ins.items()
+       if k.startswith("ref_videos.")))
+ok("and the cast's own references keep their slots",
+   any(ta._one(_g, "h3.ref.0") == v[0] for v in _ins.values()
+       if isinstance(v, list)))
+
+print("the gates chain, and the last one feeds the prompt")
+_r1 = _gates[_img_gate].get("inputs", {}).get("retention_in")
+_r2 = _gates[_vid_gate].get("inputs", {}).get("retention_in")
+ok("exactly one gate starts the chain",
+   (_r1 is None) != (_r2 is None))
+_links = ta._one(_g, "h3.links")
+_wired = _g[_links]["inputs"].get("retention_1")
+ok("retention_1 is WIRED, not left as text", isinstance(_wired, list))
+ok("to a gate's retention output",
+   _wired[0] in _gates and _wired[1] == 2)
+
+print("each chunk_index comes from Open, resolved by NAME not position")
+from h3t.chunkrun import H3ChunkOpen as _Open
+_slot = list(_Open.RETURN_NAMES).index("chunk_index")
+ok("every gate reads the right slot",
+   all(v["inputs"]["chunk_index"][1] == _slot for v in _gates.values()))
+
+print("the caps H3 declares are enforced where the message can name the file")
+_many = ta.build(dict(REQ, chunk_references=[
+    {"source": f"v{i}.mp4", "kind": "video", "role": "motion"}
+    for i in range(5)]))
+check("at most three video references survive",
+      sum(1 for v in _many.values() if v["class_type"] == "LoadVideo"), 3)
+
+print("and nothing is built when nothing is asked for")
+_none = ta.build(REQ)
+ok("no depth model appears unbidden",
+   not any(v["class_type"].startswith("DownloadAndLoad")
+           for v in _none.values()))
+ok("no gates either",
+   not any(v["class_type"] == "H3ChunkRef" for v in _none.values()))
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

@@ -33,6 +33,14 @@ DEFAULT_TEMPLATE = "longform_ref2va"
 PLACEHOLDER = "REPLACE_ME"
 
 
+#: The depth model every composition/motion reference shares. READ OFF CJ'S OWN
+#: GRAPHS -- H3 10, 12 and 13 all load vitl_fp32 at auto precision. I had
+#: guessed fp16 from "that is the sensible middle", which is exactly the kind
+#: of invention that put three wrong aspect-ratio strings in the UI.
+DEPTH_MODEL = "depth_anything_v2_vitl_fp32.safetensors"
+DEPTH_PRECISION = "auto"
+
+
 class TakeError(ValueError):
     """A request that cannot be turned into a graph, with the reason."""
 
@@ -196,6 +204,18 @@ def build(req, template=None):
                         "take: H3 pairs an audio reference with an image or a "
                         "video, and a lone voice is dropped")
     set_audio_references(graph, voices)
+
+    # PER-CHUNK REFERENCES, after the cast's so the image slots they take are
+    # the ones left over. The last gate's retention text feeds the links node:
+    # that is how a composition clause reaches the prompt at all.
+    gate, ref_lint = set_chunk_references(graph, req.get("chunk_references")
+                                          or []) or (None, [])
+    if gate is not None:
+        # a LINK, not a value, so it bypasses _set -- which exists to stop a
+        # request overwriting template wiring, and this is the wiring
+        links = _one(graph, "h3.links", required=False)
+        if links is not None:
+            graph[links].setdefault("inputs", {})["retention_1"] = [gate, 2]
 
     # A CAST BEATS TWO TEXT BOXES. When `cast` is given it is compiled through
     # h3script and OVERRIDES subject_def_1 / retention_1, so a caller never
@@ -384,6 +404,153 @@ def set_audio_references(graph, names):
         ins[f"ref_audios.ref_audio_{i}"] = [nid, 0]
         made.append(nid)
     return made
+
+
+#: What H3 accepts. The conditioning node declares these as Autogrow maxima and
+#: a request past them fails validation, so they are checked here where the
+#: message can say which reference was dropped and why.
+REF_CAPS = {"image": 9, "video": 3, "audio": 3}
+
+#: Roles that want a DEPTH pass rather than the picture itself. Depth is the
+#: mechanism that separates composition and motion from appearance -- without
+#: it a reference brings its subject along, which is the measured trap.
+DEPTH_ROLES = ("composition", "motion")
+
+
+def set_chunk_references(graph, refs):
+    """Wire per-chunk references: loader -> [trim] -> [depth] -> gate -> slot.
+
+    Each entry is
+        {source, kind: image|video, role, chunks, depth, start, length, label}
+
+    and becomes its own little chain in the graph. The pieces are all stock --
+    LoadImage / LoadVideo + GetVideoComponents, ImageFromBatch for the trim,
+    DepthAnything_V2 for the depth pass -- and the only node of ours is the
+    H3ChunkRef gate, which holds the reference to its chunks and emits the
+    retention clause.
+
+    THE DEPTH MODEL IS SHARED. One loader for every reference that needs it:
+    it is the same weights and minting one per reference would load them again
+    for each.
+
+    THE GATES CHAIN THEIR RETENTION, because H3LongFormLinks has a single
+    `retention_1` and an input takes one wire. The last gate's text goes there.
+    -> the node id to wire into retention_1, or None.
+    """
+    if not refs:
+        return None
+    cond = _one(graph, "h3.conditioning", required=False)
+    if cond is None:
+        raise TakeError("the template has no h3.conditioning node, so "
+                        "per-chunk references cannot be wired")
+    ins = graph[cond].setdefault("inputs", {})
+
+    open_node = _one(graph, "h3.chunk.open", required=False)
+    if open_node is None:
+        raise TakeError("the template has no h3.chunk.open node, so a "
+                        "reference cannot know which chunk is rendering")
+    plan_node = _one(graph, "h3.plan", required=False)
+
+    # H3ChunkOpen's chunk_index and the plan, by NAME rather than by position --
+    # the slot contract says outputs only ever get appended, so a name resolved
+    # once here cannot drift the way a hardcoded index would.
+    try:
+        from .chunkrun import H3ChunkOpen
+        outs = list(H3ChunkOpen.RETURN_NAMES)
+        idx_slot = outs.index("chunk_index")
+    except Exception:                                           # noqa: BLE001
+        idx_slot = 4
+
+    next_id = [max((int(k) for k in graph if k.isdigit()), default=0) + 1]
+
+    def mint(cls, inputs, title=None):
+        nid = str(next_id[0]); next_id[0] += 1
+        graph[nid] = {"class_type": cls, "inputs": dict(inputs)}
+        if title:
+            graph[nid]["_meta"] = {"title": title}
+        return nid
+
+    depth_model = [None]
+
+    def depth_for(src):
+        if depth_model[0] is None:
+            depth_model[0] = mint("DownloadAndLoadDepthAnythingV2Model",
+                                  {"model": DEPTH_MODEL,
+                                   "precision": DEPTH_PRECISION},
+                                  "h3.depth.model")
+        return mint("DepthAnything_V2",
+                    {"da_model": [depth_model[0], 0], "images": src})
+
+    counts = {"image": 0, "video": 0}
+    last_ret, lint = None, []
+
+    for i, r in enumerate(refs):
+        kind = "video" if str(r.get("kind", "image")).lower() == "video" \
+            else "image"
+        src_name = str(r.get("source") or "").strip()
+        if not src_name:
+            lint.append(f"reference {i + 1} has no source; skipped")
+            continue
+        if counts[kind] >= REF_CAPS[kind]:
+            lint.append(f"{src_name}: H3 takes at most {REF_CAPS[kind]} "
+                        f"{kind} reference(s) — this one is DROPPED")
+            continue
+
+        if kind == "video":
+            vid = mint("LoadVideo", {"file": src_name})
+            node = mint("GetVideoComponents", {"video": [vid, 0]})
+            out = [node, 0]                       # images
+        else:
+            out = [mint("LoadImage", {"image": src_name}), 0]
+
+        # TRIM IN FRAMES, not seconds. The grid this pack lives on is 17n+5
+        # frames, and a trim expressed in seconds has to be rounded somewhere --
+        # better here, visibly, than silently inside a node.
+        length = int(r.get("length") or 0)
+        start = int(r.get("start") or 0)
+        if kind == "video" and (length or start):
+            out = [mint("ImageFromBatch", {"image": out, "batch_index": start,
+                                           "length": max(1, length or 4096)}), 0]
+
+        role = str(r.get("role") or "composition")
+        wants_depth = r.get("depth")
+        wants_depth = role in DEPTH_ROLES if wants_depth is None \
+            else bool(wants_depth)
+        if wants_depth:
+            out = [depth_for(out), 0]
+        elif role in DEPTH_ROLES:
+            lint.append(f"{src_name}: role {role!r} without a depth pass — the "
+                        f"reference will bring its appearance with it")
+
+        counts[kind] += 1
+        gate_in = {"role": role,
+                   "chunks": str(r.get("chunks") or "all"),
+                   "chunk_index": [open_node, idx_slot],
+                   "image": out,
+                   "ordinal": counts[kind],
+                   "label": str(r.get("label") or src_name)}
+        if plan_node is not None:
+            gate_in["chunk_plan"] = [plan_node, 0]
+        if last_ret is not None:
+            gate_in["retention_in"] = [last_ret, 2]
+        gate = mint("H3ChunkRef", gate_in, f"h3.chunkref.{i}")
+        last_ret = gate
+
+        slot = "ref_videos.ref_video_" if kind == "video" \
+            else "ref_images.ref_image_"
+        ins[f"{slot}{counts[kind] - 1 if kind == 'video' else _next_image_slot(ins)}"] = [gate, 0]
+
+    return last_ret, lint
+
+
+def _next_image_slot(ins):
+    """The first free ref_images index, so a gate lands after the cast's."""
+    used = {int(k.rsplit("_", 1)[1]) for k in ins
+            if k.startswith("ref_images.ref_image_")}
+    i = 0
+    while i in used:
+        i += 1
+    return i
 
 
 def set_references(graph, names):
