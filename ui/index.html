@@ -475,6 +475,7 @@
         <div id="tl" class="tl"></div><div class="tail"></div>
       </div>
       <div class="trk top"><div class="gut"><span>Cast</span>
+        <button id="castsee" title="what the model will be told">?</button>
         <button id="addcast2" title="add a person or thing the take refers to">+</button></div>
         <div id="castlanes" class="lanes"></div></div>
       <div class="trk top"><div class="gut"><span>Setting</span>
@@ -508,23 +509,13 @@
          ones those details write into. -->
     <textarea id="beats" hidden></textarea>
 
-    <h2>Cast</h2>
-    <p class="hint">A subject is anyone or anywhere the prompt names. Pick a saved
-    character and its anchors and wording come with it; or describe one here.
-    Numbering, retention wording and the anchor count are worked out for you —
-    you never type <code>&lt;Subject 2&gt;</code>.</p>
-    <div id="cast"></div>
-    <div class="bar">
-      <button id="addperson">+ Person</button>
-      <button id="addsetting">+ Setting</button>
-      <button id="addlib">+ From library</button>
-    </div>
-    <details id="castout">
-      <summary>What the model will be told</summary>
-      <div class="body">
-        <div class="gutter" id="castpreview">add a subject to see it</div>
-      </div>
-    </details>
+    <!-- THE CAST PANEL IS GONE. Cast and Setting are tracks on the timeline
+         and each subject is edited in a modal, so a second list of the same
+         people with its own + buttons was the scene list's mistake repeated.
+         What the model will be told is worth keeping and is now a modal of its
+         own, opened from the Cast track. -->
+    <div id="cast" hidden></div>
+    <div id="castpreview" hidden></div>
 
     <h2>Library</h2>
     <p class="hint">Saved subjects, reusable across takes. A subject is a person,
@@ -1235,9 +1226,7 @@ function drawLanes() {
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.from_library || r.describe || r.setting || "subject",
     note: (r) => `${(r.images || []).length} pic`,
-    edit: (r) => { r.open = true; drawCast();
-                   document.getElementById("castlist")
-                     ?.scrollIntoView({ block: "nearest" }); },
+    edit: (r) => editSubject(r),
     drop: (r) => { dropRow(r.id); },
     editTitle: "open this subject in the Cast panel",
     empty: "no cast yet — + adds a person, or anything else the take names",
@@ -1257,7 +1246,7 @@ function drawLanes() {
       setSpan: (r, v) => { r.chunks = v; },
       name: (r) => r.setting || "the setting",
       note: (r) => `${(r.images || []).length} pic`,
-      edit: (r) => { r.open = true; drawCast(); },
+      edit: (r) => editSubject(r),
       drop: (r) => { dropRow(r.id); },
       editTitle: "open this setting in the Cast panel",
       empty: "no setting — + describes where this happens. It is a <Subject> "
@@ -1301,6 +1290,9 @@ function openInline(html, title, done) {
   $("inline_title").textContent = title;
   $("inline_body").innerHTML = html;
   inlineDone = done;
+  // a readout has nothing to apply, so it gets one button that just closes
+  $("inline_ok").textContent = done ? "Apply" : "Close";
+  $("inline_cancel").hidden = !done;
   $("inline").showModal();
 }
 
@@ -1313,7 +1305,23 @@ function openInline(html, title, done) {
 // `kind` is person / place / thing — the same three the subject vocabulary
 // already has, which is why a setting is still a <Subject> to the model even
 // though it gets its own track.
+// ONE EDITOR PER THING. Adding and editing a subject are the same form, so
+// there is no second place for a description to be wrong -- the mistake the
+// scene list and the cast panel both made.
+function editSubject(r) {
+  subjectModal(r);
+}
+
 function addSubject(kind = "person") {
+  subjectModal(null, kind);
+}
+
+function subjectModal(r, kind) {
+  const editing = !!r;
+  kind = kind || (r ? (r.kind === "setting" ? "place" : "person") : "person");
+  ADDPICS = editing ? (r.images || []).slice() : [];
+  ADDVOICE = editing ? (r.voice_path || null) : null;
+  const desc0 = editing ? (r.setting || r.describe || "") : "";
   const lib = LIBRARY.map(c =>
     `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
   openInline(`
@@ -1332,14 +1340,23 @@ function addSubject(kind = "person") {
     <div id="as_hand">
       <label for="as_desc">Describe it</label>
       <textarea id="as_desc" rows="2"
-        placeholder="a woman in her thirties, dark hair cut at the jaw"></textarea>
+        placeholder="a woman in her thirties, dark hair cut at the jaw">${escapeHTML(desc0)}</textarea>
+      <div class="row two">
+        <div><label for="as_ret">Retention</label><select id="as_ret">
+          <option value="">(default for this kind)</option>
+          ${RETENTIONS.map(v => `<option${editing && r.retention === v ? " selected" : ""}>${v}</option>`).join("")}
+        </select></div>
+        <div><label for="as_wears">Wears</label>
+          <input type="text" id="as_wears" placeholder="a charcoal wool coat"
+            value="${editing ? escapeHTML(r.wears || "") : ""}"></div>
+      </div>
       <div class="row two">
         <div><label>Reference images</label>
           <button id="as_pics" type="button">Choose images…</button>
-          <p class="hint" id="as_picn">none chosen</p></div>
+          <p class="hint" id="as_picn">${ADDPICS.length ? ADDPICS.length + " chosen" : "none chosen"}</p></div>
         <div><label>Voice sample</label>
           <button id="as_voice" type="button">Choose a clip…</button>
-          <p class="hint" id="as_voicen">none chosen</p></div>
+          <p class="hint" id="as_voicen">${ADDVOICE || "none chosen"}</p></div>
       </div>
       <label class="chk"><input type="checkbox" id="as_save">
         also save to the library, so other takes can use it</label>
@@ -1347,15 +1364,17 @@ function addSubject(kind = "person") {
         <label for="as_name">Save it as</label>
         <input type="text" id="as_name" placeholder="jen">
       </div>
-    </div>`, "Add a subject", () => {
+    </div>`, editing ? "Edit subject" : "Add a subject", () => {
       const k = $("as_kind").value;
       const from = $("as_lib").value;
-      const row = addRow(k === "place" ? "setting" : "library", {});
+      const row = editing ? r : addRow(k === "place" ? "setting" : "library", {});
       if (from) {
         row.kind = "library"; row.from_library = from;
       } else {
         row.kind = k === "place" ? "setting" : "library";
         row.from_library = "";
+        row.retention = $("as_ret").value;
+        row.wears = $("as_wears").value.trim();
         if (k === "place") row.setting = $("as_desc").value.trim();
         else row.describe = $("as_desc").value.trim();
         row.images = ADDPICS.slice();
@@ -1376,6 +1395,7 @@ function addSubject(kind = "person") {
   const sync = () => {
     $("as_hand").hidden = !!$("as_lib").value;
   };
+  if (editing && r.from_library) $("as_lib").value = r.from_library;
   $("as_lib").onchange = sync; sync();
   $("as_pics").onclick = () => openPicker({
     title: "Reference images", multi: true, chosen: ADDPICS,
@@ -1889,6 +1909,16 @@ function dropRow(id) {
 }
 
 function drawCast() {
+  // THE ROW LIST IS GONE; this keeps the derived state and the preview current.
+  // Cast and Setting are tracks, and a subject is edited in a modal.
+  const castHost = $("cast");
+  if (!castHost || castHost.hidden) {
+    deriveRefs();
+    refreshCast();      // rebuilds "what the model will be told"
+    drawLanes();
+    save();
+    return;
+  }
   const host = $("cast");
   host.innerHTML = "";
   if (!CAST.length) {
@@ -2244,7 +2274,6 @@ async function loadLibrary() {
     SUBJECTS = r.subjects || [];
   } catch { SUBJECTS = []; }
   LIBRARY = SUBJECTS.map(s => s.name);
-  $("addlib").disabled = !LIBRARY.length;
   drawLibrary();
 }
 
@@ -2785,6 +2814,14 @@ function wireControls() {
     openChunk(SCENES.length - 1);        // straight into its details
   };
   $("chunkclose").onclick = () => $("chunksheet").close();
+  $("castsee").onclick = () => {
+    // the compiled subject_definitions and retention, which used to sit in a
+    // <details> under the cast panel. It is a readout, so it gets a modal with
+    // nothing to apply.
+    openInline(`<div class="gutter" style="white-space:pre-wrap">`
+      + escapeHTML($("castpreview").textContent || "add a subject to see it")
+      + `</div>`, "What the model will be told", null);
+  };
   $("addcast2").onclick = () => addSubject("person");
   $("addset").onclick = () => addSubject("place");
   $("addref").onclick = async () => {
@@ -2830,9 +2867,6 @@ function wireControls() {
   $("e_save").onclick = saveSubject;
   $("e_delete").onclick = deleteSubject;
   $("e_cancel").onclick = () => { $("editor").open = false; };
-  $("addperson").onclick = () => addRow("person");
-  $("addsetting").onclick = () => addRow("setting");
-  $("addlib").onclick = () => addRow("library", { from_library: LIBRARY[0] });
   $("ctx").addEventListener("change", () => { drawScenes(); refreshPlan(); });
   let t; $("beats").addEventListener("input", () => {
     clearTimeout(t); t = setTimeout(refreshPlan, 250);
@@ -2913,7 +2947,6 @@ function wireControls() {
     LORAS = loras;
     fill($("e_voice"), [""].concat(await optionsFor("LoadAudio", "audio")));
     await loadLibrary();
-    if (!LIBRARY.length) $("addlib").title = "no saved subjects yet";
     paintStatic();
     drawRefSlots();
     drawAnchorTiles();
