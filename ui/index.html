@@ -113,8 +113,14 @@
      the chunk strip had no label column and the lanes had a 128px one, so the
      two were offset by exactly that much and the "subject" row lined up with
      nothing. */
-  .tracks { --gut: 104px; display: flex; flex-direction: column; gap: 4px;
-            margin: 10px 0 4px; }
+  /* --gut is the label column, --tail the controls column. BOTH are reserved
+     on every track, including Chunks, which has neither -- the cast and
+     reference rows carried trailing buttons and the chunk strip did not, so
+     their cells were narrower by exactly that width and drifted left. */
+  .tracks { --gut: 104px; --tail: 82px;
+            display: flex; flex-direction: column; gap: 4px; margin: 10px 0 4px; }
+  .trk > .tail { width: var(--tail); flex: none; display: flex; gap: 2px;
+                 justify-content: flex-end; }
   .trk { display: flex; align-items: center; gap: 10px; }
   .trk.top { align-items: flex-start; }
   .trk > .gut {
@@ -157,10 +163,17 @@
   .lane .cell.on { background: var(--accent-dim); border-color: var(--accent); }
   .lane .cell.on.subject { background: var(--line-strong); border-color: var(--ink-faint); }
   .lane.locked .cell { cursor: default; }
+  /* the per-row controls live in the reserved tail, so they take space from
+     nothing */
+  .lane { gap: 0; align-items: center; }
+  .lane .tail { width: var(--tail); flex: none; display: flex; gap: 2px;
+                justify-content: flex-end; }
   .lane .x {
-    flex: none; width: 18px; height: 18px; padding: 0; font-size: 11px;
-    background: none; border: 0; color: var(--ink-faint); cursor: pointer;
+    flex: none; width: 24px; height: 18px; padding: 0; font-size: 10px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px;
+    color: var(--ink-faint); cursor: pointer;
   }
+  .lane .x:hover { border-color: var(--accent); color: var(--ink); }
   .lane .x:hover { color: var(--bad); }
   .lanedrop {
     margin-top: 4px; border: 1px dashed var(--line); border-radius: var(--r);
@@ -444,15 +457,18 @@
     <select id="cf" hidden></select>
     <div class="tracks">
       <div class="trk"><div class="gut"></div>
-        <div id="ruler" class="ruler"></div></div>
+        <div id="ruler" class="ruler"></div><div class="tail"></div></div>
       <div class="trk">
         <div class="gut"><span>Chunks</span>
           <button id="addchunk" title="add a scene at the end">+</button></div>
-        <div id="tl" class="tl"></div>
+        <div id="tl" class="tl"></div><div class="tail"></div>
       </div>
       <div class="trk top"><div class="gut"><span>Cast</span>
-        <button id="addcast2" title="add a subject">+</button></div>
+        <button id="addcast2" title="add a person or thing the take refers to">+</button></div>
         <div id="castlanes" class="lanes"></div></div>
+      <div class="trk top"><div class="gut"><span>Setting</span>
+        <button id="addset" title="add the place this happens">+</button></div>
+        <div id="setlanes" class="lanes"></div></div>
       <div class="trk top"><div class="gut"><span>References</span>
         <button id="addref" title="add an image or clip">+</button></div>
         <div id="lanes" class="lanes"></div></div>
@@ -710,6 +726,11 @@
     <strong id="pick_title">Choose images</strong>
     <input type="text" id="pick_q" placeholder="filter by name…" style="flex:1">
     <select id="pick_folder" style="width:auto"></select>
+    <select id="pick_kind" style="width:auto" hidden>
+      <option value="">Images and clips</option>
+      <option value="image">Images only</option>
+      <option value="video">Clips only</option>
+    </select>
     <button id="pick_close">Close</button>
   </div>
   <div class="bd" id="pick_body"><div class="tiles" id="pick_tiles"></div></div>
@@ -1097,6 +1118,17 @@ function laneRow(items, host, chunks, opts) {
       refsChanged();
     };
 
+    // the span becomes everything between the anchor and wherever the cursor
+    // is -- one contiguous run, which is the only shape a bar can draw and
+    // the only shape `2-4` can say
+    const paint = (i) => {
+      if (!LANEDRAG) return;
+      const a = Math.min(LANEDRAG.anchor, i), b = Math.max(LANEDRAG.anchor, i);
+      set.clear();
+      for (let k = a; k <= b; k++) set.add(k);
+      commit();
+    };
+
     chunks.forEach((c, i) => {
       if (i > 0) {
         const sp = document.createElement("div");
@@ -1108,18 +1140,29 @@ function laneRow(items, host, chunks, opts) {
       cell.style.flex = String(c.frames);
       cell.title = `${opts.name(r)} — chunk ${c.number}`
         + (set.has(i) ? "" : " (not used here)");
+      // GRAB AN EDGE AND PULL, rather than clicking every chunk in turn.
+      // Pressing anywhere on a bar takes the nearer end with you; pressing
+      // off the bar starts a fresh span from there. Either way the range
+      // follows the cursor, so a four-chunk reference is one gesture.
       cell.onmousedown = (e) => {
         e.preventDefault();
-        LANEDRAG = { r, add: !set.has(i) };
+        const on = [...set].sort((a, b) => a - b);
+        if (set.has(i) && on.length > 1) {
+          // which end is nearer? that is the one being moved
+          const lo = on[0], hi = on[on.length - 1];
+          LANEDRAG = { r, mode: "edge",
+                       anchor: (i - lo) <= (hi - i) ? hi : lo };
+        } else if (set.has(i)) {
+          LANEDRAG = { r, mode: "edge", anchor: i };
+        } else {
+          LANEDRAG = { r, mode: "edge", anchor: i };
+        }
         document.addEventListener("mouseup", () => { LANEDRAG = null; },
                                   { once: true });
-        LANEDRAG.add ? set.add(i) : set.delete(i);
-        commit();
+        paint(i);
       };
       cell.onmouseenter = () => {
-        if (!LANEDRAG || LANEDRAG.r !== r) return;
-        LANEDRAG.add ? set.add(i) : set.delete(i);
-        commit();
+        if (LANEDRAG && LANEDRAG.r === r) paint(i);
       };
       // the label sits in the first cell of each run and overflows across it
       if (set.has(i) && !set.has(i - 1)) {
@@ -1132,15 +1175,23 @@ function laneRow(items, host, chunks, opts) {
       t.appendChild(cell);
     });
 
+    // "⋯" and "✕" told CJ nothing. Words do.
+    const tail = document.createElement("div");
+    tail.className = "tail";
     const edit = document.createElement("button");
-    edit.className = "x"; edit.textContent = "⋯";
-    edit.title = "change what this is";
+    edit.className = "x"; edit.textContent = "edit";
+    edit.title = opts.editTitle || "change what this is";
     edit.onclick = () => opts.edit(r);
+    const all = document.createElement("button");
+    all.className = "x"; all.textContent = "all";
+    all.title = "use it on every chunk";
+    all.onclick = () => { opts.setSpan(r, "all"); refsChanged(); };
     const x = document.createElement("button");
-    x.className = "x"; x.textContent = "✕";
-    x.title = "remove";
+    x.className = "x"; x.textContent = "del";
+    x.title = "remove it from the take";
     x.onclick = () => opts.drop(r);
-    row.append(t, edit, x);
+    tail.append(all, edit, x);
+    row.append(t, tail);
     host.appendChild(row);
   }
   if (!items.length) {
@@ -1169,20 +1220,44 @@ function drawLanes() {
   // ---- CAST. A span here is which chunks the subject's pictures are wired
   // into. Scoped to fewer than all, they go through H3ChunkRef with the
   // `identity` role; across the whole take they stay plain references.
-  laneRow(CAST, castHost, chunks, {
+  const people = CAST.filter(r => r.kind !== "setting");
+  const places = CAST.filter(r => r.kind === "setting");
+
+  laneRow(people, castHost, chunks, {
     cls: " subject",
     spanOf: (r) => r.chunks || "all",
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.from_library || r.describe || r.setting || "subject",
-    note: (r) => r.kind === "setting" ? "setting"
-                : `${(r.images || []).length} pic`,
+    note: (r) => `${(r.images || []).length} pic`,
     edit: (r) => { r.open = true; drawCast();
                    document.getElementById("castlist")
                      ?.scrollIntoView({ block: "nearest" }); },
     drop: (r) => { dropRow(r.id); },
-    empty: "no cast yet — + adds a subject, a setting or anything else the "
-         + "take refers to",
+    editTitle: "open this subject in the Cast panel",
+    empty: "no cast yet — + adds a person, or anything else the take names",
   });
+
+  // A SETTING IS ITS OWN TRACK. CJ: "a setting isn't exactly a cast member.
+  // even if it is just another subject in terms of the model." Both are true,
+  // so the model keeps treating it as a <Subject> and the timeline stops
+  // pretending it is a person. One take has one place far more often than it
+  // has one character, and it reads differently against the chunks.
+  const setHost = $("setlanes");
+  if (setHost) {
+    setHost.innerHTML = "";
+    laneRow(places, setHost, chunks, {
+      cls: " subject",
+      spanOf: (r) => r.chunks || "all",
+      setSpan: (r, v) => { r.chunks = v; },
+      name: (r) => r.setting || "the setting",
+      note: (r) => `${(r.images || []).length} pic`,
+      edit: (r) => { r.open = true; drawCast(); },
+      drop: (r) => { dropRow(r.id); },
+      editTitle: "open this setting in the Cast panel",
+      empty: "no setting — + describes where this happens. It is a <Subject> "
+           + "to the model, which is why it still lives in the Cast panel.",
+    });
+  }
 
   // ---- REFERENCES
   laneRow(CHUNKREFS, refHost, chunks, {
@@ -1920,6 +1995,9 @@ function folderOf(path) {
 
 async function loadAssets() {
   ASSETS = await optionsFor("LoadImage", "image");
+  // fetched here, not on first use: the reference picker shows both lists, and
+  // an await inside a click handler is a click that does nothing for a moment
+  VIDEOS = await optionsFor("LoadVideo", "file");
   const folders = [...new Set(ASSETS.map(folderOf))].sort();
   fill($("pick_folder"), [{ v: "", t: `all (${ASSETS.length})` }].concat(
     folders.filter(Boolean).map(f => ({ v: f, t: f }))));
@@ -1929,6 +2007,9 @@ async function loadAssets() {
 let pickState = null;            // {multi, chosen:Set, done(paths)}
 
 function openPicker({ title, multi, chosen = [], done, assets = null }) {
+  // the kind filter is only meaningful when the list actually holds both
+  $("pick_kind").hidden = !(assets || []).some(isVideoPath);
+  $("pick_kind").value = "";
   // `assets` lets a caller widen the list -- a reference can be a clip, and
   // LoadVideo's folder is a different list from LoadImage's. Null keeps the
   // image list, which is what every existing caller wants.
@@ -1943,8 +2024,10 @@ function drawPicker() {
   const folder = $("pick_folder").value;
   const host = $("pick_tiles");
   host.innerHTML = "";
+  const kind = $("pick_kind").value;
   const shown = (pickState.assets || ASSETS).filter(a =>
-    (!folder || folderOf(a) === folder) && (!q || a.toLowerCase().includes(q)));
+    (!folder || folderOf(a) === folder) && (!q || a.toLowerCase().includes(q))
+    && (!kind || (kind === "video") === isVideoPath(a)));
   if (!shown.length) {
     host.innerHTML = `<p class="hint">Nothing matches. Upload files below.</p>`;
   }
@@ -2506,6 +2589,7 @@ function wireControls() {
   };
   $("pick_close").onclick = closePicker;
   $("pick_q").addEventListener("input", drawPicker);
+  $("pick_kind").addEventListener("change", drawPicker);
   $("pick_folder").addEventListener("change", drawPicker);
   $("pick_file").addEventListener("change", async e => {
     const r = await uploadFiles([...e.target.files], $("pick_sub").value.trim());
@@ -2584,10 +2668,15 @@ function wireControls() {
     addScene(SCENES.length ? SCENES.length - 1 : null);
   };
   $("addcast2").onclick = () => { addRow("library"); };
+  $("addset").onclick = () => { addRow("setting"); };
   $("addref").onclick = async () => {
     // IMAGES AND CLIPS BOTH. The cast picker lists LoadImage's folder; a
     // reference can equally be a video, so the two lists are merged here.
     if (!VIDEOS.length) VIDEOS = await optionsFor("LoadVideo", "file");
+    if (!VIDEOS.length) {
+      fail("no clips in ComfyUI/input — drop one in, or restart ComfyUI if "
+           + "you just added it; the list comes from LoadVideo.");
+    }
     openPicker({
       title: "Reference — an image or a clip",
       multi: true, chosen: [], assets: [...ASSETS, ...VIDEOS],
