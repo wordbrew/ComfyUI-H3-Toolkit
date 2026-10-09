@@ -109,62 +109,64 @@ ck("no clash, no suffix", H.uniqueHandle("Lily", "9"), "lily");
 
 console.log("\nSWAP IS SCOPED, and counts what it will actually change");
 // CJ: "user can then choose to swap only specific chunk or swap all chunks."
-// The count shown in the dialog and the rewrite must use the same pattern AND
-// the same scope, or it promises one thing and does another.
+// The count the UI shows and the rewrite it performs must use the same
+// pattern AND the same scope, or it promises one thing and does another.
+//
+// The harness supplies SCENES and $ as the real names rather than rewriting
+// the source: patching `SCENES.flatMap` worked until countHandle also said
+// `SCENES[c]`, and a test that edits the code it tests breaks every time that
+// code is touched.
 {
   const grab = (n) => src.match(
     new RegExp("function " + n + "\\([\\s\\S]*?\\n\\}"))[0];
-  let SC = [], F = {};
-  const api = new Function("getS", "getF", "setF", [
-    grab("handleRe"),
-    grab("renameHandle")
-      .replace(/\$\("head"\)\.value = swap\(\$\("head"\)\.value\);/,
-               'setF("head", swap(getF("head")));')
-      .replace(/\$\("tail"\)\.value = swap\(\$\("tail"\)\.value\);/,
-               'setF("tail", swap(getF("tail")));')
-      .replace(/SCENES\.forEach/, "getS().forEach")
-      .replace(/if \(n\) \{[^}]*\}/, ""),
-    grab("countHandle")
-      .replace(/\$\("head"\)\.value, \$\("tail"\)\.value,/,
-               'getF("head"), getF("tail"),')
-      .replace(/SCENES\.flatMap/, "getS().flatMap")
-      .replace(/SCENES\[only\]/g, "getS()[only]"),
-  ].join("\n") + "; return { renameHandle, countHandle };")(
-    () => SC, (k) => F[k], (k, v) => { F[k] = v; });
+  const F = {};
+  const SCENES = [];
+  const $ = (id) => F[id] || (F[id] = { value: "" });
+  const api = new Function("SCENES", "$", "drawScenes", "checkHandles", "save",
+    [grab("handleRe"), grab("renameHandle"), grab("countHandle")].join("\n")
+    + "; return { renameHandle, countHandle };")(
+      SCENES, $, () => {}, () => {}, () => {});
 
   const reset = () => {
-    SC = [{ beat: "@jenny turns" }, { beat: "@jenny waits" },
-          { beat: "@lily enters" }];
-    F = { head: "@jenny in the room", tail: "quiet" };
+    SCENES.length = 0;
+    SCENES.push({ beat: "@jenny turns" }, { beat: "@jenny waits" },
+                 { beat: "@lily enters" });
+    $("head").value = "@jenny in the room";
+    $("tail").value = "quiet";
   };
 
   reset();
   ck("counted across the take", api.countHandle("jenny"), 3);
-  ck("counted in one chunk", api.countHandle("jenny", 1), 1);
-  ck("and zero where it does not appear", api.countHandle("jenny", 2), 0);
+  ck("counted in one chunk", api.countHandle("jenny", { chunk: 1 }), 1);
+  ck("zero where it does not appear", api.countHandle("jenny", { chunk: 2 }), 0);
+  ck("and in a single box", api.countHandle("jenny", { field: "head" }), 1);
 
   reset();
-  ck("one chunk rewrites one", api.renameHandle("jenny", "lily", 1), 1);
-  ck("  the head is untouched", F.head, "@jenny in the room");
-  ck("  the other chunk too", SC[0].beat, "@jenny turns");
-  ck("  and the named one changed", SC[1].beat, "@lily waits");
+  ck("one chunk rewrites one",
+     api.renameHandle("jenny", "lily", { chunk: 1 }), 1);
+  ck("  the head is untouched", $("head").value, "@jenny in the room");
+  ck("  the other chunk too", SCENES[0].beat, "@jenny turns");
+  ck("  and the named one changed", SCENES[1].beat, "@lily waits");
+
+  reset();
+  ck("one BOX rewrites only that box",
+     api.renameHandle("jenny", "lily", { field: "head" }), 1);
+  ck("  the head changed", $("head").value, "@lily in the room");
+  ck("  and no chunk did", SCENES[0].beat, "@jenny turns");
 
   reset();
   ck("take-wide rewrites everything", api.renameHandle("jenny", "lily"), 3);
-  ck("  including the head", F.head, "@lily in the room");
+  ck("  including the head", $("head").value, "@lily in the room");
 
   reset();
-  // A LONGER HANDLE MUST NOT BE MAULED. Renaming @jen cannot touch @jenny --
-  // the boundary is what makes any of this safe, so it is asserted on both
-  // the count and the rewrite.
-  SC.push({ beat: "@jen and @jenny" });
+  // A LONGER HANDLE MUST NOT BE MAULED, on the count and on the rewrite.
+  SCENES.push({ beat: "@jen and @jenny" });
   ck("counting stops at the boundary", api.countHandle("jen"), 1);
   ck("and so does rewriting", api.renameHandle("jen", "zoe"), 1);
-  ck("  the longer one survives", SC[3].beat, "@zoe and @jenny");
+  ck("  the longer one survives", SCENES[3].beat, "@zoe and @jenny");
 
   reset();
-  // a handle with a regex metacharacter is literal, not a pattern
-  SC[0].beat = "@a.b waits";
+  SCENES[0].beat = "@a.b waits";
   ck("a dot means a dot", api.renameHandle("a.b", "ab"), 1);
 
   reset();
@@ -173,9 +175,9 @@ console.log("\nSWAP IS SCOPED, and counts what it will actually change");
   ck("and one nobody wrote does nothing", api.renameHandle("ghost", "x"), 0);
 
   reset();
-  // the case the per-bar version could not reach: a handle whose subject has
-  // been dropped is still in the text, and is exactly what needs repointing
-  SC.push({ beat: "@ghost lingers" });
+  // the case a per-subject control could never reach: a handle whose subject
+  // has been dropped is still in the text, and is exactly what needs moving
+  SCENES.push({ beat: "@ghost lingers" });
   ck("an orphaned handle is still countable", api.countHandle("ghost"), 1);
   ck("and still swappable", api.renameHandle("ghost", "lily"), 1);
 }

@@ -494,6 +494,18 @@
   .hmirror .h { color: #5aa9ff; font-weight: 600; }
   .hmirror .h.bad { color: var(--bad); text-decoration: underline wavy; }
 
+  /* the inline swap bar: only while the caret is in a handle */
+  .hbar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 6px; padding: 6px 8px; font-size: 11px;
+    background: var(--ground-2); border: 1px solid var(--line);
+    border-radius: var(--r);
+  }
+  .hbar b { color: #5aa9ff; font-weight: 600; }
+  .hbar span { color: var(--ink-faint); flex: 1; min-width: 0; }
+  .hbar select { width: auto; min-width: 110px; }
+  .hbar button { padding: 3px 9px; font-size: 11px; }
+
   /* @handle completion */
   .hmenu {
     position: absolute; z-index: 90; background: var(--panel);
@@ -632,8 +644,7 @@
     <label for="tail">Tail — also repeated verbatim</label>
     <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
     <p class="hint" id="handlewarn" hidden style="color:var(--bad)"></p>
-    <div class="bar"><button id="swaph">Swap a handle…</button>
-      <span class="sub">point @someone at someone else, here or in one chunk</span></div>
+    <div class="bar" id="orphanfix" hidden></div>
     <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
 
     <h2>Sound</h2>
@@ -987,7 +998,21 @@ function restore() {
   if (s.theme) document.documentElement.dataset.theme = s.theme;
   if (Array.isArray(s.cast)) CAST = s.cast;
   if (Array.isArray(s.cont)) CONT = s.cont;
-  if (Array.isArray(s.chunkrefs)) CHUNKREFS = s.chunkrefs;
+  if (Array.isArray(s.chunkrefs)) {
+    CHUNKREFS = s.chunkrefs;
+    // MIGRATE a saved `kind` that is not a string. It was briefly written as
+    // the BOOLEAN isVideoPath() returns, so a clip saved then is stored as
+    // `kind: true` and every check for "video" fails — no trimmer, wrong
+    // role, loaded as an image. The source path is the truth, so re-derive.
+    for (const r of CHUNKREFS) {
+      if (r.kind !== "video" && r.kind !== "image") {
+        r.kind = isVideoPath(r.source) ? "video" : "image";
+        if (r.kind === "video") r.role = "composition and motion";
+      }
+      // and the old `motion` role name, from before it was spelled out
+      if (r.role === "motion") r.role = "composition and motion";
+    }
+  }
   if (Array.isArray(s.statics)) STATICS = s.statics;
   if (Array.isArray(s.scenes)) SCENES = s.scenes;
   if (typeof drawRefSlots === "function") drawRefSlots();
@@ -1340,13 +1365,16 @@ function laneRow(items, host, chunks, opts) {
         const cap = document.createElement("div");
         cap.className = "cap";
         const thumb = opts.thumb ? opts.thumb(r) : null;
+        const clip = !thumb && opts.clipOf && opts.clipOf(r);
         cap.innerHTML =
           (thumb
             ? `<img src="${assetURL(thumb, 75)}" alt="" loading="lazy">`
+            : clip ? ""
             : `<span class="ph">${escapeHTML(opts.glyph || "·")}</span>`) +
           `<span class="t">${escapeHTML(opts.name(r))}` +
           (opts.note(r) ? ` <em>${escapeHTML(opts.note(r))}</em>` : "") +
           `</span>`;
+        if (clip) cap.prepend(videoThumb(clip));
         cell.appendChild(cap);
       }
       t.appendChild(cell);
@@ -1478,6 +1506,7 @@ function drawLanes() {
     // a clip has no still to show, so it gets the play glyph rather than a
     // broken image box -- /view cannot thumbnail a video
     thumb: (r) => r.kind === "video" ? null : r.source,
+    clipOf: (r) => r.kind === "video" ? r.source : null,
     glyph: "▶",
     edit: (r) => editRef(r),
     drop: (r) => { CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
@@ -2236,6 +2265,73 @@ function attachHandles(el) {
   el._paintHandles = () => { copy(); paintText(); };
   copy(); paintText();
 
+  // ---- THE INLINE SWAP BAR. It appears only while the caret is inside a
+  // handle, which answers both questions the old dialog had to ask: WHICH
+  // handle (the one you are in) and WHERE (the field you are in). Fixing the
+  // thing where you noticed it beats navigating to a form about it.
+  //
+  // The caret, not a click on the coloured text: the highlight is a mirror
+  // behind a transparent textarea, so making it clickable would stop a click
+  // placing your cursor — worse than the problem it solves.
+  const bar = document.createElement("div");
+  bar.className = "hbar"; bar.hidden = true;
+  (wrap || el.parentNode || document.body).appendChild(bar);
+
+  const scopeOf = () => (el.id === "head" || el.id === "tail")
+    ? { field: el.id } : { chunk: SEL };
+  const scopeName = () => (el.id === "head" || el.id === "tail")
+    ? "this box" : `chunk ${SEL + 1}`;
+
+  const handleAtCaret = () => {
+    const c = el.selectionStart;
+    for (const m of el.value.matchAll(/@([A-Za-z][A-Za-z0-9_-]*)/g)) {
+      if (c >= m.index && c <= m.index + m[0].length) return m[1];
+    }
+    return null;
+  };
+
+  const drawBar = () => {
+    const key = handleAtCaret();
+    if (!key) { bar.hidden = true; return; }
+    const live = castHandles();
+    const known = live.some(h => h.key.toLowerCase() === key.toLowerCase());
+    const others = live.filter(h => h.key.toLowerCase() !== key.toLowerCase());
+    if (!others.length) {
+      // nothing to swap to; say what the handle IS rather than nothing
+      bar.hidden = false;
+      bar.innerHTML = `<b>@${escapeHTML(key)}</b><span>` +
+        (known ? "the only subject in the cast" : "not in the cast") + `</span>`;
+      return;
+    }
+    bar.hidden = false;
+    bar.innerHTML =
+      `<b>@${escapeHTML(key)}</b>` +
+      `<span>${known ? "" : "no longer cast · "}` +
+      `${countHandle(key, scopeOf())} here, ${countHandle(key)} in the take</span>` +
+      `<select data-to>` + others.map(h =>
+        `<option value="${escapeHTML(h.key)}">@${escapeHTML(h.key)}</option>`).join("") +
+      `</select>` +
+      `<button type="button" data-here>${escapeHTML(scopeName())}</button>` +
+      `<button type="button" data-all>everywhere</button>`;
+    const go = (scope, label) => {
+      const to = bar.querySelector("[data-to]").value;
+      const n = renameHandle(key, to, scope);
+      bar.hidden = true;
+      fail(`@${key} → @${to}: ${n} rewritten in ${label}.`);
+      $("err").style.color = "var(--ink-soft)";
+    };
+    bar.querySelector("[data-here]").onclick =
+      () => go(scopeOf(), scopeName());
+    bar.querySelector("[data-all]").onclick = () => go(null, "the whole take");
+  };
+
+  for (const ev of ["click", "keyup", "input", "focus"]) {
+    el.addEventListener(ev, drawBar);
+  }
+  el.addEventListener("blur", () => setTimeout(() => {
+    if (!bar.contains(document.activeElement)) bar.hidden = true;
+  }, 150));
+
   const menu = document.createElement("div");
   menu.className = "hmenu"; menu.hidden = true;
   // INSIDE THE DIALOG IF THE FIELD IS. A <dialog> opened with showModal()
@@ -2344,6 +2440,7 @@ function checkHandles() {
              unknownHandles($("head").value + "\n" + $("tail").value));
   // and the chunk whose editor is open, about ITS text only
   const sc = SCENES[SEL];
+  drawOrphanFix();
   sayHandles($("i_handlewarn"), sc
     ? unknownHandles([sc.beat, sc.head, sc.tail].filter(Boolean).join("\n"))
     : []);
@@ -2755,23 +2852,26 @@ function handleRe(key) {
                     + "(?![A-Za-z0-9_-])", "g");
 }
 
-// `only` is a chunk index, or null for the whole take. A rename from a
-// subject's own editor is always take-wide -- it is one thing changing its
-// name. A swap can be scoped, because "say Lily in chunk 3 and Jenny
-// elsewhere" is a real thing to want.
-function renameHandle(from, to, only = null) {
+// SCOPE: null for the whole take, {chunk: i} for one chunk, {field: "head"}
+// for a single box. A rename from a subject's own editor always passes null —
+// a subject changing its name changes it everywhere — while the inline bar
+// passes the narrow ones, because it acts on the field you are looking at.
+function renameHandle(from, to, scope = null) {
   const a = String(from || "").trim(), b = String(to || "").trim();
   if (!a || !b || a === b) return 0;
   const re = handleRe(a);
   let n = 0;
   const swap = (t) => String(t || "").replace(re, () => { n++; return "@" + b; });
+  const wantField = scope && scope.field;
+  const wantChunk = scope && scope.chunk !== undefined ? scope.chunk : null;
 
-  if (only === null) {
-    $("head").value = swap($("head").value);
-    $("tail").value = swap($("tail").value);
+  for (const id of ["head", "tail"]) {
+    if (scope && wantField !== id) continue;
+    $(id).value = swap($(id).value);
   }
   SCENES.forEach((sc, i) => {
-    if (only !== null && i !== only) return;
+    if (wantField) return;                       // a take-level box, not a chunk
+    if (wantChunk !== null && i !== wantChunk) return;
     if (sc.beat) sc.beat = swap(sc.beat);
     if (sc.head) sc.head = swap(sc.head);
     if (sc.tail) sc.tail = swap(sc.tail);
@@ -2780,19 +2880,42 @@ function renameHandle(from, to, only = null) {
   return n;
 }
 
-// SWAP A HANDLE, anywhere it is written. CJ: "include a swap button somewhere
-// that makes sense that allows user to pick an existing handle in the prompt
-// and then pick replacement handle from current included/active handles ...
-// and user can then choose to swap only specific chunk or swap all chunks."
-//
-// It works on what the TEXT says, not on what the cast holds, which is the
-// case the per-bar version missed entirely: drop Jenny, cast Lily, and every
-// @jenny is now an orphan the cast no longer knows about. Those are exactly
-// the ones that need repointing, so they are listed first.
-//
-// Changing a subject in its own editor still rewrites its references — that
-// is a rename and belongs there. This is for the other direction: text that
-// needs to point somewhere else.
+// ORPHANS, FIXED IN ONE GO. The inline bar handles one handle where you are
+// looking at it; this is the exception I kept — hunting four orphans left by
+// a dropped subject, one caret at a time, is worse than a single action. It
+// only appears when there ARE orphans.
+function drawOrphanFix() {
+  const host = $("orphanfix");
+  if (!host) return;
+  const live = new Set(castHandles().map(h => h.key.toLowerCase()));
+  const orphans = [...handlesInText().keys()]
+    .filter(k => !live.has(k.toLowerCase()));
+  const to = castHandles();
+  host.innerHTML = "";
+  host.hidden = !orphans.length || !to.length;
+  if (host.hidden) return;
+  for (const k of orphans) {
+    const n = countHandle(k);
+    const sel = document.createElement("select");
+    sel.style.width = "auto";
+    sel.innerHTML = to.map(h =>
+      `<option value="${escapeHTML(h.key)}">@${escapeHTML(h.key)}</option>`).join("");
+    const b = document.createElement("button");
+    b.textContent = `replace @${k} (${n})`;
+    b.title = `@${k} is written ${n} time(s) and is not in the cast`;
+    b.onclick = () => {
+      const moved = renameHandle(k, sel.value, null);
+      drawOrphanFix();
+      fail(`@${k} → @${sel.value}: ${moved} rewritten across the take.`);
+      $("err").style.color = "var(--ink-soft)";
+    };
+    const g = document.createElement("span");
+    g.className = "bar"; g.style.margin = "0"; g.style.gap = "4px";
+    g.append(b, sel);
+    host.appendChild(g);
+  }
+}
+
 function handlesInText() {
   const seen = new Map();
   const add = (t, where) => {
@@ -2804,78 +2927,20 @@ function handlesInText() {
   };
   add($("head").value, "head");
   add($("tail").value, "tail");
-  SCENES.forEach((sc, i) => {
-    add(sc.beat, i); add(sc.head, i); add(sc.tail, i);
-  });
+  SCENES.forEach((sc, i) => { add(sc.beat, i); add(sc.head, i); add(sc.tail, i); });
   return seen;
-}
-
-function swapHandles() {
-  const inText = handlesInText();
-  if (!inText.size) {
-    fail("No @handles are written yet, so there is nothing to swap.");
-    return;
-  }
-  const live = new Set(castHandles().map(h => h.key.toLowerCase()));
-  // orphans first: those are the ones a dropped subject left behind
-  const from = [...inText.keys()].sort((x, y) =>
-    (live.has(x.toLowerCase()) ? 1 : 0) - (live.has(y.toLowerCase()) ? 1 : 0)
-    || x.localeCompare(y));
-
-  openInline(`
-    <div class="row two">
-      <div><label for="sw_from">Replace</label><select id="sw_from">
-        ${from.map(k => `<option value="${escapeHTML(k)}">@${escapeHTML(k)}`
-          + `${live.has(k.toLowerCase()) ? "" : "  — no longer cast"}</option>`).join("")}
-      </select></div>
-      <div><label for="sw_to">With</label><select id="sw_to">
-        ${castHandles().map(h => `<option value="${escapeHTML(h.key)}">`
-          + `@${escapeHTML(h.key)} — ${escapeHTML(h.what.slice(0, 36))}</option>`).join("")}
-      </select></div>
-    </div>
-    <label for="sw_where">Where</label>
-    <select id="sw_where">
-      <option value="all">every chunk, and the take's head and tail</option>
-      ${SCENES.map((sc, i) => `<option value="${i}">chunk ${i + 1} only`
-        + `${sc.beat ? " — " + escapeHTML(sc.beat.slice(0, 40)) : ""}</option>`).join("")}
-    </select>
-    <p class="hint" id="sw_note"></p>
-    <div class="bar"><button type="button" id="sw_go">Swap</button></div>`,
-    "Swap a handle", null);
-
-  const note = () => {
-    const f = $("sw_from").value, w = $("sw_where").value;
-    const n = countHandle(f, w === "all" ? null : +w);
-    $("sw_note").textContent = n
-      ? `${n} occurrence${n === 1 ? "" : "s"} of @${f} ${w === "all"
-          ? "across the take" : "in chunk " + (+w + 1)}.`
-      : `@${f} does not appear ${w === "all" ? "anywhere" : "in that chunk"}.`;
-    $("sw_go").disabled = !n;
-  };
-  $("sw_from").onchange = note;
-  $("sw_where").onchange = note;
-  note();
-
-  $("sw_go").onclick = () => {
-    const f = $("sw_from").value, t = $("sw_to").value;
-    const w = $("sw_where").value;
-    if (!f || !t || f === t) { $("inline").close(); return; }
-    const n = renameHandle(f, t, w === "all" ? null : +w);
-    $("inline").close();
-    fail(`@${f} -> @${t}: ${n} rewritten`
-         + (w === "all" ? " across the take." : ` in chunk ${+w + 1}.`));
-    $("err").style.color = "var(--ink-soft)";
-  };
 }
 
 // how many times a handle is actually written, so Recast can say so
 // counts over the SAME scope the swap will touch, with the SAME pattern, so
 // the dialog cannot promise a number the rewrite does not deliver
-function countHandle(key, only = null) {
-  const parts = only === null
-    ? [$("head").value, $("tail").value,
-       ...SCENES.flatMap(x => [x.beat, x.head, x.tail])]
-    : [SCENES[only]?.beat, SCENES[only]?.head, SCENES[only]?.tail];
+function countHandle(key, scope = null) {
+  const f = scope && scope.field;
+  const c = scope && scope.chunk !== undefined ? scope.chunk : null;
+  const parts = f ? [$(f).value]
+    : c !== null ? [SCENES[c]?.beat, SCENES[c]?.head, SCENES[c]?.tail]
+    : [$("head").value, $("tail").value,
+       ...SCENES.flatMap(x => [x.beat, x.head, x.tail])];
   const text = parts.filter(Boolean).join("\n");
   return (text.match(handleRe(key)) || []).length;
 }
@@ -3021,6 +3086,32 @@ function assetURL(path, quality = 40) {
 // THE RAW FILE, no preview re-encode. /view's `preview` parameter asks the
 // server to transcode to webp, which is right for a still and wrong for a
 // clip -- a <video> needs the actual mp4 to seek in.
+// A CLIP'S FIRST FRAME, reliably. `preload="metadata"` plus a #t fragment
+// paints a frame in some browsers and leaves a black box in others, which is
+// why these looked broken. Seeking explicitly once metadata arrives works
+// everywhere: the browser decodes exactly one frame and shows it.
+//
+// It also reports failure instead of staying black — a clip ComfyUI cannot
+// serve should say so rather than look like a bug in the layout.
+function videoThumb(path, cls = "vthumb") {
+  const v = document.createElement("video");
+  v.className = cls;
+  v.preload = "metadata";
+  v.muted = true; v.playsInline = true;
+  v.src = rawURL(path);
+  v.addEventListener("loadedmetadata", () => {
+    // a hair past zero: frame 0 of an encoded clip is often black
+    try { v.currentTime = Math.min(0.5, (v.duration || 1) / 10); } catch {}
+  }, { once: true });
+  v.addEventListener("error", () => {
+    const d = document.createElement("div");
+    d.className = "vid"; d.textContent = "!";
+    d.title = `could not load ${path}`;
+    v.replaceWith(d);
+  }, { once: true });
+  return v;
+}
+
 function rawURL(path) {
   const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   const sub = i < 0 ? "" : path.slice(0, i);
@@ -3075,8 +3166,14 @@ function drawPicker() {
   for (const a of shown.slice(0, 400)) {
     const el = document.createElement("div");
     el.className = "tile" + (pickState.chosen.has(a) ? " sel" : "");
-    el.innerHTML = `<img loading="lazy" src="${assetURL(a)}" alt="">` +
+    // A CLIP HAS NO /view THUMBNAIL -- the server cannot transcode a video to
+    // webp -- so it gets a real <video> seeked to one frame. This is the patch
+    // that silently matched nothing twice, which is precisely why CJ kept
+    // reporting that gallery thumbs do not work: they were never changed.
+    el.innerHTML = (isVideoPath(a) ? "" :
+                   `<img loading="lazy" src="${assetURL(a)}" alt="">`) +
                    `<span class="cap">${escapeHTML(a.split(/[\\/]/).pop())}</span>`;
+    if (isVideoPath(a)) el.prepend(videoThumb(a));
     el.onclick = () => {
       if (pickState.multi) {
         pickState.chosen.has(a) ? pickState.chosen.delete(a) : pickState.chosen.add(a);
@@ -3298,13 +3395,14 @@ function drawRefSlots() {
     el.className = "slot";
     el.style.cursor = "default";
     const face = r.audio ? `<div class="vid">♪</div>`
-               : r.video ? `<div class="vid">▶</div>`
+               : r.video ? ""
                : `<img src="${assetURL(r.path, 75)}" alt="">`;
     el.innerHTML = face +
       `<span class="cap" style="position:absolute;inset:auto 0 0 0;background:#000a;` +
       `color:#fff;font:9.5px/1.3 var(--mono);padding:2px 3px">` +
       `${escapeHTML(r.tag)}${r.chunks && r.chunks !== "all"
         ? " · " + escapeHTML(r.chunks) : ""}</span>`;
+    if (r.video) el.prepend(videoThumb(r.path));
     el.title = `${r.tag} — ${r.from}\n${r.path}`
       + (r.chunks ? `\nchunks: ${r.chunks}` : "");
     host.appendChild(el);
@@ -3797,8 +3895,6 @@ function wireControls() {
   $("addlora").onclick = () =>
     pickLora(n => { STATICS.push({ name: n, strength: 0.8 });
                     staticsChanged(); });
-
-  $("swaph").onclick = swapHandles;
 
   $("castsee").onclick = () => {
     // the compiled subject_definitions and retention, which used to sit in a
