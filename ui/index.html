@@ -105,6 +105,48 @@
   /* THE TRANSITION BUTTON SITS BETWEEN TWO SCENES, which is where the decision
      lives. Interaction model adopted from WAS Node Suite's H3 prompt timeline. */
   .tl { position: relative; }
+  /* LANES. One row per reference, on the same grid as the chunk strip: same
+     flex basis per chunk, same 2px gap, and the SAME zero-width spacers where
+     the join buttons sit -- those are width 0 but still take a gap, so a lane
+     without them drifts 2px per chunk. */
+  .lanes { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px; }
+  .lane { display: flex; align-items: center; gap: 8px; }
+  .lane .nm {
+    width: 128px; flex: none; display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--ink-soft); min-width: 0;
+  }
+  .lane .nm b {
+    font-weight: 500; color: var(--ink); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lane .nm .role {
+    font: 10px/1 var(--mono); color: var(--ink-faint); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px;
+    flex: none; background: none;
+  }
+  .lane .nm .role:hover { border-color: var(--accent); color: var(--ink); }
+  .lane .nm img { width: 18px; height: 18px; object-fit: cover; border-radius: 2px; flex: none; }
+  .lane .track { display: flex; gap: 2px; flex: 1; min-width: 0; }
+  .lane .track .sp { width: 0; flex: none; }
+  .lane .cell {
+    height: 17px; background: var(--ground-2); border-radius: 2px;
+    cursor: pointer; min-width: 0; border: 1px solid transparent;
+  }
+  .lane .cell:hover { border-color: var(--line-strong); }
+  .lane .cell.on { background: var(--accent-dim); border-color: var(--accent); }
+  .lane .cell.on.subject { background: var(--line-strong); border-color: var(--ink-faint); }
+  .lane.locked .cell { cursor: default; }
+  .lane .x {
+    flex: none; width: 18px; height: 18px; padding: 0; font-size: 11px;
+    background: none; border: 0; color: var(--ink-faint); cursor: pointer;
+  }
+  .lane .x:hover { color: var(--bad); }
+  .lanedrop {
+    margin-top: 4px; border: 1px dashed var(--line); border-radius: var(--r);
+    padding: 7px; text-align: center; font-size: 11px; color: var(--ink-faint);
+  }
+  .lanedrop.dropping { border-color: var(--accent); color: var(--accent); }
+
   .tl .join { position: relative; width: 0; display: flex;
               align-items: flex-start; justify-content: center; z-index: 3; }
   .tl .join button {
@@ -358,17 +400,25 @@
     <h2>Plan</h2>
     <p class="hint">A readout, not a second place to set things. Length and
     transition live on each scene; this is what they add up to.</p>
-    <div class="row two">
-      <div><label for="ctx">Carry — the default pin for every continuing scene</label>
-           <select id="ctx"></select></div>
-      <div></div>
-    </div>
     <details id="quick">
-      <summary>Quick setup — start a take from scratch</summary>
+      <summary>Setup — defaults, and a scene list from scratch</summary>
       <div class="body">
-        <p class="hint">Builds a fresh scene list. This REPLACES whatever is
+        <!-- CARRY WAS STRANDED HERE, alone in a two-column row with an empty
+             half beside it, which is how it read as belonging to nothing. It
+             is a take-wide DEFAULT every continuing scene inherits, so it sits
+             with the other defaults rather than floating above them. -->
+        <div class="row two">
+          <div><label for="ctx">Carry</label><select id="ctx"></select></div>
+          <div><label>&nbsp;</label>
+            <p class="hint" style="margin:0">How much of the previous scene a
+            continuing scene reproduces. Every scene inherits this; one can
+            override it in the inspector.</p></div>
+        </div>
+        <hr class="split" style="margin:18px -16px">
+        <p class="hint">Build a fresh scene list. This REPLACES whatever is
         there, so use it to start rather than to adjust — once scenes exist,
-        edit them on the strip or in the inspector.</p>
+        edit them on the strip or in the inspector. New scenes take the carry
+        above.</p>
         <div class="row three">
           <div><label for="qn">How many scenes</label>
             <input type="number" id="qn" value="4" min="1" max="24"></div>
@@ -383,6 +433,7 @@
     <input type="number" id="cc" value="3" hidden>
     <div id="ruler" class="ruler"></div>
     <div id="tl" class="tl"></div>
+    <div id="lanes" class="lanes"></div>
     <div class="dragnote" id="dragnote"></div>
     <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
     segment's right edge to change that scene's length. Drag a segment itself to
@@ -714,6 +765,7 @@ function save() {
   s.cast = CAST;                 // the cast is the document, so it persists too
   s.cont = CONT;
   s.scenes = SCENES;
+  s.chunkrefs = CHUNKREFS;
   try { localStorage.setItem(LS, JSON.stringify(s)); } catch {}
 }
 function restore() {
@@ -729,6 +781,7 @@ function restore() {
   if (s.theme) document.documentElement.dataset.theme = s.theme;
   if (Array.isArray(s.cast)) CAST = s.cast;
   if (Array.isArray(s.cont)) CONT = s.cont;
+  if (Array.isArray(s.chunkrefs)) CHUNKREFS = s.chunkrefs;
   if (Array.isArray(s.scenes)) SCENES = s.scenes;
   if (typeof drawRefSlots === "function") drawRefSlots();
 }
@@ -916,6 +969,202 @@ function fillQuickJoin() {
   }
   sel.value = keep && [...sel.options].some(o => o.value === keep)
     ? keep : "carry";
+}
+
+/* ------------------------------------------------- per-chunk references */
+/* CJ: "I'd like the ability to load references and click/drag them for use in
+   specific chunks ... reflect in lines underneath it subjects and references
+   and concepts per chunk." One lane per reference on the chunk strip's grid.
+   A lane is WHERE; the inspector is WHAT. */
+let CHUNKREFS = [];
+let LANEDRAG = null;
+
+const REF_ROLES = ["composition", "motion", "frame 0", "identity"];
+
+// `1-3` / `2,5` / `all` <-> a set of 0-based chunk indices. The spec string is
+// what the node and the request take, so it stays the stored form -- a Set is
+// only ever the working copy while a drag is happening.
+function specToSet(spec, total) {
+  const t = String(spec || "all").trim().toLowerCase();
+  if (!t || t === "all") return new Set(Array.from({ length: total }, (_, i) => i));
+  const out = new Set();
+  for (const part of t.split(/[,\s]+/).filter(Boolean)) {
+    if (part === "last") { out.add(total - 1); continue; }
+    let m = /^(\d+)-(\d+)$/.exec(part);
+    if (m) { for (let i = +m[1]; i <= +m[2]; i++) out.add(i - 1); continue; }
+    m = /^(\d+)\+$/.exec(part);
+    if (m) { for (let i = +m[1]; i <= total; i++) out.add(i - 1); continue; }
+    m = /^(\d+)$/.exec(part);
+    if (m) out.add(+m[1] - 1);
+  }
+  return new Set([...out].filter(i => i >= 0 && i < total));
+}
+
+function setToSpec(set, total) {
+  const on = [...set].filter(i => i >= 0 && i < total).sort((a, b) => a - b);
+  if (!on.length) return "";
+  if (on.length === total) return "all";
+  // collapse runs, so a drag across four chunks reads "2-5" and not "2,3,4,5"
+  const parts = [];
+  let a = on[0], b = on[0];
+  for (const i of on.slice(1)) {
+    if (i === b + 1) { b = i; continue; }
+    parts.push(a === b ? `${a + 1}` : `${a + 1}-${b + 1}`);
+    a = b = i;
+  }
+  parts.push(a === b ? `${a + 1}` : `${a + 1}-${b + 1}`);
+  return parts.join(",");
+}
+
+// THE SHOT A CHUNK BELONGS TO, which is what a dropped reference spans by
+// default. CJ: "default to the whole shot, allow adjustment to specific chunk
+// if you want it." A composition reference almost always belongs to one shot,
+// so the common case is a single drop and no drag.
+function shotSpan(i, chunks) {
+  let a = i, b = i;
+  while (a > 0 && !chunks[a].cut) a--;
+  while (b + 1 < chunks.length && !chunks[b + 1].cut) b++;
+  return new Set(Array.from({ length: b - a + 1 }, (_, k) => a + k));
+}
+
+function addChunkRef(source, kind, atChunk) {
+  const chunks = (lastPlan && lastPlan.chunks) || [];
+  const span = chunks.length
+    ? shotSpan(Math.max(0, Math.min(atChunk | 0, chunks.length - 1)), chunks)
+    : new Set([0]);
+  CHUNKREFS.push({
+    id: Math.random().toString(36).slice(2, 9),
+    source, kind,
+    role: kind === "video" ? "motion" : "composition",
+    chunks: setToSpec(span, chunks.length || 1),
+    depth: true,
+    label: String(source).split(/[\\/]/).pop(),
+  });
+  refsChanged();
+}
+
+function refsChanged() {
+  drawLanes();
+  save();
+  refreshPlan();
+}
+
+function drawLanes() {
+  const host = $("lanes");
+  if (!host) return;
+  host.innerHTML = "";
+  const chunks = (lastPlan && lastPlan.chunks) || [];
+  if (!chunks.length) return;
+
+  const track = (onSet, cls, onClick) => {
+    const t = document.createElement("div");
+    t.className = "track";
+    chunks.forEach((c, i) => {
+      if (i > 0) {
+        // the join's zero-width spacer: it takes a gap on the strip above, so
+        // the lane has to take one too or the two drift apart
+        const sp = document.createElement("div");
+        sp.className = "sp";
+        t.appendChild(sp);
+      }
+      const cell = document.createElement("div");
+      cell.className = "cell" + (onSet.has(i) ? " on " + cls : "");
+      cell.style.flex = String(c.frames);
+      cell.title = `chunk ${c.number} — ${c.start_seconds}s to ${c.end_seconds}s`;
+      if (onClick) {
+        cell.onmousedown = (e) => { e.preventDefault(); onClick(i, "down"); };
+        cell.onmouseenter = () => { if (LANEDRAG) onClick(i, "move"); };
+      }
+      t.appendChild(cell);
+    });
+    return t;
+  };
+
+  // ---- one lane per per-chunk reference
+  CHUNKREFS.forEach(r => {
+    const row = document.createElement("div");
+    row.className = "lane";
+    const nm = document.createElement("div");
+    nm.className = "nm";
+    const b = document.createElement("b");
+    b.textContent = r.label || r.source;
+    b.title = r.source;
+    const role = document.createElement("button");
+    role.type = "button"; role.className = "role"; role.textContent = r.role;
+    role.title = "click to change what the model takes from this";
+    role.onclick = () => {
+      r.role = REF_ROLES[(REF_ROLES.indexOf(r.role) + 1) % REF_ROLES.length];
+      r.depth = r.role === "composition" || r.role === "motion";
+      refsChanged();
+    };
+    nm.append(b, role);
+    const set = specToSet(r.chunks, chunks.length);
+    const t = track(set, "", (i, how) => {
+      if (how === "down") {
+        LANEDRAG = { ref: r, add: !set.has(i) };
+        document.addEventListener("mouseup", () => { LANEDRAG = null; },
+                                  { once: true });
+      }
+      if (!LANEDRAG || LANEDRAG.ref !== r) return;
+      LANEDRAG.add ? set.add(i) : set.delete(i);
+      r.chunks = setToSpec(set, chunks.length);
+      refsChanged();
+    });
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "✕"; x.title = "remove this reference";
+    x.onclick = () => {
+      CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
+      refsChanged();
+    };
+    row.append(nm, t, x);
+    host.appendChild(row);
+  });
+
+  // ---- and one per cast member, READ-ONLY. A subject is cited for the whole
+  // take today, and showing that as a full-width bar is the honest picture:
+  // it is the row that makes a reference's shorter span legible by contrast.
+  CAST.forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "lane locked";
+    const nm = document.createElement("div");
+    nm.className = "nm";
+    const b = document.createElement("b");
+    b.textContent = r.from_library || r.describe || r.setting
+      || `subject ${i + 1}`;
+    const tag = document.createElement("span");
+    tag.className = "role"; tag.style.cursor = "default";
+    tag.textContent = r.kind === "setting" ? "setting" : "subject";
+    nm.append(b, tag);
+    const all = new Set(chunks.map((_, k) => k));
+    row.append(nm, track(all, "subject", null));
+    const pad = document.createElement("span");
+    pad.className = "x"; pad.textContent = "";
+    row.appendChild(pad);
+    host.appendChild(row);
+  });
+
+  // ---- the drop target
+  const dz = document.createElement("div");
+  dz.className = "lanedrop";
+  dz.textContent = CHUNKREFS.length
+    ? "drop an image or clip here for another reference"
+    : "drop an image or clip here to use it as composition or motion — "
+      + "it takes the whole shot you drop it on, then drag to adjust";
+  dz.ondragover = (e) => { e.preventDefault(); dz.classList.add("dropping"); };
+  dz.ondragleave = () => dz.classList.remove("dropping");
+  dz.ondrop = (e) => {
+    e.preventDefault();
+    dz.classList.remove("dropping");
+    const path = e.dataTransfer.getData("text/plain");
+    if (!path) return;
+    // which chunk was it dropped over? the x position across the track width
+    const box = dz.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
+    const at = Math.min(chunks.length - 1, Math.floor(frac * chunks.length));
+    addChunkRef(path, /\.(mp4|mov|webm|mkv|avi)$/i.test(path) ? "video" : "image",
+                at);
+  };
+  host.appendChild(dz);
 }
 
 function drawContList() {
@@ -1293,6 +1542,7 @@ function renderPlan(p) {
     $("tl").appendChild(seg);
   });
   drawRuler(p);
+  drawLanes();
   $("tlhint").hidden = !SCENES.length;
   // keep the continuity list the same length as the joins
   CONT = CONT.slice(0, Math.max(0, p.chunks.length - 1));
@@ -1936,6 +2186,15 @@ function request() {
     if (tails.some(Boolean)) req.tails = tails.join("\n\n");
   }
   if (VOICES.length) req.audio_references = VOICES.map(v => v.path);
+  if (CHUNKREFS.length) {
+    req.chunk_references = CHUNKREFS.map(r => ({
+      source: r.source, kind: r.kind, role: r.role,
+      chunks: r.chunks || "all", depth: r.depth !== false,
+      label: r.label || "",
+      ...(r.start ? { start: r.start } : {}),
+      ...(r.length ? { length: r.length } : {}),
+    }));
+  }
   req.megapixels = +$("mp").value || 0.5;
   req.aspect_ratio = $("ar").value;
   if (CONT.length) req.continuity = CONT.join("\n");
