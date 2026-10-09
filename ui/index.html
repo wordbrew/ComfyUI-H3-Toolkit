@@ -117,6 +117,20 @@
      on every track, including Chunks, which has neither -- the cast and
      reference rows carried trailing buttons and the chunk strip did not, so
      their cells were narrower by exactly that width and drifted left. */
+  .tabs { display: flex; gap: 2px; margin-left: 18px; }
+  .tabs button {
+    background: none; border: 0; border-bottom: 2px solid transparent;
+    padding: 6px 12px; font-size: 12px; color: var(--ink-dim); cursor: pointer;
+    border-radius: 0;
+  }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
+  .tabpane[hidden] { display: none; }
+  .soon {
+    padding: 48px 20px; text-align: center; color: var(--ink-faint);
+    font-size: 12.5px; line-height: 1.7;
+  }
+
   .tracks { --gut: 104px; --tail: 82px;
             display: flex; flex-direction: column; gap: 4px; margin: 10px 0 4px; }
   .trk > .tail { width: var(--tail); flex: none; display: flex; gap: 2px;
@@ -439,6 +453,11 @@
 <header>
   <h1>Long Take</h1>
   <span class="sub">H3 long-form, one request</span>
+  <nav class="tabs" id="tabs">
+    <button data-tab="generate" class="on">Generate</button>
+    <button data-tab="library">Library</button>
+    <button data-tab="edit">Edit</button>
+  </nav>
   <div class="right">
     <span class="dot" id="dot"></span>
     <span class="sub" id="conn">checking…</span>
@@ -446,7 +465,7 @@
   </div>
 </header>
 
-<main>
+<main id="tab-generate" class="tabpane">
   <section class="col">
     <h2>Plan</h2>
     <p class="hint">A readout, not a second place to set things. Length and
@@ -481,7 +500,10 @@
       <div class="trk top"><div class="gut"><span>Setting</span>
         <button id="addset" title="add the place this happens">+</button></div>
         <div id="setlanes" class="lanes"></div></div>
-      <div class="trk top"><div class="gut"><span>References</span>
+      <div class="trk top"><div class="gut"><span>Props</span>
+        <button id="addprop" title="add a thing the take names">+</button></div>
+        <div id="proplanes" class="lanes"></div></div>
+      <div class="trk top"><div class="gut"><span>Add. refs</span>
         <button id="addref" title="add an image or clip">+</button></div>
         <div id="lanes" class="lanes"></div></div>
     </div>
@@ -517,62 +539,9 @@
     <div id="cast" hidden></div>
     <div id="castpreview" hidden></div>
 
-    <h2>Library</h2>
-    <p class="hint">Saved subjects, reusable across takes. A subject is a person,
-    a place or a thing — and the kind decides how the prompt asks for it to be
-    kept: a person keeps identity and build, a place keeps layout and light, a
-    thing keeps shape, material and markings.</p>
-    <div id="lib"></div>
-    <div class="bar">
-      <button id="newsubj">+ New subject</button>
-      <button id="reloadlib">Reload</button>
-    </div>
-
-    <details id="editor">
-      <summary id="editortitle">New subject</summary>
-      <div class="body">
-        <div class="row two">
-          <div><label for="e_name">Name</label>
-               <input type="text" id="e_name" placeholder="brass_lamp"></div>
-          <div><label for="e_kind">Kind</label>
-               <select id="e_kind">
-                 <option value="person">person — keeps identity and build</option>
-                 <option value="place">place — keeps layout and light</option>
-                 <option value="thing">thing — keeps shape and markings</option>
-               </select></div>
-        </div>
-        <label for="e_desc">Description — appearance, not plot</label>
-        <textarea id="e_desc" rows="2" placeholder="a brass desk lamp with a green glass shade"></textarea>
-        <div class="row two">
-          <div><label for="e_ret">Retention</label>
-               <select id="e_ret">
-                 <option>fully_preserved</option><option>partially_preserved</option>
-                 <option>attribute_transfer</option><option>weak_reference</option>
-               </select></div>
-          <div><label for="e_voicedesc">Voice description (people)</label>
-               <input type="text" id="e_voicedesc" placeholder="low, breathy, unhurried"></div>
-        </div>
-        <label>Anchor images</label>
-        <select id="e_imgs" multiple hidden></select>
-        <div class="tiles" id="e_tiles"></div>
-        <div class="bar">
-          <button id="e_pick">Choose images…</button>
-          <span class="sub" id="e_picked"></span>
-        </div>
-        <div class="dz" id="e_dz">Drop image files here to upload them</div>
-        <p class="hint">Three anchors measurably beat one for identity; a fourth
-        reference broke subject motion in testing. Vary angle and lighting —
-        near-duplicates spend tokens without adding information.</p>
-        <label for="e_voice">Voice sample (optional)</label>
-        <select id="e_voice"></select>
-        <div class="bar">
-          <button class="go" id="e_save">Save</button>
-          <button id="e_delete">Delete</button>
-          <button id="e_cancel">Cancel</button>
-          <span class="sub" id="e_msg"></span>
-        </div>
-      </div>
-    </details>
+    <label for="tail">Tail — also repeated verbatim</label>
+    <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
+    <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
 
     <h2>Sound</h2>
     <label for="sound">overall_soundscape — the room it was recorded in</label>
@@ -710,11 +679,85 @@
       </div>
     </div>
 
-    <label for="tail">Tail — also repeated verbatim</label>
-    <textarea id="tail" rows="2" placeholder="A single continuous take; the camera drifts almost imperceptibly closer throughout."></textarea>
-    <p class="hint">Give the camera some drift. A truly locked-off shot is the one framing measured to degrade over a long take.</p>
   
 </dialog>
+</main>
+
+<main id="tab-library" class="tabpane" hidden>
+  <section class="col" style="grid-column:1/-1">
+    <h2>Library</h2>
+    <p class="hint">Saved subjects, reusable across takes. A subject is a person,
+    a place or a thing — and the kind decides how the prompt asks for it to be
+    kept: a person keeps identity and build, a place keeps layout and light, a
+    thing keeps shape, material and markings.</p>
+    <div id="lib"></div>
+    <div class="bar">
+      <button id="newsubj">+ New subject</button>
+      <button id="reloadlib">Reload</button>
+    </div>
+
+    <details id="editor">
+      <summary id="editortitle">New subject</summary>
+      <div class="body">
+        <div class="row two">
+          <div><label for="e_name">Name</label>
+               <input type="text" id="e_name" placeholder="brass_lamp"></div>
+          <div><label for="e_kind">Kind</label>
+               <select id="e_kind">
+                 <option value="person">person — keeps identity and build</option>
+                 <option value="place">place — keeps layout and light</option>
+                 <option value="thing">thing — keeps shape and markings</option>
+               </select></div>
+        </div>
+        <label for="e_desc">Description — appearance, not plot</label>
+        <textarea id="e_desc" rows="2" placeholder="a brass desk lamp with a green glass shade"></textarea>
+        <div class="row two">
+          <div><label for="e_ret">Retention</label>
+               <select id="e_ret">
+                 <option>fully_preserved</option><option>partially_preserved</option>
+                 <option>attribute_transfer</option><option>weak_reference</option>
+               </select></div>
+          <div><label for="e_voicedesc">Voice description (people)</label>
+               <input type="text" id="e_voicedesc" placeholder="low, breathy, unhurried"></div>
+        </div>
+        <label>Anchor images</label>
+        <select id="e_imgs" multiple hidden></select>
+        <div class="tiles" id="e_tiles"></div>
+        <div class="bar">
+          <button id="e_pick">Choose images…</button>
+          <span class="sub" id="e_picked"></span>
+        </div>
+        <div class="dz" id="e_dz">Drop image files here to upload them</div>
+        <p class="hint">Three anchors measurably beat one for identity; a fourth
+        reference broke subject motion in testing. Vary angle and lighting —
+        near-duplicates spend tokens without adding information.</p>
+        <label for="e_voice">Voice sample (optional)</label>
+        <select id="e_voice"></select>
+        <div class="bar">
+          <button class="go" id="e_save">Save</button>
+          <button id="e_delete">Delete</button>
+          <button id="e_cancel">Cancel</button>
+          <span class="sub" id="e_msg"></span>
+        </div>
+      </div>
+    </details>
+
+  </section>
+</main>
+
+<main id="tab-edit" class="tabpane" hidden>
+  <section class="col" style="grid-column:1/-1">
+    <h2>Edit</h2>
+    <p class="soon">Not built yet.<br><br>
+    This is where finished takes get cut together into something
+    longer — trimming what rendered, reordering it, and re-rendering
+    a chunk in place without touching the ones either side.<br><br>
+    The pieces it needs already exist: a take renders in addressable
+    chunks, the runner can resume from a checkpoint, and
+    <code>first_chunk</code>/<code>last_chunk</code> already gate
+    which ones execute. What is missing is the part that reads a
+    rendered take back in.</p>
+  </section>
 </main>
 
 <dialog class="picker" id="inline">
@@ -1028,7 +1071,16 @@ function fillQuickJoin() {
 let CHUNKREFS = [];
 let LANEDRAG = null;
 
-const REF_ROLES = ["composition", "motion", "frame 0", "identity"];
+// CONTENT-SMART, and no `identity`: a person who should be recognised is a
+// CAST member, not an additional reference. Depth is not a choice either --
+// it belongs to the role, so a composition reference cannot be made to carry
+// the appearance its own clause tells the model to ignore.
+const REF_ROLES = {
+  image: [["composition", "framing only — passes through depth"],
+          ["frame 0", "this exact image opens the chunk — no depth"]],
+  video: [["composition and motion",
+           "movement and framing only — passes through depth"]],
+};
 
 // `1-3` / `2,5` / `all` <-> a set of 0-based chunk indices. The spec string is
 // what the node and the request take, so it stays the stored form -- a Set is
@@ -1077,6 +1129,10 @@ function shotSpan(i, chunks) {
 }
 
 function addChunkRef(source, kind, atChunk) {
+  // CJ: "we also need to add the Role and other editing details to the initial
+  // use screen. It shouldn't require me to go into edit to set that." So an
+  // added reference goes straight into its editor with the chunk span already
+  // filled from where it landed.
   const chunks = (lastPlan && lastPlan.chunks) || [];
   const span = chunks.length
     ? shotSpan(Math.max(0, Math.min(atChunk | 0, chunks.length - 1)), chunks)
@@ -1084,12 +1140,13 @@ function addChunkRef(source, kind, atChunk) {
   CHUNKREFS.push({
     id: Math.random().toString(36).slice(2, 9),
     source, kind,
-    role: kind === "video" ? "motion" : "composition",
+    role: kind === "video" ? "composition and motion" : "composition",
     chunks: setToSpec(span, chunks.length || 1),
-    depth: true,
     label: String(source).split(/[\\/]/).pop(),
+    spans: "", span_index: 0,
   });
   refsChanged();
+  editRef(CHUNKREFS[CHUNKREFS.length - 1]);
 }
 
 function refsChanged() {
@@ -1217,8 +1274,12 @@ function drawLanes() {
   // ---- CAST. A span here is which chunks the subject's pictures are wired
   // into. Scoped to fewer than all, they go through H3ChunkRef with the
   // `identity` role; across the whole take they stay plain references.
-  const people = CAST.filter(r => r.kind !== "setting");
+  // THREE KINDS, THREE TRACKS. CJ: "When one clicks on + for Cast, they should
+  // only see Person as an option, place and thing are not there." So the kind
+  // is decided by the track you add from, not chosen again in the modal.
+  const people = CAST.filter(r => r.kind !== "setting" && r.subkind !== "thing");
   const places = CAST.filter(r => r.kind === "setting");
+  const props  = CAST.filter(r => r.kind !== "setting" && r.subkind === "thing");
 
   laneRow(people, castHost, chunks, {
     cls: " subject",
@@ -1254,12 +1315,29 @@ function drawLanes() {
     });
   }
 
-  // ---- REFERENCES
+  const propHost = $("proplanes");
+  if (propHost) {
+    propHost.innerHTML = "";
+    laneRow(props, propHost, chunks, {
+      cls: " subject",
+      spanOf: (r) => r.chunks || "all",
+      setSpan: (r, v) => { r.chunks = v; },
+      name: (r) => r.describe || "a thing",
+      note: (r) => `${(r.images || []).length} pic`,
+      edit: (r) => editSubject(r),
+      drop: (r) => { dropRow(r.id); },
+      editTitle: "edit this prop",
+      empty: "no props — + adds an object the take names. It is a <Subject> "
+           + "to the model, like everything else here.",
+    });
+  }
+
+  // ---- ADDITIONAL REFERENCES
   laneRow(CHUNKREFS, refHost, chunks, {
     spanOf: (r) => r.chunks || "all",
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.label || r.source,
-    note: (r) => r.role + (r.depth !== false ? " · depth" : ""),
+    note: (r) => r.role,
     edit: (r) => editRef(r),
     drop: (r) => { CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
                    refsChanged(); },
@@ -1322,16 +1400,17 @@ function subjectModal(r, kind) {
   ADDPICS = editing ? (r.images || []).slice() : [];
   ADDVOICE = editing ? (r.voice_path || null) : null;
   const desc0 = editing ? (r.setting || r.describe || "") : "";
-  const lib = LIBRARY.map(c =>
-    `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
+  // ONLY THIS KIND. A person picker that offers places is how a setting ends
+  // up cast as a character.
+  const lib = LIBRARY.filter(c => (LIBKIND[c] || "person") === kind)
+    .map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`)
+    .join("");
   openInline(`
+    <!-- NO KIND PICKER. The track you pressed + on already said what this is,
+         and offering the choice again invited the two to disagree. The library
+         list is filtered to the same kind for the same reason. -->
+    <input type="hidden" id="as_kind" value="${kind}">
     <div class="row two">
-      <div><label>What is it</label>
-        <select id="as_kind">
-          <option value="person"${kind === "person" ? " selected" : ""}>a person</option>
-          <option value="place"${kind === "place" ? " selected" : ""}>a place — the setting</option>
-          <option value="thing"${kind === "thing" ? " selected" : ""}>a thing</option>
-        </select></div>
       <div><label>From the library</label>
         <select id="as_lib">
           <option value="">— write it by hand instead —</option>${lib}
@@ -1369,9 +1448,12 @@ function subjectModal(r, kind) {
       const from = $("as_lib").value;
       const row = editing ? r : addRow(k === "place" ? "setting" : "library", {});
       if (from) {
-        row.kind = "library"; row.from_library = from;
+        row.kind = k === "place" ? "setting" : "library";
+        row.subkind = k;
+        row.from_library = from;
       } else {
         row.kind = k === "place" ? "setting" : "library";
+        row.subkind = k;                 // person / place / thing
         row.from_library = "";
         row.retention = $("as_ret").value;
         row.wears = $("as_wears").value.trim();
@@ -1437,29 +1519,50 @@ async function saveSubjectToLibrary(name, kind, description, images, voice) {
 }
 
 function editRef(r) {
-  const roles = REF_ROLES.map(x =>
-    `<option value="${x}"${x === r.role ? " selected" : ""}>${x}</option>`).join("");
+  const kind = r.kind === "video" ? "video" : "image";
+  const opts = REF_ROLES[kind];
+  // a clip has exactly one role here, so it is stated rather than asked
+  const roleField = opts.length === 1
+    ? `<p class="hint"><b>${opts[0][0]}</b> — ${opts[0][1]}</p>
+       <input type="hidden" id="ed_role" value="${opts[0][0]}">`
+    : `<select id="ed_role">` + opts.map(([v, why]) =>
+        `<option value="${v}"${v === r.role ? " selected" : ""}>${v} — ${why}</option>`
+      ).join("") + `</select>`;
+
   openInline(`
-    <div class="row two">
-      <div><label>Role</label><select id="ed_role">${roles}</select></div>
-      <div><label>Trim — frames, video only</label>
-        <div class="bar" style="margin-top:0">
-          <input type="number" id="ed_start" placeholder="from" value="${r.start || 0}" min="0">
-          <input type="number" id="ed_len" placeholder="length" value="${r.length || 0}" min="0">
-        </div></div>
-    </div>
-    <label class="chk"><input type="checkbox" id="ed_depth"${r.depth !== false ? " checked" : ""}>
-      pass it through DepthAnything first — composition and motion without the
-      appearance</label>
-    <p class="hint" id="ed_why"></p>`,
+    <label>What the model takes from it</label>
+    ${roleField}
+    ${kind === "video" ? `
+      <label for="ed_spans" style="margin-top:12px">Trim</label>
+      <textarea id="ed_spans" rows="3" placeholder="0 0">${escapeHTML(r.spans || "")}</textarea>
+      <p class="hint">One span per line: <code>start count</code>, in frames,
+      with an optional label. <code>0 0</code> is the whole clip. This is the
+      same <code>spans</code> the pack's Video Trim node takes, so a span set
+      here reads identically on the node — and it lands in the rendered mp4's
+      metadata, which is the only record of which part of which file a clip
+      came from.</p>
+      <div class="bar"><button type="button" id="ed_open">Open it in the
+        Video Trim node to mark visually…</button></div>` : ""}
+    <p class="hint" style="margin-top:12px">${escapeHTML(r.source)}</p>`,
     r.label || r.source,
     () => {
       r.role = $("ed_role").value;
-      r.depth = $("ed_depth").checked;
-      r.start = +$("ed_start").value || 0;
-      r.length = +$("ed_len").value || 0;
+      if (kind === "video") r.spans = $("ed_spans").value.trim();
       refsChanged();
     });
+
+  if (kind === "video") {
+    $("ed_open").onclick = () => {
+      // The visual marker is the node's own DOM widget, which lives in the
+      // ComfyUI graph rather than in this page. Pointing at it beats
+      // reimplementing a scrubber here badly.
+      window.open("/", "_blank");
+      fail("Add a `Video Trim Load` node in ComfyUI, pick " + r.source
+           + ", mark the span on its timeline, then copy the `spans` text "
+           + "back into this box. A scrubber in this page would be a second, "
+           + "worse copy of a widget the pack already has.");
+    };
+  }
 }
 
 function drawContList() {
@@ -2143,6 +2246,7 @@ function refreshCast() {
    files, so this costs one <img> per asset and no new endpoint. Subfolders are
    the bins -- /upload/image takes a `subfolder` and creates it -- so there is no
    project metadata layer to invent.  */
+let LIBKIND = {};                // library name -> person | place | thing
 let VIDEOS = [];                 // LoadVideo's folder, for motion references
 let ASSETS = [];                 // "name.png" or "project/name.png", from core
 
@@ -2274,6 +2378,14 @@ async function loadLibrary() {
     SUBJECTS = r.subjects || [];
   } catch { SUBJECTS = []; }
   LIBRARY = SUBJECTS.map(s => s.name);
+  // the store already records each subject's kind; keep it to hand so the
+  // add-modal can show only the right ones
+  LIBKIND = {};
+  for (const x of SUBJECTS) {
+    const k = String(x.kind || "person").toLowerCase();
+    LIBKIND[x.name] = k === "place" || k === "setting" ? "place"
+                    : k === "thing" || k === "object" ? "thing" : "person";
+  }
   drawLibrary();
 }
 
@@ -2549,10 +2661,13 @@ function request() {
   if (allRefs.length) {
     req.chunk_references = allRefs.map(r => ({
       source: r.source, kind: r.kind, role: r.role,
-      chunks: r.chunks || "all", depth: r.depth !== false,
+      chunks: r.chunks || "all",
       label: r.label || "",
-      ...(r.start ? { start: r.start } : {}),
-      ...(r.length ? { length: r.length } : {}),
+      // no `depth`: it follows the role, decided once in chunkref.ROLES so a
+      // composition reference cannot be sent without the pass its own clause
+      // assumes. `spans` is the pack's own trim format.
+      ...(r.spans ? { spans: r.spans } : {}),
+      ...(r.span_index ? { span_index: r.span_index } : {}),
     }));
   }
   req.megapixels = +$("mp").value || 0.5;
@@ -2814,6 +2929,26 @@ function wireControls() {
     openChunk(SCENES.length - 1);        // straight into its details
   };
   $("chunkclose").onclick = () => $("chunksheet").close();
+  // ---- tabs. Generate is what exists; Library is the store, which was a
+  // panel inside Generate and is not part of a take; Edit is declared and
+  // empty rather than hidden, because a tab that says "not built yet" is more
+  // honest than one that is missing.
+  for (const b of document.querySelectorAll("#tabs button")) {
+    b.onclick = () => {
+      for (const o of document.querySelectorAll("#tabs button")) {
+        o.classList.toggle("on", o === b);
+      }
+      for (const pane of document.querySelectorAll(".tabpane")) {
+        pane.hidden = pane.id !== "tab-" + b.dataset.tab;
+      }
+      try { localStorage.setItem(LS + ":tab", b.dataset.tab); } catch {}
+    };
+  }
+  try {
+    const want = localStorage.getItem(LS + ":tab");
+    if (want) document.querySelector(`#tabs button[data-tab="${want}"]`)?.click();
+  } catch {}
+
   $("castsee").onclick = () => {
     // the compiled subject_definitions and retention, which used to sit in a
     // <details> under the cast panel. It is a readout, so it gets a modal with
@@ -2824,6 +2959,7 @@ function wireControls() {
   };
   $("addcast2").onclick = () => addSubject("person");
   $("addset").onclick = () => addSubject("place");
+  $("addprop").onclick = () => addSubject("thing");
   $("addref").onclick = async () => {
     // IMAGES AND CLIPS BOTH. The cast picker lists LoadImage's folder; a
     // reference can equally be a video, so the two lists are merged here.

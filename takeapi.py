@@ -411,10 +411,10 @@ def set_audio_references(graph, names):
 #: message can say which reference was dropped and why.
 REF_CAPS = {"image": 9, "video": 3, "audio": 3}
 
-#: Roles that want a DEPTH pass rather than the picture itself. Depth is the
-#: mechanism that separates composition and motion from appearance -- without
-#: it a reference brings its subject along, which is the measured trap.
-DEPTH_ROLES = ("composition", "motion")
+# the role vocabulary lives with the node that emits the clause, so the two
+# cannot drift
+from .chunkref import ROLES_FOR, canonical as canonical_role
+from .chunkref import depth_for_role as role_wants_depth
 
 
 def set_chunk_references(graph, refs):
@@ -497,30 +497,39 @@ def set_chunk_references(graph, refs):
             continue
 
         if kind == "video":
-            vid = mint("LoadVideo", {"file": src_name})
-            node = mint("GetVideoComponents", {"video": [vid, 0]})
-            out = [node, 0]                       # images
+            # THE PACK'S OWN LOADER, not LoadVideo + GetVideoComponents +
+            # ImageFromBatch. VideoTrimLoad loads, trims and resizes in one
+            # node, and its `spans` widget is the format the trim UI already
+            # reads and writes -- `start count [label]`, one per line, which
+            # lands in the workflow and therefore in the rendered mp4's
+            # metadata as the only record of which part of which file a clip
+            # came from. Three stock nodes could not say that.
+            spans = str(r.get("spans") or "").strip()
+            if not spans:
+                st, ln = int(r.get("start") or 0), int(r.get("length") or 0)
+                spans = f"{st} {ln}" if ln else "0 0"     # 0 0 = all of it
+            out = [mint("VideoTrimLoad",
+                        {"file": src_name, "spans": spans,
+                         "span_index": int(r.get("span_index") or 0),
+                         "force_rate": 24.0, "select_every_nth": 1},
+                        f"h3.clip.{i}"), 0]
         else:
             out = [mint("LoadImage", {"image": src_name}), 0]
 
-        # TRIM IN FRAMES, not seconds. The grid this pack lives on is 17n+5
-        # frames, and a trim expressed in seconds has to be rounded somewhere --
-        # better here, visibly, than silently inside a node.
-        length = int(r.get("length") or 0)
-        start = int(r.get("start") or 0)
-        if kind == "video" and (length or start):
-            out = [mint("ImageFromBatch", {"image": out, "batch_index": start,
-                                           "length": max(1, length or 4096)}), 0]
-
-        role = str(r.get("role") or "composition")
-        wants_depth = r.get("depth")
-        wants_depth = role in DEPTH_ROLES if wants_depth is None \
-            else bool(wants_depth)
-        if wants_depth:
+        # DEPTH FOLLOWS THE ROLE. It used to be a flag a caller could set
+        # either way, which let a `composition` reference skip the pass and
+        # carry the appearance the clause tells the model to ignore -- a
+        # contradiction nobody should be able to express. `frame 0` is the one
+        # role that must NOT be depth-filtered: it has to be the real picture
+        # or it is not the frame.
+        role = canonical_role(str(r.get("role") or "composition"))
+        if role not in ROLES_FOR.get(kind, ()):
+            allowed = ", ".join(ROLES_FOR.get(kind, ())) or "none"
+            lint.append(f"{src_name}: a {kind} cannot be {role!r} — "
+                        f"using {allowed.split(',')[0]}")
+            role = (ROLES_FOR.get(kind) or ("composition",))[0]
+        if role_wants_depth(role):
             out = [depth_for(out), 0]
-        elif role in DEPTH_ROLES:
-            lint.append(f"{src_name}: role {role!r} without a depth pass — the "
-                        f"reference will bring its appearance with it")
 
         counts[kind] += 1
         gate_in = {"role": role,
