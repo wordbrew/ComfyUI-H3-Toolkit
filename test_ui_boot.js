@@ -50,6 +50,36 @@ global.localStorage = { getItem(){ return null; }, setItem(){} };
 // path, so a test that only broke the network never saw it.
 // Run both by default; SCENARIO=ok|fail picks one. A bare invocation has to
 // cover the reachable path, because that is where the last bug lived.
+// Structural claims about the page, checked against the page. These exist
+// because I told CJ the defaults were in a collapsed panel when the patch that
+// was meant to do it had silently matched nothing — a .replace() with no
+// assertion, reported as done.
+{
+  const fs2 = require("fs");
+  const html2 = fs2.readFileSync(__dirname + "/ui/index.html", "utf8");
+  const must = [
+    ["Carry sits inside the Defaults panel",
+     /<details id="defaults">[\s\S]{0,600}id="ctx"/],
+    ["and so does the join default",
+     /<details id="defaults">[\s\S]{0,600}id="qcont"/],
+    ["the three timeline tracks each have a label gutter",
+     /<span>Cast<\/span>[\s\S]*<span>Setting<\/span>[\s\S]*<span>Props<\/span>/],
+    ["references are their own panel",
+     /<details id="refpanel">/],
+    ["and models are another",
+     /<details id="setup">[\s\S]{0,120}<summary>Models<\/summary>/],
+    ["no Done or Apply button survives",
+     /^(?!.*id="(chunkclose|inline_ok|inline_cancel)")[\s\S]*$/],
+  ];
+  let bad2 = 0;
+  for (const [label, re2] of must) {
+    const ok2 = re2.test(html2);
+    console.log(`  ${ok2 ? "ok  " : "FAIL"} ${label}`);
+    if (!ok2) bad2++;
+  }
+  if (bad2) { console.log(`FAIL — ${bad2} structural claim(s)`); process.exit(1); }
+}
+
 const SCENARIO = process.env.SCENARIO || "fail";
 if (!process.env.SCENARIO) {
   const { execFileSync } = require("child_process");
