@@ -109,27 +109,48 @@
      flex basis per chunk, same 2px gap, and the SAME zero-width spacers where
      the join buttons sit -- those are width 0 but still take a gap, so a lane
      without them drifts 2px per chunk. */
-  .lanes { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px; }
+  /* EVERY TRACK SHARES ONE GUTTER WIDTH. That is the whole alignment rule:
+     the chunk strip had no label column and the lanes had a 128px one, so the
+     two were offset by exactly that much and the "subject" row lined up with
+     nothing. */
+  .tracks { --gut: 104px; display: flex; flex-direction: column; gap: 4px;
+            margin: 10px 0 4px; }
+  .trk { display: flex; align-items: center; gap: 10px; }
+  .trk.top { align-items: flex-start; }
+  .trk > .gut {
+    width: var(--gut); flex: none; display: flex; align-items: center;
+    justify-content: space-between; gap: 6px;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    color: var(--ink-soft); text-transform: uppercase;
+  }
+  .trk.top > .gut { padding-top: 1px; }
+  .trk > .gut button {
+    width: 20px; height: 20px; padding: 0; flex: none; font-size: 13px;
+    line-height: 1; border-radius: 3px; background: var(--panel-2);
+    border: 1px solid var(--line); color: var(--ink-dim); cursor: pointer;
+  }
+  .trk > .gut button:hover { border-color: var(--accent); color: var(--ink); }
+  .trk > .ruler, .trk > .tl, .trk > .lanes { flex: 1; min-width: 0; margin: 0; }
+
+  .lanes { display: flex; flex-direction: column; gap: 3px; }
   .lane { display: flex; align-items: center; gap: 8px; }
-  .lane .nm {
-    width: 128px; flex: none; display: flex; align-items: center; gap: 6px;
-    font-size: 11px; color: var(--ink-soft); min-width: 0;
+  .lane { gap: 0; }
+  .lane .track { display: flex; gap: 2px; flex: 1; min-width: 0;
+                 position: relative; }
+  /* THE LABEL RIDES ON THE CLIP, the way it does in an editor. It is absolutely
+     positioned inside the first cell of a run and allowed to overflow across
+     the rest, which keeps every cell on the chunk grid -- a name column inside
+     the track would push every bar out of line with the strip above. */
+  .lane .cap {
+    position: absolute; left: 5px; top: 1px; white-space: nowrap;
+    pointer-events: none; font-size: 10.5px; line-height: 15px;
+    color: var(--ink); max-width: 60vw; overflow: hidden;
+    text-overflow: ellipsis; z-index: 2;
   }
-  .lane .nm b {
-    font-weight: 500; color: var(--ink); overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap;
-  }
-  .lane .nm .role {
-    font: 10px/1 var(--mono); color: var(--ink-faint); cursor: pointer;
-    border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px;
-    flex: none; background: none;
-  }
-  .lane .nm .role:hover { border-color: var(--accent); color: var(--ink); }
-  .lane .nm img { width: 18px; height: 18px; object-fit: cover; border-radius: 2px; flex: none; }
-  .lane .track { display: flex; gap: 2px; flex: 1; min-width: 0; }
+  .lane .cap em { font-style: normal; color: var(--ink-faint); }
   .lane .track .sp { width: 0; flex: none; }
   .lane .cell {
-    height: 17px; background: var(--ground-2); border-radius: 2px;
+    position: relative; height: 17px; background: var(--ground-2); border-radius: 2px;
     cursor: pointer; min-width: 0; border: 1px solid transparent;
   }
   .lane .cell:hover { border-color: var(--line-strong); }
@@ -382,6 +403,12 @@
         text-align: center; color: var(--ink-faint); font-size: 12px;
         margin-top: 10px; }
   .dz.dropping { color: var(--accent); }
+  /* a clip has no thumbnail from /view, so it gets a glyph instead of a
+     broken image box */
+  .picker .tile .vid {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    background: var(--ground-2); color: var(--ink-faint); font-size: 20px;
+  }
 </style>
 </head>
 <body>
@@ -400,40 +427,36 @@
     <h2>Plan</h2>
     <p class="hint">A readout, not a second place to set things. Length and
     transition live on each scene; this is what they add up to.</p>
-    <details id="quick">
-      <summary>Setup — defaults, and a scene list from scratch</summary>
-      <div class="body">
-        <!-- CARRY WAS STRANDED HERE, alone in a two-column row with an empty
-             half beside it, which is how it read as belonging to nothing. It
-             is a take-wide DEFAULT every continuing scene inherits, so it sits
-             with the other defaults rather than floating above them. -->
-        <div class="row two">
-          <div><label for="ctx">Carry</label><select id="ctx"></select></div>
-          <div><label>&nbsp;</label>
-            <p class="hint" style="margin:0">How much of the previous scene a
-            continuing scene reproduces. Every scene inherits this; one can
-            override it in the inspector.</p></div>
-        </div>
-        <hr class="split" style="margin:18px -16px">
-        <p class="hint">Build a fresh scene list. This REPLACES whatever is
-        there, so use it to start rather than to adjust — once scenes exist,
-        edit them on the strip or in the inspector. New scenes take the carry
-        above.</p>
-        <div class="row three">
-          <div><label for="qn">How many scenes</label>
-            <input type="number" id="qn" value="4" min="1" max="24"></div>
-          <div><label for="cf">Length of each</label>
-            <select id="cf"></select></div>
-          <div><label for="qcont">Joined by</label>
-            <select id="qcont"></select></div>
-        </div>
-        <div class="bar"><button id="qgo">Make scenes</button></div>
-      </div>
-    </details>
+    <!-- QUICK SETUP IS GONE. CJ: "there's literally no reason to use it at all
+         really when a user can just manually add chunks. what's the point of
+         it?" There was none. It generated N identical scenes, which is the one
+         thing + on the Chunks track does in one click, and it REPLACED the
+         scene list, which made it dangerous as well as redundant. Carry stays:
+         it is a real take-wide default and it has nowhere else to live. -->
+    <div class="row two" style="margin-bottom:12px">
+      <div><label for="ctx">Carry — how much of the previous scene a
+        continuing one reproduces</label><select id="ctx"></select></div>
+      <div><label for="qcont">New scenes join with</label>
+        <select id="qcont"></select></div>
+    </div>
     <input type="number" id="cc" value="3" hidden>
-    <div id="ruler" class="ruler"></div>
-    <div id="tl" class="tl"></div>
-    <div id="lanes" class="lanes"></div>
+    <input type="number" id="qn" value="4" hidden>
+    <select id="cf" hidden></select>
+    <div class="tracks">
+      <div class="trk"><div class="gut"></div>
+        <div id="ruler" class="ruler"></div></div>
+      <div class="trk">
+        <div class="gut"><span>Chunks</span>
+          <button id="addchunk" title="add a scene at the end">+</button></div>
+        <div id="tl" class="tl"></div>
+      </div>
+      <div class="trk top"><div class="gut"><span>Cast</span>
+        <button id="addcast2" title="add a subject">+</button></div>
+        <div id="castlanes" class="lanes"></div></div>
+      <div class="trk top"><div class="gut"><span>References</span>
+        <button id="addref" title="add an image or clip">+</button></div>
+        <div id="lanes" class="lanes"></div></div>
+    </div>
     <div class="dragnote" id="dragnote"></div>
     <p class="hint" id="tlhint" hidden>Drag the <strong>⋮</strong> on a
     segment's right edge to change that scene's length. Drag a segment itself to
@@ -673,6 +696,14 @@
     <div id="jobs"></div>
   </section>
 </main>
+
+<dialog class="picker" id="inline">
+  <div class="hd"><strong id="inline_title">Edit</strong></div>
+  <div class="bd" style="padding:14px 16px" id="inline_body"></div>
+  <div class="ft"><span style="flex:1"></span>
+    <button id="inline_cancel">Cancel</button>
+    <button id="inline_ok" class="primary">Apply</button></div>
+</dialog>
 
 <dialog class="picker" id="pick">
   <div class="hd">
@@ -1049,122 +1080,173 @@ function refsChanged() {
   refreshPlan();
 }
 
-function drawLanes() {
-  const host = $("lanes");
-  if (!host) return;
-  host.innerHTML = "";
-  const chunks = (lastPlan && lastPlan.chunks) || [];
-  if (!chunks.length) return;
-
-  const track = (onSet, cls, onClick) => {
+function laneRow(items, host, chunks, opts) {
+  // ONE ROW PER ITEM, cells on the chunk grid. `items` is whatever the track
+  // holds -- a reference or a cast member -- and `opts` says how to read and
+  // write its span, so the two tracks share every bit of the geometry and
+  // differ only in what they are a span OF.
+  for (const r of items) {
+    const row = document.createElement("div");
+    row.className = "lane";
     const t = document.createElement("div");
     t.className = "track";
+    const set = specToSet(opts.spanOf(r), chunks.length);
+
+    const commit = () => {
+      opts.setSpan(r, setToSpec(set, chunks.length));
+      refsChanged();
+    };
+
     chunks.forEach((c, i) => {
       if (i > 0) {
-        // the join's zero-width spacer: it takes a gap on the strip above, so
-        // the lane has to take one too or the two drift apart
         const sp = document.createElement("div");
         sp.className = "sp";
         t.appendChild(sp);
       }
       const cell = document.createElement("div");
-      cell.className = "cell" + (onSet.has(i) ? " on " + cls : "");
+      cell.className = "cell" + (set.has(i) ? " on" + (opts.cls || "") : "");
       cell.style.flex = String(c.frames);
-      cell.title = `chunk ${c.number} — ${c.start_seconds}s to ${c.end_seconds}s`;
-      if (onClick) {
-        cell.onmousedown = (e) => { e.preventDefault(); onClick(i, "down"); };
-        cell.onmouseenter = () => { if (LANEDRAG) onClick(i, "move"); };
+      cell.title = `${opts.name(r)} — chunk ${c.number}`
+        + (set.has(i) ? "" : " (not used here)");
+      cell.onmousedown = (e) => {
+        e.preventDefault();
+        LANEDRAG = { r, add: !set.has(i) };
+        document.addEventListener("mouseup", () => { LANEDRAG = null; },
+                                  { once: true });
+        LANEDRAG.add ? set.add(i) : set.delete(i);
+        commit();
+      };
+      cell.onmouseenter = () => {
+        if (!LANEDRAG || LANEDRAG.r !== r) return;
+        LANEDRAG.add ? set.add(i) : set.delete(i);
+        commit();
+      };
+      // the label sits in the first cell of each run and overflows across it
+      if (set.has(i) && !set.has(i - 1)) {
+        const cap = document.createElement("div");
+        cap.className = "cap";
+        cap.innerHTML = escapeHTML(opts.name(r))
+          + (opts.note(r) ? ` <em>${escapeHTML(opts.note(r))}</em>` : "");
+        cell.appendChild(cap);
       }
       t.appendChild(cell);
     });
-    return t;
-  };
 
-  // ---- one lane per per-chunk reference
-  CHUNKREFS.forEach(r => {
-    const row = document.createElement("div");
-    row.className = "lane";
-    const nm = document.createElement("div");
-    nm.className = "nm";
-    const b = document.createElement("b");
-    b.textContent = r.label || r.source;
-    b.title = r.source;
-    const role = document.createElement("button");
-    role.type = "button"; role.className = "role"; role.textContent = r.role;
-    role.title = "click to change what the model takes from this";
-    role.onclick = () => {
-      r.role = REF_ROLES[(REF_ROLES.indexOf(r.role) + 1) % REF_ROLES.length];
-      r.depth = r.role === "composition" || r.role === "motion";
-      refsChanged();
-    };
-    nm.append(b, role);
-    const set = specToSet(r.chunks, chunks.length);
-    const t = track(set, "", (i, how) => {
-      if (how === "down") {
-        LANEDRAG = { ref: r, add: !set.has(i) };
-        document.addEventListener("mouseup", () => { LANEDRAG = null; },
-                                  { once: true });
-      }
-      if (!LANEDRAG || LANEDRAG.ref !== r) return;
-      LANEDRAG.add ? set.add(i) : set.delete(i);
-      r.chunks = setToSpec(set, chunks.length);
+    const edit = document.createElement("button");
+    edit.className = "x"; edit.textContent = "⋯";
+    edit.title = "change what this is";
+    edit.onclick = () => opts.edit(r);
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "✕";
+    x.title = "remove";
+    x.onclick = () => opts.drop(r);
+    row.append(t, edit, x);
+    host.appendChild(row);
+  }
+  if (!items.length) {
+    const e = document.createElement("div");
+    e.className = "lanedrop";
+    e.textContent = opts.empty;
+    if (opts.onDrop) {
+      e.ondragover = (ev) => { ev.preventDefault(); e.classList.add("dropping"); };
+      e.ondragleave = () => e.classList.remove("dropping");
+      e.ondrop = (ev) => {
+        ev.preventDefault(); e.classList.remove("dropping");
+        opts.onDrop(ev);
+      };
+    }
+    host.appendChild(e);
+  }
+}
+
+function drawLanes() {
+  const chunks = (lastPlan && lastPlan.chunks) || [];
+  const refHost = $("lanes"), castHost = $("castlanes");
+  if (!refHost || !castHost) return;
+  refHost.innerHTML = ""; castHost.innerHTML = "";
+  if (!chunks.length) return;
+
+  // ---- CAST. A span here is which chunks the subject's pictures are wired
+  // into. Scoped to fewer than all, they go through H3ChunkRef with the
+  // `identity` role; across the whole take they stay plain references.
+  laneRow(CAST, castHost, chunks, {
+    cls: " subject",
+    spanOf: (r) => r.chunks || "all",
+    setSpan: (r, v) => { r.chunks = v; },
+    name: (r) => r.from_library || r.describe || r.setting || "subject",
+    note: (r) => r.kind === "setting" ? "setting"
+                : `${(r.images || []).length} pic`,
+    edit: (r) => { r.open = true; drawCast();
+                   document.getElementById("castlist")
+                     ?.scrollIntoView({ block: "nearest" }); },
+    drop: (r) => { dropRow(r.id); },
+    empty: "no cast yet — + adds a subject, a setting or anything else the "
+         + "take refers to",
+  });
+
+  // ---- REFERENCES
+  laneRow(CHUNKREFS, refHost, chunks, {
+    spanOf: (r) => r.chunks || "all",
+    setSpan: (r, v) => { r.chunks = v; },
+    name: (r) => r.label || r.source,
+    note: (r) => r.role + (r.depth !== false ? " · depth" : ""),
+    edit: (r) => editRef(r),
+    drop: (r) => { CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
+                   refsChanged(); },
+    empty: "no references — + picks an image or clip, or drop one here. It "
+         + "takes the whole shot you drop it on, then drag to adjust.",
+    onDrop: (ev) => {
+      const path = ev.dataTransfer.getData("text/plain");
+      if (!path) return;
+      const box = ev.currentTarget.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
+      addChunkRef(path, isVideoPath(path),
+                  Math.min(chunks.length - 1, Math.floor(frac * chunks.length)));
+    },
+  });
+}
+
+function isVideoPath(p) {
+  return /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(String(p));
+}
+
+// ONE EDITOR for a reference, rather than a chip that cycles blindly: the role
+// decides what the model takes, and the depth pass is what makes two of those
+// roles mean anything, so they belong on screen together.
+// A tiny modal for "change this one thing", so a role and its depth toggle can
+// be seen together instead of guessed at from a chip that cycles.
+let inlineDone = null;
+function openInline(html, title, done) {
+  $("inline_title").textContent = title;
+  $("inline_body").innerHTML = html;
+  inlineDone = done;
+  $("inline").showModal();
+}
+
+function editRef(r) {
+  const roles = REF_ROLES.map(x =>
+    `<option value="${x}"${x === r.role ? " selected" : ""}>${x}</option>`).join("");
+  openInline(`
+    <div class="row two">
+      <div><label>Role</label><select id="ed_role">${roles}</select></div>
+      <div><label>Trim — frames, video only</label>
+        <div class="bar" style="margin-top:0">
+          <input type="number" id="ed_start" placeholder="from" value="${r.start || 0}" min="0">
+          <input type="number" id="ed_len" placeholder="length" value="${r.length || 0}" min="0">
+        </div></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="ed_depth"${r.depth !== false ? " checked" : ""}>
+      pass it through DepthAnything first — composition and motion without the
+      appearance</label>
+    <p class="hint" id="ed_why"></p>`,
+    r.label || r.source,
+    () => {
+      r.role = $("ed_role").value;
+      r.depth = $("ed_depth").checked;
+      r.start = +$("ed_start").value || 0;
+      r.length = +$("ed_len").value || 0;
       refsChanged();
     });
-    const x = document.createElement("button");
-    x.className = "x"; x.textContent = "✕"; x.title = "remove this reference";
-    x.onclick = () => {
-      CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
-      refsChanged();
-    };
-    row.append(nm, t, x);
-    host.appendChild(row);
-  });
-
-  // ---- and one per cast member, READ-ONLY. A subject is cited for the whole
-  // take today, and showing that as a full-width bar is the honest picture:
-  // it is the row that makes a reference's shorter span legible by contrast.
-  CAST.forEach((r, i) => {
-    const row = document.createElement("div");
-    row.className = "lane locked";
-    const nm = document.createElement("div");
-    nm.className = "nm";
-    const b = document.createElement("b");
-    b.textContent = r.from_library || r.describe || r.setting
-      || `subject ${i + 1}`;
-    const tag = document.createElement("span");
-    tag.className = "role"; tag.style.cursor = "default";
-    tag.textContent = r.kind === "setting" ? "setting" : "subject";
-    nm.append(b, tag);
-    const all = new Set(chunks.map((_, k) => k));
-    row.append(nm, track(all, "subject", null));
-    const pad = document.createElement("span");
-    pad.className = "x"; pad.textContent = "";
-    row.appendChild(pad);
-    host.appendChild(row);
-  });
-
-  // ---- the drop target
-  const dz = document.createElement("div");
-  dz.className = "lanedrop";
-  dz.textContent = CHUNKREFS.length
-    ? "drop an image or clip here for another reference"
-    : "drop an image or clip here to use it as composition or motion — "
-      + "it takes the whole shot you drop it on, then drag to adjust";
-  dz.ondragover = (e) => { e.preventDefault(); dz.classList.add("dropping"); };
-  dz.ondragleave = () => dz.classList.remove("dropping");
-  dz.ondrop = (e) => {
-    e.preventDefault();
-    dz.classList.remove("dropping");
-    const path = e.dataTransfer.getData("text/plain");
-    if (!path) return;
-    // which chunk was it dropped over? the x position across the track width
-    const box = dz.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
-    const at = Math.min(chunks.length - 1, Math.floor(frac * chunks.length));
-    addChunkRef(path, /\.(mp4|mov|webm|mkv|avi)$/i.test(path) ? "video" : "image",
-                at);
-  };
-  host.appendChild(dz);
 }
 
 function drawContList() {
@@ -1729,9 +1811,24 @@ async function stageLibraryRows() {
 function deriveRefs() {
   REFS = [];
   VOICES = [];
+  SCOPED = [];
   CAST.forEach((r, i) => {
     const who = r.from_library || r.describe || r.setting || `subject ${i + 1}`;
-    for (const pth of (r.images || [])) REFS.push({ path: pth, from: who });
+    // A SCOPED CAST MEMBER IS A GATED REFERENCE. Dragging a subject's bar
+    // shorter has to mean something, so anything narrower than the whole take
+    // goes through H3ChunkRef with the `identity` role -- same gate the
+    // composition references use, no depth pass, and the subject definition
+    // still names it. Across the whole take it stays a plain reference, which
+    // is cheaper and is what every existing take does.
+    const span = r.chunks && r.chunks !== "all" ? r.chunks : null;
+    for (const pth of (r.images || [])) {
+      if (span) {
+        SCOPED.push({ source: pth, kind: "image", role: "identity",
+                      chunks: span, depth: false, label: who });
+      } else {
+        REFS.push({ path: pth, from: who });
+      }
+    }
     if (r.use_voice && r.voice_path) VOICES.push({ path: r.voice_path, from: who });
   });
   drawRefSlots();
@@ -1800,6 +1897,7 @@ function refreshCast() {
    files, so this costs one <img> per asset and no new endpoint. Subfolders are
    the bins -- /upload/image takes a `subfolder` and creates it -- so there is no
    project metadata layer to invent.  */
+let VIDEOS = [];                 // LoadVideo's folder, for motion references
 let ASSETS = [];                 // "name.png" or "project/name.png", from core
 
 /* PREVIEW, NOT THE ORIGINAL. /view hands back the source file unless asked
@@ -1830,8 +1928,11 @@ async function loadAssets() {
 /* The picker is one dialog serving two jobs: many anchors, or one reference. */
 let pickState = null;            // {multi, chosen:Set, done(paths)}
 
-function openPicker({ title, multi, chosen = [], done }) {
-  pickState = { multi, chosen: new Set(chosen), done };
+function openPicker({ title, multi, chosen = [], done, assets = null }) {
+  // `assets` lets a caller widen the list -- a reference can be a clip, and
+  // LoadVideo's folder is a different list from LoadImage's. Null keeps the
+  // image list, which is what every existing caller wants.
+  pickState = { multi, chosen: new Set(chosen), done, assets };
   $("pick_title").textContent = title;
   $("pick_q").value = "";
   drawPicker();
@@ -1842,7 +1943,7 @@ function drawPicker() {
   const folder = $("pick_folder").value;
   const host = $("pick_tiles");
   host.innerHTML = "";
-  const shown = ASSETS.filter(a =>
+  const shown = (pickState.assets || ASSETS).filter(a =>
     (!folder || folderOf(a) === folder) && (!q || a.toLowerCase().includes(q)));
   if (!shown.length) {
     host.innerHTML = `<p class="hint">Nothing matches. Upload files below.</p>`;
@@ -2026,6 +2127,8 @@ function drawAnchorTiles() {
 let REFS = [];
 // voices run alongside REFS and are derived the same way, from the cast
 let VOICES = [];
+// cast members narrowed to some chunks; they ride the same gate as references
+let SCOPED = [];
 
 /* REFERENCES ARE DERIVED, NEVER PICKED HERE. They are the cast's images in
    subject order, which is the order the prompt numbers <Picture N>. Two places
@@ -2186,8 +2289,9 @@ function request() {
     if (tails.some(Boolean)) req.tails = tails.join("\n\n");
   }
   if (VOICES.length) req.audio_references = VOICES.map(v => v.path);
-  if (CHUNKREFS.length) {
-    req.chunk_references = CHUNKREFS.map(r => ({
+  const allRefs = [...SCOPED, ...CHUNKREFS];
+  if (allRefs.length) {
+    req.chunk_references = allRefs.map(r => ({
       source: r.source, kind: r.kind, role: r.role,
       chunks: r.chunks || "all", depth: r.depth !== false,
       label: r.label || "",
@@ -2469,6 +2573,30 @@ function wireControls() {
   for (const id of ["sound", "music"]) {
     $(id).addEventListener("input", checkSound);
   }
+  $("inline_cancel").onclick = () => { inlineDone = null; $("inline").close(); };
+  $("inline_ok").onclick = () => {
+    const fn = inlineDone; inlineDone = null; $("inline").close();
+    if (fn) fn();
+  };
+
+  // ---- the three track + buttons
+  $("addchunk").onclick = () => {
+    addScene(SCENES.length ? SCENES.length - 1 : null);
+  };
+  $("addcast2").onclick = () => { addRow("library"); };
+  $("addref").onclick = async () => {
+    // IMAGES AND CLIPS BOTH. The cast picker lists LoadImage's folder; a
+    // reference can equally be a video, so the two lists are merged here.
+    if (!VIDEOS.length) VIDEOS = await optionsFor("LoadVideo", "file");
+    openPicker({
+      title: "Reference — an image or a clip",
+      multi: true, chosen: [], assets: [...ASSETS, ...VIDEOS],
+      done: paths => {
+        for (const path of paths) addChunkRef(path, isVideoPath(path), 0);
+      },
+    });
+  };
+
   $("mp").addEventListener("input", () => { checkFrameSize(); save(); });
   $("ar").addEventListener("change", () => { checkFrameSize(); save(); });
   for (const [id, key] of [["i_head", "head"], ["i_tail", "tail"]]) {
@@ -2484,20 +2612,8 @@ function wireControls() {
     const v = $("i_pin").value;
     SCENES[SEL].pin = v === "" ? null : +v;   // null = take the global default
   });
-  $("qgo").onclick = () => {
-    // a GENERATOR, not a second representation: it writes scenes and then the
-    // scene list is the only place a length lives
-    const n = Math.max(1, +$("qn").value || 1);
-    const f = +$("cf").value || 192;
-    const join = $("qcont").value || "carry";
-    if (SCENES.length && !confirm(`Replace the ${SCENES.length} scene(s) with `
-        + `${n} of ${(f / 24).toFixed(2)}s?`)) return;
-    SCENES = [];
-    for (let i = 0; i < n; i++) {
-      SCENES.push(newScene({ frames: f, continuity: i ? join : undefined }));
-    }
-    SEL = 0;
-  };
+  // (Quick setup and its generator are gone -- + on the Chunks track adds one
+  //  scene, which is the only part of it anyone used.)
   $("i_seed").addEventListener("change", () => {
     if (SCENES[SEL]) SCENES[SEL].seed_offset = +$("i_seed").value;
     save();

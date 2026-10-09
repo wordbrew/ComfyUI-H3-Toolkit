@@ -123,7 +123,9 @@ realTimeout(() => {
     if (typeof el.onclick === "function") WIRED.add(id + ":onclick");
   }
   const need = ["render:click", "addscene:onclick", "i_addlora:onclick",
-                "newsubj:onclick", "dry:click", "qgo:onclick"];
+                "newsubj:onclick", "dry:click",
+                // the three timeline + buttons replaced Quick setup's one
+                "addchunk:onclick", "addcast2:onclick", "addref:onclick"];
   let bad = 0;
   for (const k of need) {
     const ok = WIRED.has(k);
