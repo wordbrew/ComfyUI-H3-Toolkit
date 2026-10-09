@@ -23,6 +23,14 @@ const mk = (id) => {
     options: [], classList: { add(){}, remove(){}, contains(){return false} },
     dataset: {}, style: {}, title: "", open: false, selectedOptions: [],
     appendChild(c){ this.options.push(c); return c; },
+    append(...c){ this.options.push(...c); },
+    // A REAL ELEMENT IN THE DOCUMENT HAS A PARENT, and the handle mirror
+    // wraps a field by inserting next to it. A stub without parentNode sent
+    // every field down the degraded path, so the wrapping was never
+    // exercised — and the first version of it threw there, in the browser,
+    // on code this suite had called clean.
+    parentNode: { insertBefore(){}, },
+    closest(){ return null; },
     querySelector(){ return mk("q"); }, querySelectorAll(){ return []; },
     addEventListener(t){ WIRED.add(id + ":" + t); }, removeEventListener(){},
     showModal(){}, close(){},
@@ -40,6 +48,10 @@ global.document = {
   body: mk("body"), documentElement: { dataset: {} },
   querySelectorAll: () => [], addEventListener(){},
 };
+global.getComputedStyle = () => ({
+  fontFamily: "", fontSize: "", fontWeight: "", lineHeight: "",
+  letterSpacing: "", padding: "", borderWidth: "", textIndent: "",
+});
 global.window = { addEventListener(){}, open(){ return { document: { write(){} } }; } };
 global.location = { protocol: "http:", host: "127.0.0.1:8188" };
 global.localStorage = { getItem(){ return null; }, setItem(){} };
