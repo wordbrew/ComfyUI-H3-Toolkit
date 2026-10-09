@@ -461,6 +461,7 @@
                       padding: 10px 12px; border-bottom: 1px solid var(--line);
                       position: sticky; top: 0; background: var(--panel); z-index: 2; }
   dialog.picker .bd { padding: 12px; overflow: auto; max-height: calc(86vh - 108px); }
+  dialog { position: relative; }
   dialog.picker .ft { display: flex; gap: 8px; align-items: center;
                       padding: 10px 12px; border-top: 1px solid var(--line);
                       background: var(--panel); }
@@ -473,6 +474,26 @@
   .dz.dropping { color: var(--accent); }
   /* a clip has no thumbnail from /view, so it gets a glyph instead of a
      broken image box */
+  /* HANDLES IN COLOUR. A <textarea> cannot style part of its own text, so the
+     field is wrapped and a mirror div sits exactly behind it with the same
+     font, padding and wrapping, rendering the handles in blue. The textarea's
+     own text goes transparent and its caret is painted explicitly — the caret
+     is the one thing the mirror cannot provide. Everything that makes the two
+     line up is inherited rather than restated, because a 1px difference in
+     padding shows up as the highlight drifting off the word. */
+  .hwrap { position: relative; }
+  .hwrap > textarea {
+    position: relative; background: transparent; color: transparent;
+    caret-color: var(--ink); z-index: 1;
+  }
+  .hmirror {
+    position: absolute; inset: 0; z-index: 0; overflow: hidden;
+    white-space: pre-wrap; overflow-wrap: break-word; pointer-events: none;
+    color: var(--ink); border: 1px solid transparent; border-radius: var(--r);
+  }
+  .hmirror .h { color: #5aa9ff; font-weight: 600; }
+  .hmirror .h.bad { color: var(--bad); text-decoration: underline wavy; }
+
   /* @handle completion */
   .hmenu {
     position: absolute; z-index: 90; background: var(--panel);
@@ -719,6 +740,7 @@
     <span style="flex:1"></span>
     <button id="inspdel">Delete chunk</button></div>
   <div class="bd" id="chunkbody">
+      <p class="hint" id="i_handlewarn" hidden style="color:var(--bad)"></p>
       <label for="i_beat">What happens in this chunk</label>
       <textarea id="i_beat" rows="4" placeholder="She turns toward the window and the light catches her face."></textarea>
       <p class="hint">One continuous moment. “And then…” reads as a cut
@@ -1912,6 +1934,10 @@ function drawInspector() {
   // what the user called it.
   $("insptitle").textContent = `Chunk ${SEL + 1} of ${SCENES.length}`;
   $("i_beat").value = sc.beat || "";
+  // the mirror does not see a programmatic assignment, so nudge it
+  for (const id of ["i_beat", "i_head", "i_tail"]) {
+    if ($(id) && $(id)._paintHandles) $(id)._paintHandles();
+  }
   fill($("i_len"), legalRuns(39, 396).map(r => ({
     v: r, t: `${(r / 24).toFixed(2)}s — ${r}f${AV_EXACT.has(r) ? " · both clocks" : ""}`,
   })), String(sc.frames));
@@ -2162,17 +2188,66 @@ function attachHandles(el) {
   if (!el || el.dataset.handles) return;
   el.dataset.handles = "1";
 
+  // ---- the colour mirror. An element not in the document cannot be wrapped;
+  // completion still works without it, so this degrades rather than throwing
+  // and taking the rest of wireControls with it.
+  const wrap = el.parentNode ? document.createElement("div") : null;
+  if (wrap) {
+    wrap.className = "hwrap";
+    el.parentNode.insertBefore(wrap, el);
+  }
+  const mirror = wrap ? document.createElement("div") : null;
+  if (wrap) {
+    mirror.className = "hmirror";
+    wrap.append(mirror, el);
+  }
+  const copy = () => {
+    if (!mirror || typeof getComputedStyle !== "function") return;
+    const cs = getComputedStyle(el);
+    for (const k of ["fontFamily", "fontSize", "fontWeight", "lineHeight",
+                     "letterSpacing", "padding", "borderWidth", "textIndent"]) {
+      mirror.style[k] = cs[k];
+    }
+  };
+  const paintText = () => {
+    if (!mirror) return;
+    const known = new Set(castHandles().map(h => h.key.toLowerCase()));
+    mirror.innerHTML = escapeHTML(el.value)
+      .replace(/@([A-Za-z][A-Za-z0-9_-]*)/g, (m, k) =>
+        `<span class="h${known.has(k.toLowerCase()) ? "" : " bad"}">${m}</span>`)
+      // a trailing newline is not rendered by a div, so the mirror would be
+      // one line short and scroll out of step with the textarea
+      + "\n";
+    mirror.scrollTop = el.scrollTop;
+  };
+  el.addEventListener("input", paintText);
+  el.addEventListener("scroll", () => { mirror.scrollTop = el.scrollTop; });
+  el.addEventListener("focus", copy);
+  el._paintHandles = () => { copy(); paintText(); };
+  copy(); paintText();
+
   const menu = document.createElement("div");
   menu.className = "hmenu"; menu.hidden = true;
-  document.body.appendChild(menu);
+  // INSIDE THE DIALOG IF THE FIELD IS. A <dialog> opened with showModal()
+  // renders in the TOP LAYER, above everything in the normal stacking order --
+  // so a menu appended to <body> is painted BEHIND the modal and is simply
+  // invisible. That is why completion appeared to do nothing in the chunk
+  // editor while working on the take's own fields.
+  (el.closest("dialog") || document.body).appendChild(menu);
   let items = [], sel = 0, at = -1;
 
   const hide = () => { menu.hidden = true; at = -1; };
 
   const place = () => {
     const b = el.getBoundingClientRect();
-    menu.style.left = (b.left + window.scrollX) + "px";
-    menu.style.top = (b.bottom + window.scrollY + 2) + "px";
+    const host = menu.parentElement;
+    // offsets are relative to the positioned ancestor, which is the dialog
+    // when the field is in one and the page when it is not
+    const o = host === document.body
+      ? { left: -window.scrollX, top: -window.scrollY }
+      : host.getBoundingClientRect();
+    menu.style.left = (b.left - o.left) + "px";
+    menu.style.top = (b.bottom - o.top + 2) + "px";
     menu.style.minWidth = Math.min(b.width, 340) + "px";
   };
 
@@ -2236,19 +2311,32 @@ function unknownHandles(text) {
   return [...new Set(out)];
 }
 
-function checkHandles() {
-  const text = [$("head").value, $("tail").value,
-                ...SCENES.map(x => x.beat || "")].join("\n");
-  const bad = unknownHandles(text);
-  const el = $("handlewarn");
+// A BAD HANDLE IS REPORTED WHERE IT WAS TYPED. This used to put every
+// problem in one line under the take's Tail -- so a typo in chunk 2's beat
+// was announced on a part of the page CJ could not even see while the chunk
+// modal was open. Each place now reports its own.
+function sayHandles(el, bad) {
   if (!el) return;
   el.hidden = !bad.length;
-  if (bad.length) {
-    const have = castHandles().map(h => "@" + h.key).join(", ") || "none yet";
-    el.textContent = `${bad.map(b => "@" + b).join(", ")} ` +
-      `${bad.length === 1 ? "is" : "are"} not in the cast, so the render will ` +
-      `refuse rather than send the text as written. Handles: ${have}.`;
+  if (!bad.length) return;
+  const have = castHandles().map(h => "@" + h.key).join(", ") || "none yet";
+  el.textContent = `${bad.map(b => "@" + b).join(", ")} `
+    + `${bad.length === 1 ? "is" : "are"} not in the cast, so the render will `
+    + `refuse rather than send that as literal text. Handles: ${have}.`;
+}
+
+function checkHandles() {
+  for (const id of ["head", "tail", "i_beat", "i_head", "i_tail"]) {
+    if ($(id) && $(id)._paintHandles) $(id)._paintHandles();
   }
+  // the take's own two fields
+  sayHandles($("handlewarn"),
+             unknownHandles($("head").value + "\n" + $("tail").value));
+  // and the chunk whose editor is open, about ITS text only
+  const sc = SCENES[SEL];
+  sayHandles($("i_handlewarn"), sc
+    ? unknownHandles([sc.beat, sc.head, sc.tail].filter(Boolean).join("\n"))
+    : []);
 }
 
 function compileSchedule() {
@@ -3457,6 +3545,7 @@ function wireControls() {
       if (!sc) return;
       write(sc, el);
       sceneChanged();
+      checkHandles();
     });
   }
 
