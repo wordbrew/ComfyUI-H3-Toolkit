@@ -107,70 +107,81 @@ ck("but editing the row that OWNS the handle keeps it",
 CASTREF = [];
 ck("no clash, no suffix", H.uniqueHandle("Lily", "9"), "lily");
 
-console.log("\nRENAMING A HANDLE CARRIES ITS REFERENCES");
-// Without this, swapping which library entry a row points at silently
-// renames its handle and orphans every `@oldname` already written — the only
-// symptom being a refused render naming something the author no longer
-// recognises.
+console.log("\nSWAP IS SCOPED, and counts what it will actually change");
+// CJ: "user can then choose to swap only specific chunk or swap all chunks."
+// The count shown in the dialog and the rewrite must use the same pattern AND
+// the same scope, or it promises one thing and does another.
 {
-  const body = src.match(/function renameHandle\(from, to\)[\s\S]*?\n\}/)[0];
+  const grab = (n) => src.match(
+    new RegExp("function " + n + "\\([\\s\\S]*?\\n\\}"))[0];
   let SC = [], F = {};
-  const rename = new Function("getS", "getF", "set",
-    body.replace(/\$\("head"\)\.value = swap\(\$\("head"\)\.value\);/,
-                 'set("head", swap(getF("head")));')
-        .replace(/\$\("tail"\)\.value = swap\(\$\("tail"\)\.value\);/,
-                 'set("tail", swap(getF("tail")));')
-        .replace(/for \(const sc of SCENES\)/, "for (const sc of getS())")
-        .replace(/if \(n\) \{[^}]*\}/, "")
-    + "; return renameHandle;")(() => SC, (k) => F[k], (k, v) => { F[k] = v; });
+  const api = new Function("getS", "getF", "setF", [
+    grab("handleRe"),
+    grab("renameHandle")
+      .replace(/\$\("head"\)\.value = swap\(\$\("head"\)\.value\);/,
+               'setF("head", swap(getF("head")));')
+      .replace(/\$\("tail"\)\.value = swap\(\$\("tail"\)\.value\);/,
+               'setF("tail", swap(getF("tail")));')
+      .replace(/SCENES\.forEach/, "getS().forEach")
+      .replace(/if \(n\) \{[^}]*\}/, ""),
+    grab("countHandle")
+      .replace(/\$\("head"\)\.value, \$\("tail"\)\.value,/,
+               'getF("head"), getF("tail"),')
+      .replace(/SCENES\.flatMap/, "getS().flatMap")
+      .replace(/SCENES\[only\]/g, "getS()[only]"),
+  ].join("\n") + "; return { renameHandle, countHandle };")(
+    () => SC, (k) => F[k], (k, v) => { F[k] = v; });
 
   const reset = () => {
-    SC = [{ beat: "@jen turns. @jenny waits." }, { beat: "@jen again" },
-          { beat: "no handles here" }];
-    F = { head: "@jen opens the door", tail: "@jenny closes it" };
+    SC = [{ beat: "@jenny turns" }, { beat: "@jenny waits" },
+          { beat: "@lily enters" }];
+    F = { head: "@jenny in the room", tail: "quiet" };
   };
 
   reset();
-  ck("every use is rewritten", rename("jen", "lily"), 3);
-  ck("in the head", F.head, "@lily opens the door");
-  ck("and in the beats", SC[1].beat, "@lily again");
-  ck("A LONGER HANDLE IS NOT MAULED", F.tail, "@jenny closes it");
-  ck("and not inside a beat either", SC[0].beat, "@lily turns. @jenny waits.");
+  ck("counted across the take", api.countHandle("jenny"), 3);
+  ck("counted in one chunk", api.countHandle("jenny", 1), 1);
+  ck("and zero where it does not appear", api.countHandle("jenny", 2), 0);
 
   reset();
-  ck("renaming to itself does nothing", rename("jen", "jen"), 0);
-  ck("an empty name does nothing", rename("", "x"), 0);
-  ck("and so does renaming something nobody wrote", rename("ghost", "x"), 0);
+  ck("one chunk rewrites one", api.renameHandle("jenny", "lily", 1), 1);
+  ck("  the head is untouched", F.head, "@jenny in the room");
+  ck("  the other chunk too", SC[0].beat, "@jenny turns");
+  ck("  and the named one changed", SC[1].beat, "@lily waits");
 
   reset();
-  // a handle with a regex metacharacter must not be treated as a pattern
+  ck("take-wide rewrites everything", api.renameHandle("jenny", "lily"), 3);
+  ck("  including the head", F.head, "@lily in the room");
+
+  reset();
+  // A LONGER HANDLE MUST NOT BE MAULED. Renaming @jen cannot touch @jenny --
+  // the boundary is what makes any of this safe, so it is asserted on both
+  // the count and the rewrite.
+  SC.push({ beat: "@jen and @jenny" });
+  ck("counting stops at the boundary", api.countHandle("jen"), 1);
+  ck("and so does rewriting", api.renameHandle("jen", "zoe"), 1);
+  ck("  the longer one survives", SC[3].beat, "@zoe and @jenny");
+
+  reset();
+  // a handle with a regex metacharacter is literal, not a pattern
   SC[0].beat = "@a.b waits";
-  ck("a dot in a handle is literal, not any-character",
-     rename("a.b", "ab"), 1);
+  ck("a dot means a dot", api.renameHandle("a.b", "ab"), 1);
+
+  reset();
+  ck("renaming to itself does nothing", api.renameHandle("jenny", "jenny"), 0);
+  ck("an empty name does nothing", api.renameHandle("", "x"), 0);
+  ck("and one nobody wrote does nothing", api.renameHandle("ghost", "x"), 0);
+
+  reset();
+  // the case the per-bar version could not reach: a handle whose subject has
+  // been dropped is still in the text, and is exactly what needs repointing
+  SC.push({ beat: "@ghost lingers" });
+  ck("an orphaned handle is still countable", api.countHandle("ghost"), 1);
+  ck("and still swappable", api.renameHandle("ghost", "lily"), 1);
 }
 
-console.log("\nRECAST counts only whole handles");
-// Recast tells you how many references it is about to rewrite, and that
-// number has to be the number it actually rewrites -- the same word boundary
-// renameHandle uses, or the dialog promises one thing and does another.
-{
-  const body = src.match(/function countHandle\(key\)[\s\S]*?\n\}/)[0];
-  const F = { head: "@jenny opens the door", tail: "quiet" };
-  const SC = [{ beat: "@jenny turns" }, { beat: "@jenny and @lily" },
-              { beat: "@jennyfer waits" }];
-  const count = new Function("getF", "getS",
-    body.replace(/\$\("head"\)\.value/, 'getF("head")')
-        .replace(/\$\("tail"\)\.value/, 'getF("tail")')
-        .replace(/SCENES\.flatMap/, "getS().flatMap")
-    + "; return countHandle;")((k) => F[k], () => SC);
-  ck("@jenny, not @jennyfer", count("jenny"), 3);
-  ck("@lily once", count("lily"), 1);
-  ck("and nobody is zero", count("nobody"), 0);
-}
-
-console.log("\nand every subject track offers it");
-const tracks = (src.match(/recast: true,/g) || []).length;
-ck("cast, setting and props all have swap", tracks, 3);
+console.log("\nthe per-bar swap is gone; edit does that job");
+ck("no recast left in the page", /recast/.test(src), false);
 
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
