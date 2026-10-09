@@ -417,6 +417,53 @@ ok("no depth model appears unbidden",
 ok("no gates either",
    not any(v["class_type"] == "H3ChunkRef" for v in _none.values()))
 
+
+# ------------------------------------------- ordering, and @handles
+print("\nSUBJECTS ARE NUMBERED people, then the place, then things")
+# CJ: "is there a way to always stack cast before setting and setting before
+# props? so we can always assume Subject 1 or Subject 2 are characters?"
+_mixed = [{"key": "lamp", "subkind": "thing", "describe": "a brass lamp"},
+          {"key": "room", "setting": "a living room"},
+          {"key": "lily", "describe": "a woman with red hair"},
+          {"key": "sam", "describe": "a man in a grey coat"}]
+check("the order", [r["key"] for r in ta.cast_order(_mixed)],
+      ["lily", "sam", "room", "lamp"])
+_c = ta.compile_cast(_mixed, _hs.parse, _hs.emit)
+ok("<Subject 1> is a person",
+   "red hair" in _c["subject_defs"].splitlines()[0])
+ok("and the setting is not", "setting" not in _c["subject_defs"].splitlines()[0])
+
+print("adding a prop does not renumber the people")
+_before = ta.handle_map(_mixed)
+_after = ta.handle_map(_mixed + [{"key": "chair", "subkind": "thing"}])
+check("lily stays 1", (_before["lily"], _after["lily"]), (1, 1))
+check("and sam stays 2", (_before["sam"], _after["sam"]), (2, 2))
+
+print("\n@HANDLES resolve to whatever the number turns out to be")
+_m = ta.handle_map(_mixed)
+check("the map", _m, {"lily": 1, "sam": 2, "room": 3, "lamp": 4})
+_t, _bad = ta.apply_handles("@lily looks at @sam across @room.", _m)
+check("substituted", _t,
+      "<Subject 1> looks at <Subject 2> across <Subject 3>.")
+check("nothing unknown", _bad, [])
+ok("punctuation does not swallow the handle",
+   ta.apply_handles("@lily, then @sam.", _m)[0]
+   == "<Subject 1>, then <Subject 2>.")
+ok("case does not matter", ta.apply_handles("@Lily", _m)[0] == "<Subject 1>")
+ok("an email address is not a handle",
+   "@" in ta.apply_handles("write to a@b.com", _m)[0])
+check("an unknown handle is reported",
+      ta.apply_handles("@nobody waves", _m)[1], ["nobody"])
+
+print("a handle naming nobody STOPS the build rather than reaching the model")
+raises("unknown handle", lambda: ta.build(
+    dict(REQ, cast=_mixed, beats="@ghost turns away")), "not in the cast")
+
+print("and a real one reaches the prompt as a number")
+_g = ta.build(dict(REQ, cast=_mixed, head="@lily in @room", beats="b1\nb2"))
+check("head was substituted",
+      field(_g, "h3.links", "head"), "<Subject 1> in <Subject 3>")
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")
