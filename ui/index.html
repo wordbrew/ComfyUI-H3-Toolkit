@@ -926,9 +926,10 @@
     <input type="text" id="pick_q" placeholder="filter by name…" style="flex:1">
     <select id="pick_folder" style="width:auto"></select>
     <select id="pick_kind" style="width:auto" hidden>
-      <option value="">Images and clips</option>
+      <option value="">Everything</option>
       <option value="image">Images only</option>
       <option value="video">Clips only</option>
+      <option value="audio">Sounds only</option>
     </select>
     <button id="pick_close">Close</button>
   </div>
@@ -1318,7 +1319,9 @@ function addChunkRef(source, kind, atChunk, open = true) {
   CHUNKREFS.push({
     id: Math.random().toString(36).slice(2, 9),
     source, kind,
-    role: kind === "video" ? "composition and motion" : "composition",
+    role: kind === "video" ? "composition and motion"
+        : kind === "audio" ? "" : "composition",
+    marker: kind === "audio" ? "reference" : undefined,
     chunks: setToSpec(span, chunks.length || 1),
     label: String(source).split(/[\\/]/).pop(),
     spans: "", span_index: 0,
@@ -1547,12 +1550,14 @@ function drawLanes() {
     spanOf: (r) => r.chunks || "all",
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.label || r.source,
-    note: (r) => r.role,
+    note: (r) => r.kind === "audio"
+      ? (r.marker || "reference")
+      : r.role + (r.with_audio ? " + sound" : ""),
     // a clip has no still to show, so it gets the play glyph rather than a
     // broken image box -- /view cannot thumbnail a video
-    thumb: (r) => r.kind === "video" ? null : r.source,
+    thumb: (r) => (r.kind === "video" || r.kind === "audio") ? null : r.source,
     clipOf: (r) => r.kind === "video" ? r.source : null,
-    glyph: "▶",
+    glyph: "♪",
     edit: (r) => editRef(r),
     drop: (r) => { CHUNKREFS = CHUNKREFS.filter(o => o.id !== r.id);
                    refsChanged(); },
@@ -1563,7 +1568,7 @@ function drawLanes() {
       if (!path) return;
       const box = ev.currentTarget.getBoundingClientRect();
       const frac = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width));
-      addChunkRef(path, isVideoPath(path) ? "video" : "image",
+      addChunkRef(path, kindOfPath(path),
                   Math.min(chunks.length - 1, Math.floor(frac * chunks.length)));
     },
   });
@@ -1572,6 +1577,24 @@ function drawLanes() {
 function isVideoPath(p) {
   return /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(String(p));
 }
+
+function isAudioPath(p) {
+  return /\.(wav|mp3|flac|ogg|m4a|aac)$/i.test(String(p));
+}
+
+function kindOfPath(p) {
+  return isVideoPath(p) ? "video" : isAudioPath(p) ? "audio" : "image";
+}
+
+//: H3's AUDIO markers, which are not the visual ones. `reference` is the
+//: default because it is the one that takes the character of a sound without
+//: reusing the recording.
+const AUDIO_MARKERS = [
+  ["reference", "timbre, tone and cadence — not the recording"],
+  ["weak_reference", "loose inspiration; diverge freely"],
+  ["partially_copy", "reuse part of the recording"],
+  ["fully_copy", "reuse the recording in full"],
+];
 
 // ONE EDITOR for a reference, rather than a chip that cycles blindly: the role
 // decides what the model takes, and the depth pass is what makes two of those
@@ -1844,6 +1867,11 @@ async function saveSubjectToLibrary(name, kind, description, images, voice) {
 }
 
 function editRef(r) {
+  // A SOUND HAS NO ROLE AND NO TRIM, it has a MARKER — how much of the
+  // recording the model should take. Different vocabulary from the visual
+  // roles entirely, so it gets its own form rather than a disabled version
+  // of the other one.
+  if (r.kind === "audio") return editAudioRef(r);
   const kind = r.kind === "video" ? "video" : "image";
   const opts = REF_ROLES[kind];
   // a clip has exactly one role here, so it is stated rather than asked
@@ -1874,17 +1902,50 @@ function editRef(r) {
         </div>
       </div>
       <input type="hidden" id="ed_spans" value="${escapeHTML(r.spans || "")}">
+      <label class="chk" style="margin-top:10px">
+        <input type="checkbox" id="ed_wa"${r.with_audio ? " checked" : ""}>
+        send this clip's own soundtrack too</label>
+      <div id="ed_wabox" ${r.with_audio ? "" : "hidden"}>
+        <label for="ed_am">How much of that sound to take</label>
+        <select id="ed_am">${AUDIO_MARKERS.map(([v, why]) =>
+          `<option value="${v}"${v === (r.audio_marker || "reference")
+            ? " selected" : ""}>${v} — ${why}</option>`).join("")}</select>
+        <p class="hint">Its slot is fixed: a clip's soundtrack is bound to
+        that clip, so it cannot be numbered separately. <code>reference</code>
+        takes the timbre and cadence without reusing the recording.</p>
+      </div>
       <p class="hint">Scrub the bar to move the playhead; Mark in and Mark out
       set the span. H3 wants 2–15s of reference, at 24fps.</p>` : ""}
     <p class="hint" style="margin-top:12px">${escapeHTML(r.source)}</p>`,
     r.label || r.source,
     () => {
       r.role = $("ed_role").value;
-      if (kind === "video") r.spans = $("ed_spans").value.trim();
+      if (kind === "video") {
+        r.spans = $("ed_spans").value.trim();
+        r.with_audio = $("ed_wa").checked;
+        r.audio_marker = $("ed_am").value;
+        $("ed_wabox").hidden = !r.with_audio;
+      }
       refsChanged();
     });
 
   if (kind === "video") trimmer(r);
+}
+
+function editAudioRef(r) {
+  openInline(`
+    <label for="ed_marker">How much of this recording to take</label>
+    <select id="ed_marker">${AUDIO_MARKERS.map(([v, why]) =>
+      `<option value="${v}"${v === (r.marker || "reference") ? " selected" : ""}>`
+      + `${v} — ${why}</option>`).join("")}</select>
+    <p class="hint">A standalone sound: room tone, a music bed, a rhythm. It
+    becomes its own <code>&lt;Audio N&gt;</code>, numbered after any reference
+    clip's soundtrack — that order is the model's, not ours.</p>
+    <audio controls preload="metadata" style="width:100%;margin-top:10px"
+           src="${rawURL(r.source)}"></audio>
+    <p class="hint" style="margin-top:10px">${escapeHTML(r.source)}</p>`,
+    r.label || r.source,
+    () => { r.marker = $("ed_marker").value; refsChanged(); });
 }
 
 // THE TRIMMER, IN THIS PAGE. CJ: "I told you to build it properly into the ui
@@ -3185,7 +3246,8 @@ let pickState = null;            // {multi, chosen:Set, done(paths)}
 
 function openPicker({ title, multi, chosen = [], done, assets = null }) {
   // the kind filter is only meaningful when the list actually holds both
-  $("pick_kind").hidden = !(assets || []).some(isVideoPath);
+  $("pick_kind").hidden = !(assets || []).some(
+    a => isVideoPath(a) || isAudioPath(a));
   $("pick_kind").value = "";
   // `assets` lets a caller widen the list -- a reference can be a clip, and
   // LoadVideo's folder is a different list from LoadImage's. Null keeps the
@@ -3204,7 +3266,8 @@ function drawPicker() {
   const kind = $("pick_kind").value;
   const shown = (pickState.assets || ASSETS).filter(a =>
     (!folder || folderOf(a) === folder) && (!q || a.toLowerCase().includes(q))
-    && (!kind || (kind === "video") === isVideoPath(a)));
+    && (!kind || kind === (isVideoPath(a) ? "video"
+                           : isAudioPath(a) ? "audio" : "image")));
   if (!shown.length) {
     host.innerHTML = `<p class="hint">Nothing matches. Upload files below.</p>`;
   }
@@ -3215,8 +3278,9 @@ function drawPicker() {
     // webp -- so it gets a real <video> seeked to one frame. This is the patch
     // that silently matched nothing twice, which is precisely why CJ kept
     // reporting that gallery thumbs do not work: they were never changed.
-    el.innerHTML = (isVideoPath(a) ? "" :
-                   `<img loading="lazy" src="${assetURL(a)}" alt="">`) +
+    el.innerHTML = (isVideoPath(a) ? ""
+                   : isAudioPath(a) ? `<div class="vid">♪</div>`
+                   : `<img loading="lazy" src="${assetURL(a)}" alt="">`) +
                    `<span class="cap">${escapeHTML(a.split(/[\\/]/).pop())}</span>`;
     if (isVideoPath(a)) el.prepend(videoThumb(a));
     el.onclick = () => {
@@ -3618,6 +3682,11 @@ function request() {
       source: r.source, kind: r.kind, role: r.role,
       chunks: r.chunks || "all",
       label: r.label || "",
+      // the audio half: a standalone sound's own marker, and whether a clip
+      // sends its soundtrack and on what terms
+      ...(r.kind === "audio" ? { marker: r.marker || "reference" } : {}),
+      ...(r.with_audio ? { with_audio: true,
+                           audio_marker: r.audio_marker || "reference" } : {}),
       // no `depth`: it follows the role, decided once in chunkref.ROLES so a
       // composition reference cannot be sent without the pass its own clause
       // assumes. `spans` is the pack's own trim format.
@@ -4004,13 +4073,10 @@ function wireControls() {
     // IMAGES AND CLIPS BOTH. The cast picker lists LoadImage's folder; a
     // reference can equally be a video, so the two lists are merged here.
     if (!VIDEOS.length) VIDEOS = await optionsFor("LoadVideo", "file");
-    if (!VIDEOS.length) {
-      fail("no clips in ComfyUI/input — drop one in, or restart ComfyUI if "
-           + "you just added it; the list comes from LoadVideo.");
-    }
+    if (!AUDIOS.length) AUDIOS = await optionsFor("LoadAudio", "audio");
     openPicker({
-      title: "Reference — an image or a clip",
-      multi: true, chosen: [], assets: [...ASSETS, ...VIDEOS],
+      title: "Reference — an image, a clip or a sound",
+      multi: true, chosen: [], assets: [...ASSETS, ...VIDEOS, ...AUDIOS],
       done: paths => {
         // isVideoPath returns a BOOLEAN and this argument is the KIND, so
         // every picked clip was being added as an image -- wrong role, wrong
@@ -4018,7 +4084,7 @@ function wireControls() {
         // called showModal() on an already-open dialog, which THROWS: that is
         // why + appeared to do nothing at all.
         paths.forEach((path, n) => {
-          addChunkRef(path, isVideoPath(path) ? "video" : "image", 0,
+          addChunkRef(path, kindOfPath(path), 0,
                       n === paths.length - 1);   // only the last one opens
         });
       },
