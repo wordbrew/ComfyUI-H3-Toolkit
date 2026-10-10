@@ -120,6 +120,28 @@ ck("scoped cast images are counted too",
 ck("and the bare REFS.length comparison is gone",
    /pics !== REFS\.length/.test(refreshBody), false);
 
+console.log("\nA PATH'S KIND decides which slot it can reach");
+// Three kinds, three different destinations on the conditioning node, so
+// getting this wrong sends a .wav to ref_images and it becomes <Picture 1>.
+// (That exact bug shipped server-side and was caught by a test; this is the
+// same guard on the page, where the kind is first decided.)
+{
+  const grab = (n) => src.match(
+    new RegExp("function " + n + "\\([\\s\\S]*?\\n\\}"))[0];
+  const kindOfPath = new Function(
+    grab("isVideoPath") + grab("isAudioPath") + grab("kindOfPath")
+    + "; return kindOfPath;")();
+  for (const [p, want] of [["a.png", "image"], ["b.jpeg", "image"],
+                           ["c.webp", "image"], ["d.mp4", "video"],
+                           ["e.mov", "video"], ["f.webm", "video"],
+                           ["g.wav", "audio"], ["h.mp3", "audio"],
+                           ["i.flac", "audio"], ["j.m4a", "audio"],
+                           ["sub/dir/k.MP4", "video"],
+                           ["no_extension", "image"]]) {
+    ck(`  ${p}`, kindOfPath(p), want);
+  }
+}
+
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui lanes: spans survive the round trip, and a drop takes its shot");
