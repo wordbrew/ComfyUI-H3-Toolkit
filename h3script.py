@@ -112,7 +112,37 @@ import re
 
 CATEGORY = "MiniMax H3/prompt"
 
-RETENTIONS = ("fully_preserved", "partially_preserved", "free")
+#: THE MODEL'S OWN VISUAL MARKERS, all four of them. This used to be
+#: ("fully_preserved", "partially_preserved", "free") -- two of the guide's
+#: markers missing and one invented. `free` is not a marker H3 knows; emitting
+#: it sent the model a word from nowhere. Worse, the Library offered the
+#: correct four, so picking attribute_transfer or weak_reference RAISED here
+#: at compile with a message listing a vocabulary the UI never showed.
+#:
+#: docs/prompting-ref2va.md, retention_analysis:
+#:   visual: fully_preserved / partially_preserved / attribute_transfer /
+#:           weak_reference
+#: The guide's four. prompt_lint has had them right since it was written --
+#: the LINTER would have flagged a marker this compiler refused to emit --
+#: so they are taken from there when the package is importable, which is the
+#: only way two copies of one vocabulary stay equal.
+#:
+#: The literal is the fallback, because these modules are deliberately
+#: importable standalone (that is how the tests run them without ComfyUI).
+#: test_h3script asserts the two agree whenever both can be loaded, so the
+#: fallback cannot quietly rot.
+RETENTIONS = ("fully_preserved", "partially_preserved",
+              "attribute_transfer", "weak_reference")
+try:                                                    # pragma: no cover
+    from .prompt_lint import VISUAL_MARKERS as _VISUAL_MARKERS
+    RETENTIONS = tuple(_VISUAL_MARKERS)
+except ImportError:
+    pass
+
+#: `free` was ours and scripts may still say it. It meant "no constraint",
+#: which is what weak_reference means to the model, so it is accepted and
+#: translated rather than refused -- but it is not offered.
+RETENTION_ALIASES = {"free": "weak_reference"}
 # the verbs that need no pipe. NOT the vocabulary -- any phrase works via
 # `say @name | how they say it | the line`, which is what H3Dialogue takes.
 SPEECH_VERBS = ("moans", "asks", "whispers", "says", "shouts", "sighs")
@@ -260,6 +290,10 @@ def parse(text):
                     if entry is None:
                         raise _err(lineno, f"@{nm} is not declared yet", line)
                     if attr == "retention":
+                        # an old script's `free` becomes weak_reference rather
+                        # than an error: it meant the same thing and nothing
+                        # is gained by refusing it
+                        rest = RETENTION_ALIASES.get(rest, rest)
                         if rest not in RETENTIONS:
                             raise _err(lineno, f"retention must be one of "
                                        f"{', '.join(RETENTIONS)}", line)
@@ -1117,8 +1151,22 @@ def emit(doc):
                 note += f" as shown in {_pictures(got['pictures'])}"
             allow = (c.get("allow") or "").strip()
             note += f", while allowing {allow}." if allow else "."
-        elif r == "free":
-            note = "no constraint."
+        elif r == "attribute_transfer":
+            # a QUALITY from the reference, not the thing itself -- a palette,
+            # a material, a light. The default says what to leave behind as
+            # well as what to take, because "take the look" without "not the
+            # subject" is how a composition reference drags a face along.
+            what = (c.get("preserve")
+                    or "the palette, lighting and surface quality")
+            note = f"take {what}"
+            if got["pictures"]:
+                note += f" from {_pictures(got['pictures'])}"
+            note += ", not the subject itself."
+        elif r == "weak_reference":
+            note = "loose inspiration only; diverge freely"
+            if got["pictures"]:
+                note += f" from {_pictures(got['pictures'])}"
+            note += "."
         else:
             # "keep their appearance consistent" said the same vague thing about a
             # person, a room and a lamp. The guide's own examples are concrete and

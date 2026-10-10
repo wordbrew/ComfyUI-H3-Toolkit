@@ -283,5 +283,54 @@ _p2 = hs.emit(hs.parse("negatives = no other people, no text\n\n"
 ok("an author's own wording is left alone", "No other people, no text" in _p2)
 ok("and not double-negated", "no no " not in _p2.lower())
 
+
+# -------------------------------------------- the model's own four markers
+# CJ: "in the library, person/setting/prop has all four visuals, including
+# attribute_transfer and weak_reference. So where is free?" It was here, and
+# it is not a marker H3 knows. The compiler accepted
+# (fully_preserved, partially_preserved, free) while the Library offered the
+# guide's correct four, so picking attribute_transfer RAISED at compile with a
+# message listing a vocabulary the UI never showed.
+ok("the vocabulary is the guide's four",
+   tuple(hs.RETENTIONS) == ("fully_preserved", "partially_preserved",
+                            "attribute_transfer", "weak_reference"))
+# the fallback literal and prompt_lint's list must agree, or the standalone
+# import silently uses a stale vocabulary
+import importlib.util as _iu
+_ps = _iu.spec_from_file_location("_pl", _root / "prompt_lint.py")
+_pl = _iu.module_from_spec(_ps); _ps.loader.exec_module(_pl)
+check("h3script and prompt_lint hold the SAME vocabulary",
+      tuple(hs.RETENTIONS), tuple(_pl.VISUAL_MARKERS))
+
+for _m in hs.RETENTIONS:
+    _d = hs.parse(f"@lily = a woman\n@lily.pictures = 2\n"
+                  f"@lily.retention = {_m}\n\nshot | a room\n  do  @lily waits")
+    _line = [l for l in hs.emit(_d)["retention"].splitlines() if l.strip()][0]
+    ok(f"{_m} compiles and names itself", _m in _line)
+    ok(f"  and says HOW, not just the marker", " - " in _line)
+
+print("attribute_transfer says what NOT to take")
+_d = hs.parse("@plate = a stairwell\n@plate.pictures = 1\n"
+              "@plate.retention = attribute_transfer\n\n"
+              "shot | a room\n  do  @plate sets the look")
+_r = hs.emit(_d)["retention"]
+ok("it excludes the subject", "not the subject itself" in _r)
+ok("and cites the picture it takes from", "<Picture 1>" in _r)
+
+print("`free` is translated, not refused — old scripts still parse")
+_d = hs.parse("@lily = a woman\n@lily.retention = free\n\n"
+              "shot | a room\n  do  @lily waits")
+check("it becomes the marker that means the same thing",
+      _d["cast"][0]["retention"], "weak_reference")
+ok("but it is not OFFERED", "free" not in hs.RETENTIONS)
+
+print("and a marker the model does not know is still refused")
+try:
+    hs.parse("@lily = a woman\n@lily.retention = whatever\n\n"
+             "shot | a room\n  do  @lily waits")
+    ok("an invented marker raises", False)
+except hs.ScriptError as e:
+    ok(f"an invented marker raises — {str(e)[:52]}", True)
+
 print()
 print("h3 script: store checks pass")
