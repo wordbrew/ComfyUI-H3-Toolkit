@@ -253,8 +253,8 @@ def _register_routes():
 
         POST {"name": "lily",
               "images": ["gen_001.png", "gen_002.png"],   # names in input/
-              "source": {"generator": "krea2",
-                         "companion_id": "...", "prompt": "...", "seed": 42}}
+              "source": {"generator": "service",
+                         "ref": "...", "prompt": "...", "seed": 42}}
 
         THIS IS WHAT MAKES A SUBJECT PERSISTENT. save_subject writes a whole
         subject; this ADDS to one, which is the operation a companion needs --

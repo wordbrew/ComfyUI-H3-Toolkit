@@ -2,9 +2,9 @@
 """The subject store as a CONTRACT: anything may produce a subject.
 
 A subject is a directory — card.json plus images/NNN.ext — and that is the
-whole interface between whatever made it and everything that uses it. krea2, a
-ComfyUI render, or a person with a folder of photos are interchangeable
-producers, and keeping that true is what makes the dual path (Comfy OR a
+whole interface between whatever made it and everything that uses it. A
+generation service, a ComfyUI render, or a person with a folder of photos are
+interchangeable producers, and keeping that true is what makes the dual path (Comfy OR a
 standalone engine) possible rather than a rewrite.
 
 Two things are tested here because both are load-bearing and neither is
@@ -84,8 +84,8 @@ check("004, not 002", [os.path.basename(a) for a in added], ["004.png"])
 
 print("\nprovenance is recorded, and accumulates")
 card, _ = ch.add_anchors("lily", [blank("n3.png")],
-                         source={"generator": "krea2", "seed": 42})
-check("the generator", card["source"]["generator"], "krea2")
+                         source={"generator": "service", "seed": 42})
+check("the generator", card["source"]["generator"], "service")
 check("one run so far", len(card["source"]["runs"]), 1)
 card, _ = ch.add_anchors("lily", [blank("n4.png")],
                          source={"generator": "comfy", "seed": 43})
@@ -105,8 +105,8 @@ _, added = ch.add_anchors("lily", ["/nope/missing.png"])
 check("a missing file is skipped, not invented", added, [])
 
 print("\na fresh card carries source too, so a GENERATED subject says so")
-c = ch.card_of("x", source={"generator": "krea2", "companion_id": "abc"})
-check("source survives card_of", c["source"]["companion_id"], "abc")
+c = ch.card_of("x", source={"generator": "service", "ref": "abc"})
+check("source survives card_of", c["source"]["ref"], "abc")
 c2 = ch.card_of("y")
 check("and defaults to empty rather than missing", c2["source"], {})
 
