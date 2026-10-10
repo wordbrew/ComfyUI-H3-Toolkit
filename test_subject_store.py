@@ -2,9 +2,9 @@
 """The subject store as a CONTRACT: anything may produce a subject.
 
 A subject is a directory — card.json plus images/NNN.ext — and that is the
-whole interface between whatever made it and everything that uses it. service, a
-ComfyUI render, or a person with a folder of photos are interchangeable
-producers, and keeping that true is what makes the dual path (Comfy OR a
+whole interface between whatever made it and everything that uses it. A
+generation service, a ComfyUI render, or a person with a folder of photos are
+interchangeable producers, and keeping that true is what makes the dual path (Comfy OR a
 standalone engine) possible rather than a rewrite.
 
 Two things are tested here because both are load-bearing and neither is
