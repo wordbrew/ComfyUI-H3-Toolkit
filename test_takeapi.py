@@ -464,6 +464,71 @@ _g = ta.build(dict(REQ, cast=_mixed, head="@lily in @room", beats="b1\nb2"))
 check("head was substituted",
       field(_g, "h3.links", "head"), "<Subject 1> in <Subject 3>")
 
+
+# -------------------------------------------------- three kinds of audio
+# CJ: "we need the option to use stand-alone audio as an additional reference
+# as well as the option to include audio alongside a reference video ... in
+# those cases, they will be treated differently for sure."
+#
+# They are: a voice and a standalone sound go to ref_audios, a clip's
+# soundtrack to ref_video_audios AT ITS CLIP'S INDEX. And the <Audio j>
+# NUMBERING IS NOT THE SLOT NUMBER -- the node presents images, then videos
+# with each soundtrack's label immediately before its video, then standalone
+# audio. A soundtrack takes <Audio 1> even when a voice was wired first.
+print("\nthree audio cases, three slots, one numbering")
+_AU = dict(REQ,
+           audio_references=["jen/voice.wav"],
+           chunk_references=[
+               {"source": "mv.mp4", "kind": "video",
+                "role": "composition and motion",
+                "with_audio": True, "audio_marker": "reference"},
+               {"source": "room.wav", "kind": "audio",
+                "marker": "weak_reference"},
+           ])
+_g = ta.build(_AU)
+_cond = ta._one(_g, "h3.conditioning")
+_ins = _g[_cond]["inputs"]
+
+ok("the clip's soundtrack is a VIDEO audio, not a standalone one",
+   "ref_video_audios.ref_video_audio_0" in _ins)
+_clip = ta._one(_g, "h3.clip.0", required=False)
+check("and it is bound to ITS clip, by index and by node",
+      _ins["ref_video_audios.ref_video_audio_0"], [_clip, 1])
+ok("the voice and the standalone sound are standalone slots",
+   "ref_audios.ref_audio_0" in _ins and "ref_audios.ref_audio_1" in _ins)
+check("two of them, and no more",
+      len([k for k in _ins if k.startswith("ref_audios.")]), 2)
+
+print("the <Audio j> numbering follows the MODEL, not the wiring order")
+_head = next(n for n, d in _g.items() if d["class_type"] == "H3ChunkRef"
+             and not isinstance((d.get("inputs") or {}).get("retention_in"),
+                                list))
+_cl = _g[_head]["inputs"]["retention_in"].splitlines()
+ok("<Audio 1> is the clip's soundtrack, though the voice was wired first",
+   _cl[0].startswith("<Audio 1>") and "soundtrack of <Video 1>" in _cl[0])
+ok("<Audio 2> is the voice", _cl[1].startswith("<Audio 2>"))
+ok("<Audio 3> is the standalone sound", _cl[2].startswith("<Audio 3>"))
+
+print("and each marker says the right thing")
+ok("a soundtrack reference takes timbre and cadence, not the recording",
+   "timbre, tone and cadence" in _cl[0] and "do not reuse" in _cl[0])
+ok("weak_reference is looser still", "diverge freely" in _cl[2])
+_fc = ta.build(dict(REQ, chunk_references=[
+    {"source": "s.wav", "kind": "audio", "marker": "fully_copy"}]))
+_lk = ta._one(_fc, "h3.links")
+ok("fully_copy says to reuse the recording",
+   "reuse this recording in full" in str(_fc[_lk]["inputs"]["retention_1"]))
+
+print("with no visual gate, the clauses still reach the prompt as text")
+ok("retention_1 carries them",
+   "<Audio 1>" in str(_fc[_lk]["inputs"]["retention_1"]))
+
+print("and nothing is wired when nothing is asked for")
+_none = ta.build(REQ)
+ok("no audio slots appear unbidden",
+   not any(k.startswith(("ref_audios.", "ref_video_audios."))
+           for k in _none[ta._one(_none, "h3.conditioning")]["inputs"]))
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")
