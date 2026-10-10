@@ -153,6 +153,47 @@ check("and scene_plan says the same thing",
       [(c["cut"], c["seed_mask"]) for c in _sp],
       [(c["cut"], c["seed_mask"]) for c in _cut])
 
+
+print("\nFRAME 0 BELONGS TO A CHUNK THAT OPENS A SHOT")
+# CJ: "obviously a frame 0 should only be applied to the very first chunk
+# yeah?" Chunk 1 always opens one -- and so does any chunk after a CUT, whose
+# opening frames are equally fresh. A CONTINUING chunk's opening frames ARE
+# the pin, held by the mask, so an image anchored there competes with the hold
+# that makes long-form work at all. That is a conflict, not a preference, so
+# it refuses rather than warns.
+_cut, _ = cp.plan(cp.total_for_count(192, 4, 39), 192, "fixed", context=39,
+                  grow_tail=True, continuity=["carry", "cut", "carry"])
+_cp = {"chunks": _cut}
+
+
+def f0(i, chunks="all"):
+    return N().go(role="frame 0", chunks=chunks, chunk_index=i, image="IMG",
+                  ordinal=1, chunk_plan=_cp)["result"]
+
+
+ok("chunk 1 anchors — the take opens there", f0(0)[0] == "IMG")
+ok("chunk 3 anchors — it is the cut, so its opening is fresh",
+   f0(2)[0] == "IMG")
+ok("chunk 2 refuses — it continues, its opening is the pin", f0(1)[0] is None)
+ok("chunk 4 refuses for the same reason", f0(3)[0] is None)
+
+_r = f0(1)
+ok("and it says WHY, naming the pin", "the pin" in _r[3])
+ok("and which chunks WOULD take it", "opens a shot: 1, 3" in _r[3])
+
+print("the default scope is the openers, not `all`")
+check("so it lands where it is legal", cr.default_scope("frame 0", _cut), "1,3")
+check("while a composition reference still defaults to everywhere",
+      cr.default_scope("composition", _cut), "all")
+ok("and with no plan at all it does not guess a cut",
+   cr.default_scope("frame 0", []) == "all")
+
+print("no other role is restricted")
+for _role in ("composition", "composition and motion", "identity"):
+    ok(f"{_role} is live on a continuing chunk",
+       N().go(role=_role, chunks="all", chunk_index=1, image="I", ordinal=1,
+              chunk_plan=_cp)["result"][0] == "I")
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

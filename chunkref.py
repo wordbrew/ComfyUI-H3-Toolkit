@@ -54,8 +54,13 @@ ROLES = {
     },
     "composition": {
         "tag": "Picture",
-        "clause": "{tag} is inspiration for frame 0, follow only the "
-                  "composition, ignore the subject in the center.",
+        # THE MARKER LEADS. retention_analysis's form is `marker - how`, and
+        # these went in as a bare sentence carrying the `how` alone. The
+        # sentence is CJ's, from graphs that work, and is unchanged -- only
+        # the marker is added, which is what makes the A/B a single variable.
+        "clause": "{tag}: attribute_transfer - is inspiration for frame 0, "
+                  "follow only the composition, ignore the subject in the "
+                  "center.",
         "depth": True,           # always; that is what separates framing from
                                  # appearance, and the clause assumes it
         "for": ("image",),
@@ -65,8 +70,8 @@ ROLES = {
     },
     "composition and motion": {
         "tag": "Video",
-        "clause": "{tag} is used for inspiration for the new video, follow "
-                  "only the composition and motion.",
+        "clause": "{tag}: attribute_transfer - is used for inspiration for "
+                  "the new video, follow only the composition and motion.",
         "depth": True,
         "for": ("video",),
         "what": "the movement and framing of a clip, not its appearance. "
@@ -111,6 +116,26 @@ def retention_clause(role, ordinal):
     if not spec or not spec["clause"]:
         return ""
     return spec["clause"].format(tag=f"<{spec['tag']} {max(1, int(ordinal))}>")
+
+
+def _openers(plan):
+    """Chunk indices whose opening frames are FRESH -- chunk 1 and every cut."""
+    return [i for i, c in enumerate(plan or [])
+            if i == 0 or c.get("cut")]
+
+
+def default_scope(role, plan):
+    """What a role should cover when nobody said. -> a chunks spec.
+
+    `frame 0` defaults to the shot openers rather than `all`, because `all`
+    would place it on continuing chunks where it is refused anyway -- a
+    default that is wrong everywhere but the first chunk is a default that
+    teaches the wrong thing.
+    """
+    if role != "frame 0" or not plan:
+        return "all"
+    op = _openers(plan)
+    return ",".join(str(i + 1) for i in op) if op else "1"
 
 
 def active_here(chunks, chunk_index, total):
@@ -211,11 +236,34 @@ class H3ChunkRef:
         plan = (chunk_plan or {}).get("chunks") or []
         total = len(plan) or 1
         live, note = active_here(chunks, chunk_index, total)
+        who = (label or "").strip() or ROLES[role]["tag"].lower() + f" {ordinal}"
+        lines = [f"H3 CHUNK REF — {who}, chunk {int(chunk_index) + 1} of {total}"]
+
+        # FRAME 0 BELONGS TO A CHUNK THAT OPENS A SHOT. Chunk 1 always does,
+        # and so does any chunk after a cut -- its opening frames are fresh.
+        # A CONTINUING chunk's opening frames ARE the pin: the previous
+        # chunk's tail, reproduced and masked so the model reads those rows as
+        # already finished. An image anchored there sets two things claiming
+        # the same frames -- the mask saying "settled, do not denoise" and the
+        # keyframe saying "look like this". The hard hold is load-bearing and
+        # a chunk that drifts unheld makes the seam the clip's largest step,
+        # so this is a conflict rather than a preference.
+        #
+        # Unlike spanning a cut, there is no reading where it is what you
+        # meant, so it REFUSES rather than warns.
+        if role == "frame 0" and plan and live:
+            k = int(chunk_index)
+            if not (k == 0 or (k < len(plan) and plan[k].get("cut"))):
+                lines.append(
+                    f"  REFUSED: chunk {k + 1} CONTINUES the shot before it, "
+                    f"so its opening frames are the pin — the previous "
+                    f"chunk's tail, held by the mask. An image anchored there "
+                    f"competes with that hold. Scope this to a chunk that "
+                    f"opens a shot: "
+                    f"{', '.join(str(i + 1) for i in _openers(plan)) or '1'}.")
+                live = False
 
         clause = retention_clause(role, ordinal) if live else ""
-        who = (label or "").strip() or ROLES[role]["tag"].lower() + f" {ordinal}"
-
-        lines = [f"H3 CHUNK REF — {who}, chunk {int(chunk_index) + 1} of {total}"]
         lines.append(f"  role {role}: {ROLES[role]['what']}")
         lines.append(f"  scope {chunks or 'all'} — "
                      + ("LIVE here" if live else "not this chunk, emitting None"))

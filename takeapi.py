@@ -835,8 +835,19 @@ def set_chunk_references(graph, refs, seed=""):
             out = [depth_for(out), 0]
 
         counts[kind] += 1
+        # a role that is only legal on some chunks defaults to THOSE chunks,
+        # rather than to `all` and a refusal on most of them
+        plan_chunks = []
+        if plan_node is not None:
+            try:
+                from .chunkref import default_scope
+                scope_default = default_scope(role, plan_chunks)
+            except Exception:                                   # noqa: BLE001
+                scope_default = "all"
+        else:
+            scope_default = "all"
         gate_in = {"role": role,
-                   "chunks": str(r.get("chunks") or "all"),
+                   "chunks": str(r.get("chunks") or scope_default),
                    "chunk_index": [open_node, idx_slot],
                    "image": out,
                    "ordinal": counts[kind],
