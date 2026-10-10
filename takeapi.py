@@ -196,7 +196,8 @@ def build(req, template=None):
         raise TakeError("a voice reference needs at least one picture in the "
                         "take: H3 pairs an audio reference with an image or a "
                         "video, and a lone voice is dropped")
-    set_audio_references(graph, voices)
+    # (audio is wired AFTER the references below, because a clip's soundtrack
+    #  is numbered before a voice and its slot is the clip's slot)
 
     # A CAST BEATS TWO TEXT BOXES. When `cast` is given it is compiled through
     # h3script and OVERRIDES subject_def_1 / retention_1, so a caller never
@@ -247,14 +248,49 @@ def build(req, template=None):
     # chain as the first gate's `retention_in`, so the subjects' retention and
     # the references' clauses both reach the prompt. Dropping one for the other
     # would have been the quiet version of this bug.
-    gate, ref_lint = set_chunk_references(
+    gate, ref_lint, tracks = set_chunk_references(
         graph, req.get("chunk_references") or [],
-        seed=req.get("retention_1") or "") or (None, [])
-    if gate is not None:
-        links = _one(graph, "h3.links", required=False)
-        if links is not None:
-            # a LINK, not a value, so it bypasses _set deliberately
-            graph[links].setdefault("inputs", {})["retention_1"] = [gate, 2]
+        seed=req.get("retention_1") or "") or (None, [], [])
+    # ---- AUDIO LAST, once the videos have their slots. One function owns
+    # every audio slot so the cast's voices and the request's own sounds
+    # cannot both claim ref_audio_0, and so <Audio j> is numbered in the
+    # order the model presents them rather than the order we happened to
+    # wire them.
+    _made, audio_clauses = wire_audio(
+        graph,
+        voices=voices,
+        standalone=[r for r in (req.get("chunk_references") or [])
+                    if str(r.get("kind")) == "audio"],
+        video_tracks=tracks)
+
+    # THE AUDIO CLAUSES HAVE TO REACH THE PROMPT TOO, and which route they
+    # take depends on whether a visual gate exists. The clauses cannot be
+    # known before the clips are minted -- a soundtrack's slot IS its clip's
+    # slot -- so the chain is seeded first and topped up here, rather than
+    # ordering the two passes in a way that cannot work either way round.
+    if gate is not None and audio_clauses:
+        head = next((nid for nid, node in graph.items()
+                     if node["class_type"] == "H3ChunkRef"
+                     and not isinstance(
+                         (node.get("inputs") or {}).get("retention_in"), list)),
+                    None)
+        if head is not None:
+            ins0 = graph[head].setdefault("inputs", {})
+            was = ins0.get("retention_in")
+            ins0["retention_in"] = "\n".join(
+                x for x in ([was] if isinstance(was, str) and was else [])
+                + audio_clauses)
+
+    links = _one(graph, "h3.links", required=False)
+    if gate is not None and links is not None:
+        # a LINK, not a value, so it bypasses _set deliberately
+        graph[links].setdefault("inputs", {})["retention_1"] = [gate, 2]
+    elif audio_clauses and links is not None:
+        # no visual gate to carry them, so the audio clauses go in as text
+        have = graph[links].setdefault("inputs", {}).get("retention_1")
+        if not isinstance(have, list):
+            graph[links]["inputs"]["retention_1"] = "\n".join(
+                x for x in ([have] if have else []) + audio_clauses)
 
     for field, key in (("chunk_frames", "chunk_frames"),
                        ("chunk_count", "chunk_count")):
@@ -527,6 +563,97 @@ def set_static_loras(graph, loras):
         graph[nid]["inputs"][field] = [last, 0]
 
 
+#: H3's audio markers, from the guide. Distinct from the visual ones and
+#: easy to confuse: `reference` means take the CHARACTER of the sound,
+#: `fully_copy` means reuse the recording itself.
+AUDIO_MARKERS = ("fully_copy", "partially_copy", "reference", "weak_reference")
+
+#: What each one tells the model, in the guide's marker-then-how shape.
+AUDIO_CLAUSE = {
+    "fully_copy": "reuse this recording in full.",
+    "partially_copy": "reuse part of this recording.",
+    "reference": "take only the timbre, tone and cadence; do not reuse the "
+                 "recording itself.",
+    "weak_reference": "loose inspiration for the sound only; diverge freely.",
+}
+
+
+def wire_audio(graph, voices=(), standalone=(), video_tracks=()):
+    """Every audio reference, in the order H3 numbers them. -> (ids, clauses).
+
+    THREE CASES, THREE SLOTS, and they are not interchangeable:
+
+      a cast VOICE          ref_audios.*        the subject sounds like this
+      a STANDALONE sound    ref_audios.*        room tone, a bed, a rhythm
+      a CLIP'S SOUNDTRACK   ref_video_audios.*  bound POSITIONALLY to its video
+
+    The last one is the constrained one: `ref_video_audios.ref_video_audio_N`
+    is the soundtrack OF `ref_videos.ref_video_N`, so its index is decided by
+    which video it came from and cannot be chosen.
+
+    AND THE NUMBERING IS NOT THE SLOT NUMBER. The node states its own
+    presentation order: images, then videos with each soundtrack's <Audio j>
+    label immediately before its <Video k>, then standalone audio. So a
+    clip's soundtrack takes <Audio 1> and a voice wired first still becomes
+    <Audio 2>. Getting that backwards would point every audio citation at the
+    wrong sound while every slot looked correctly filled.
+    """
+    cond = _one(graph, "h3.conditioning", required=False)
+    if cond is None:
+        if voices or standalone or video_tracks:
+            raise TakeError("the template has no h3.conditioning node, so "
+                            "audio references cannot be wired")
+        return [], []
+    ins = graph[cond].setdefault("inputs", {})
+
+    # rebuild both audio families from scratch, pruning our own loaders
+    for prefix in ("ref_audios.ref_audio_", "ref_video_audios.ref_video_audio_"):
+        for key in [k for k in ins if k.startswith(prefix)]:
+            old_link = ins.pop(key)
+            if isinstance(old_link, list) and graph.get(
+                    old_link[0], {}).get("_meta", {}).get(
+                        "title", "").startswith("h3.refaudio."):
+                graph.pop(old_link[0], None)
+
+    next_id = [max((int(k) for k in graph if k.isdigit()), default=0) + 1]
+
+    def mint(cls, inputs, title):
+        nid = str(next_id[0]); next_id[0] += 1
+        graph[nid] = {"class_type": cls, "inputs": dict(inputs),
+                      "_meta": {"title": title}}
+        return nid
+
+    made, clauses, j = [], [], 0
+
+    # ---- 1. clip soundtracks FIRST, because they are numbered first
+    for slot, track in video_tracks:
+        j += 1
+        ins[f"ref_video_audios.ref_video_audio_{slot}"] = [track["node"], 1]
+        marker = track.get("marker") or "reference"
+        clauses.append(f"<Audio {j}>: {marker} - "
+                       + AUDIO_CLAUSE.get(marker, AUDIO_CLAUSE["reference"])
+                       + f" It is the soundtrack of <Video {slot + 1}>.")
+
+    # ---- 2. then the cast's voices and any standalone sound, in that order
+    k = 0
+    for item in list(voices) + list(standalone):
+        path = item if isinstance(item, str) else item.get("source")
+        if not path:
+            continue
+        if k >= REF_CAPS["audio"]:
+            break
+        marker = ("reference" if isinstance(item, str)
+                  else (item.get("marker") or "reference"))
+        nid = mint("LoadAudio", {"audio": path}, f"h3.refaudio.{k}")
+        ins[f"ref_audios.ref_audio_{k}"] = [nid, 0]
+        made.append(nid)
+        j += 1
+        k += 1
+        clauses.append(f"<Audio {j}>: {marker} - "
+                       + AUDIO_CLAUSE.get(marker, AUDIO_CLAUSE["reference"]))
+    return made, clauses
+
+
 def set_audio_references(graph, names):
     """Wire exactly len(names) VOICE references into ref_audios.* -> [node ids].
 
@@ -644,11 +771,16 @@ def set_chunk_references(graph, refs, seed=""):
                     {"da_model": [depth_model[0], 0], "images": src})
 
     counts = {"image": 0, "video": 0}
-    last_ret, lint = None, []
+    last_ret, lint, tracks = None, [], []
 
     for i, r in enumerate(refs):
-        kind = "video" if str(r.get("kind", "image")).lower() == "video" \
-            else "image"
+        raw_kind = str(r.get("kind", "image")).lower()
+        if raw_kind == "audio":
+            # wire_audio owns every audio slot and the <Audio j> numbering;
+            # falling through here minted a LoadImage for a .wav and gave it a
+            # visual gate, which is how a sound became <Picture 1>
+            continue
+        kind = "video" if raw_kind == "video" else "image"
         src_name = str(r.get("source") or "").strip()
         if not src_name:
             lint.append(f"reference {i + 1} has no source; skipped")
@@ -670,11 +802,20 @@ def set_chunk_references(graph, refs, seed=""):
             if not spans:
                 st, ln = int(r.get("start") or 0), int(r.get("length") or 0)
                 spans = f"{st} {ln}" if ln else "0 0"     # 0 0 = all of it
-            out = [mint("VideoTrimLoad",
+            clip = mint("VideoTrimLoad",
                         {"file": src_name, "spans": spans,
                          "span_index": int(r.get("span_index") or 0),
                          "force_rate": 24.0, "select_every_nth": 1},
-                        f"h3.clip.{i}"), 0]
+                        f"h3.clip.{i}")
+            out = [clip, 0]
+            # VideoTrimLoad emits (images, audio, ...) -- the soundtrack is
+            # already here, sitting on output 1 and unused until now. Whether
+            # it is SENT is the request's call; its slot is not, because
+            # ref_video_audios.N is the soundtrack of ref_videos.N.
+            if r.get("with_audio"):
+                tracks.append((counts["video"],
+                               {"node": clip,
+                                "marker": r.get("audio_marker") or "reference"}))
         else:
             out = [mint("LoadImage", {"image": src_name}), 0]
 
@@ -715,7 +856,7 @@ def set_chunk_references(graph, refs, seed=""):
             else "ref_images.ref_image_"
         ins[f"{slot}{counts[kind] - 1 if kind == 'video' else _next_image_slot(ins)}"] = [gate, 0]
 
-    return last_ret, lint
+    return last_ret, lint, tracks
 
 
 def _next_image_slot(ins):
