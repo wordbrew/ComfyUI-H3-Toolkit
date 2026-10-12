@@ -1913,6 +1913,15 @@ function editRef(r) {
         <p class="hint">Its slot is fixed: a clip's soundtrack is bound to
         that clip, so it cannot be numbered separately. <code>reference</code>
         takes the timbre and cadence without reusing the recording.</p>
+        <p class="hint"><b>This will not fix wrong act SFX.</b> That failure is
+        in the WEIGHTS, not the brief: of 330 H3 LoRAs on disk, 251 patch the
+        blocks shared by video and audio and only three mention audio at all,
+        so every content LoRA drags the audio branch toward a video objective
+        with no audio supervision. Measured, across prompt variations, and it
+        does not move. A reference here is a supplement — seeding the act's
+        sound, which rides the same path a voice does — not a correction. Foley
+        after the fact is the other answer, since the audio is decoded by its
+        own node.</p>
       </div>
       <p class="hint">Scrub the bar to move the playhead; Mark in and Mark out
       set the span. H3 wants 2–15s of reference, at 24fps.</p>` : ""}
