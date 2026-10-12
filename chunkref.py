@@ -52,7 +52,11 @@ ROLES = {
         # opposite -- the reference sitting as the first five frames and then
         # the real shot starting, which is a still followed by a cut rather
         # than an opening. See the parked frame-0 investigation.
-        "clause": "{tag}: fully_preserved - is the first frame of the take; "
+        # "the video", not "the take" -- the model's own vocabulary, and the
+        # same word CJ's proven motion clause already uses ("inspiration for
+        # the new video"). `take` is this app's word for the thing being
+        # made; it is not a word the guide puts in a prompt.
+        "clause": "{tag}: fully_preserved - is the first frame of the video; "
                   "the opening frame matches it exactly and the shot "
                   "continues from it.",
         "depth": False,          # the actual image, or it is not the frame
