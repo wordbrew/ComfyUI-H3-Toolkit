@@ -1941,6 +1941,13 @@ function editAudioRef(r) {
     <p class="hint">A standalone sound: room tone, a music bed, a rhythm. It
     becomes its own <code>&lt;Audio N&gt;</code>, numbered after any reference
     clip's soundtrack — that order is the model's, not ours.</p>
+    <p class="hint"><b>Several sounds are not several examples.</b> The
+    position builder advances one shared cursor, and a sound costs its WHOLE
+    LENGTH — so three ten-second clips land at 0–400, 400–800, 800–1200,
+    which is positionally identical to one thirty-second file. Separate
+    references buy cleaner seams, because each is encoded on its own rather
+    than the encoder blending across a splice. They do not buy the model
+    three things to choose between.</p>
     <audio controls preload="metadata" style="width:100%;margin-top:10px"
            src="${rawURL(r.source)}"></audio>
     <p class="hint" style="margin-top:10px">${escapeHTML(r.source)}</p>`,
