@@ -15,8 +15,19 @@ underscores.
 """
 import importlib.util
 import pathlib
+import shutil
 import sys
 import types
+
+# A MUTATION TEST OF THIS FILE LEAVES A STALE .pyc. Proving the validator
+# catches a bad slot means editing takeapi.py, running, and restoring — and
+# `[nid, 0]` -> `[nid, 7]` is the SAME LENGTH, so the restored file has an
+# identical size and mtime resolution can leave Python importing the cached
+# bytecode of the mutation. The content compared equal and the import did
+# not. Dropping the caches on the way in costs nothing and removes a failure
+# that looks exactly like a real one.
+for _pc in pathlib.Path(__file__).resolve().parent.rglob("__pycache__"):
+    shutil.rmtree(_pc, ignore_errors=True)
 
 ROOT = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
