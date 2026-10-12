@@ -194,6 +194,28 @@ for _role in ("composition", "composition and motion", "identity"):
        N().go(role=_role, chunks="all", chunk_index=1, image="I", ordinal=1,
               chunk_plan=_cp)["result"][0] == "I")
 
+
+print("\nevery role that emits a clause names one of the model's markers")
+# A marker the model does not know is just a word in the retention block.
+# prompt_lint owns the vocabulary; the roles have to stay inside it.
+import importlib.util as _iu
+_ps = _iu.spec_from_file_location("_pl2", "prompt_lint.py")
+_pl2 = _iu.module_from_spec(_ps); _ps.loader.exec_module(_pl2)
+for _r in cr.ROLE_ORDER:
+    _c = cr.retention_clause(_r, 1)
+    if not _c:
+        continue
+    _marker = _c.split(":", 1)[1].split(" - ")[0].strip()
+    ok(f"{_r} -> {_marker}", _marker in _pl2.VISUAL_MARKERS)
+
+print("and frame 0 says it CONTINUES, not just that it matches")
+# the recorded failure is the reference sitting as the first five frames and
+# then the real shot starting -- a still followed by a cut
+_f0 = cr.retention_clause("frame 0", 1)
+ok("it asks for an opening, not a held frame", "continues from it" in _f0)
+ok("and fully_preserved, because the image is the thing itself",
+   "fully_preserved" in _f0)
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

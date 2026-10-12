@@ -46,7 +46,15 @@ ROLES = {
     },
     "frame 0": {
         "tag": "Picture",
-        "clause": "{tag} is the first frame.",
+        # fully_preserved, not attribute_transfer: this image is not a
+        # QUALITY being transferred, it is the thing itself, unchanged. And
+        # "continues from it" because the recorded failure here is the
+        # opposite -- the reference sitting as the first five frames and then
+        # the real shot starting, which is a still followed by a cut rather
+        # than an opening. See the parked frame-0 investigation.
+        "clause": "{tag}: fully_preserved - is the first frame of the take; "
+                  "the opening frame matches it exactly and the shot "
+                  "continues from it.",
         "depth": False,          # the actual image, or it is not the frame
         "for": ("image",),
         "what": "the image itself opens the chunk. No depth pass — it has to "
