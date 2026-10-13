@@ -214,6 +214,53 @@ def _register_routes():
             return web.json_response({"ok": False, "subjects": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
 
+    @routes.get(ROUTE_PREFIX + "/clips")
+    async def _clips(request):
+        """Finished video in the OUTPUT folder, newest first — the bin.
+
+        Core serves /view and /history but lists no directory, so the cutting
+        room has nothing to open without this. It returns what a timeline
+        needs to place a clip before decoding it: the path /view wants, the
+        size, and the mtime. DURATION IS NOT HERE -- reading it would mean
+        probing thousands of files on every refresh, and the browser gets it
+        free from the <video> element it is already loading for the thumbnail.
+
+        `?q=` filters on the path. `?limit=` caps the result; the default is
+        generous but finite because this folder grows without bound.
+        """
+        try:
+            import folder_paths
+            root = folder_paths.get_output_directory()
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI output directory"})
+        q = (request.rel_url.query.get("q") or "").strip().lower()
+        try:
+            limit = max(1, min(2000, int(request.rel_url.query.get("limit")
+                                         or 400)))
+        except ValueError:
+            limit = 400
+        VIDEO = (".mp4", ".mov", ".webm", ".mkv", ".m4v")
+        out = []
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                if not f.lower().endswith(VIDEO):
+                    continue
+                full = os.path.join(dirpath, f)
+                rel = os.path.relpath(full, root).replace("\\", "/")
+                if q and q not in rel.lower():
+                    continue
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    continue
+                out.append({"path": rel, "name": f,
+                            "subfolder": os.path.dirname(rel),
+                            "bytes": st.st_size, "mtime": st.st_mtime})
+        out.sort(key=lambda x: x["mtime"], reverse=True)
+        return web.json_response({"ok": True, "clips": out[:limit],
+                                  "total": len(out)})
+
     @routes.get(ROUTE_PREFIX + "/version")
     async def _version(request):
         """Is the Python running here the Python on disk?

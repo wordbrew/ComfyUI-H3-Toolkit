@@ -501,6 +501,88 @@
   .hmirror .h { color: #5aa9ff; font-weight: 600; }
   .hmirror .h.bad { color: var(--bad); text-decoration: underline wavy; }
 
+  /* ------------------------------------------------- the cutting room */
+  .cutbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 0 12px; border-bottom: 1px solid var(--line);
+  }
+  .cut { display: flex; gap: 14px; align-items: flex-start; margin-top: 12px; }
+
+  .bin { width: 220px; flex: none; display: flex; flex-direction: column;
+         gap: 8px; }
+  .binhd { display: flex; gap: 6px; }
+  .binhd input { flex: 1; }
+  .binhd button { width: 30px; flex: none; padding: 0; }
+  .binlist {
+    display: flex; flex-direction: column; gap: 4px;
+    max-height: 56vh; overflow-y: auto; padding-right: 4px;
+  }
+  .binclip {
+    display: flex; gap: 7px; align-items: center; padding: 4px;
+    background: var(--ground-2); border: 1px solid transparent;
+    border-radius: var(--r); cursor: grab; font-size: 11px;
+  }
+  .binclip:hover { border-color: var(--line-strong); }
+  .binclip video { width: 48px; height: 32px; object-fit: cover; flex: none;
+                   border-radius: 2px; background: #000; }
+  .binclip .t { min-width: 0; overflow: hidden; }
+  .binclip b { display: block; font-weight: 500; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+  .binclip span { color: var(--ink-faint); font-size: 10px; }
+
+  /* THE TIMELINE IS POSITIONAL. A clip knows where it STARTS — not merely
+     what precedes it — so gaps are a thing you can have and a clip can be
+     dragged anywhere. Everything is laid out in FRAMES and scaled by one
+     pixels-per-frame number, so zoom is a single multiplier rather than a
+     relayout. */
+  .tl2 { flex: 1; min-width: 0; position: relative; overflow-x: auto;
+         overflow-y: hidden; padding-bottom: 10px; }
+  .ruler2 {
+    position: relative; height: 22px; border-bottom: 1px solid var(--line);
+    cursor: col-resize; user-select: none;
+  }
+  .ruler2 .tick {
+    position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line);
+    font: 9.5px/22px var(--mono); color: var(--ink-faint);
+    padding-left: 3px; white-space: nowrap; pointer-events: none;
+  }
+  .tracks2 { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+  .track2 {
+    position: relative; height: 46px; background: var(--ground-2);
+    border-radius: 3px;
+  }
+  .track2.audio { height: 30px; }
+  .track2 .lbl {
+    position: absolute; left: 4px; top: 3px; z-index: 3; font-size: 9.5px;
+    color: var(--ink-faint); pointer-events: none; letter-spacing: .05em;
+  }
+  .clip2 {
+    position: absolute; top: 2px; bottom: 2px; overflow: hidden;
+    background: var(--accent-dim); border: 1px solid var(--accent);
+    border-radius: 3px; cursor: grab; min-width: 2px;
+  }
+  .clip2.sel { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .clip2 .nm {
+    position: absolute; left: 5px; right: 5px; top: 3px; font-size: 10px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    pointer-events: none; color: #17140c;
+  }
+  .clip2 .h {
+    position: absolute; top: 0; bottom: 0; width: 7px; cursor: col-resize;
+    z-index: 2;
+  }
+  .clip2 .h.l { left: -1px; } .clip2 .h.r { right: -1px; }
+  .clip2 .h:hover { background: #fff6; }
+  .ph2 {
+    position: absolute; top: 0; bottom: 10px; width: 1px; background: var(--bad);
+    pointer-events: none; z-index: 6;
+  }
+  .ph2::before {
+    content: ""; position: absolute; top: 0; left: -4px; width: 9px;
+    height: 9px; background: var(--bad);
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+  }
+
   /* the inline swap bar: only while the caret is in a handle */
   .hbar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -900,16 +982,41 @@
 
 <main id="tab-edit" class="tabpane" hidden>
   <section class="col" style="grid-column:1/-1">
-    <h2>Edit</h2>
-    <p class="soon">Not built yet.<br><br>
-    This is where finished takes get cut together into something
-    longer — trimming what rendered, reordering it, and re-rendering
-    a chunk in place without touching the ones either side.<br><br>
-    The pieces it needs already exist: a take renders in addressable
-    chunks, the runner can resume from a checkpoint, and
-    <code>first_chunk</code>/<code>last_chunk</code> already gate
-    which ones execute. What is missing is the part that reads a
-    rendered take back in.</p>
+    <div class="cutbar">
+      <strong>Cutting room</strong>
+      <span class="sub" id="ed_proj">untitled</span>
+      <span style="flex:1"></span>
+      <button id="ed_addv">+ video track</button>
+      <button id="ed_adda">+ audio track</button>
+      <button id="ed_blade" title="split every selected clip at the playhead">Blade</button>
+      <button id="ed_del" title="remove the selected clips">Delete</button>
+      <label class="chk"><input type="checkbox" id="ed_snap" checked> snap</label>
+      <span class="sub">zoom</span>
+      <input type="range" id="ed_zoom" min="-40" max="40" value="0" style="width:120px">
+      <span class="sub" id="ed_at">0:00.000</span>
+    </div>
+
+    <div class="cut">
+      <div class="bin">
+        <div class="binhd">
+          <input type="search" id="bin_q" placeholder="filter clips…">
+          <button id="bin_reload" title="re-read the output folder">↻</button>
+        </div>
+        <div class="binlist" id="binlist">
+          <p class="hint">Loading the output folder…</p>
+        </div>
+        <p class="hint">Drag a clip onto a track. It lands where you drop it.</p>
+      </div>
+
+      <div class="tl2" id="tl2">
+        <div class="ruler2" id="ruler2"></div>
+        <div class="tracks2" id="tracks2"></div>
+        <div class="ph2" id="ph2"></div>
+      </div>
+    </div>
+    <p class="hint" id="ed_note">Drag to move a clip · drag an edge to trim ·
+    click the ruler to move the playhead · a clip knows where it starts, so
+    gaps are allowed and the topmost video track wins.</p>
   </section>
 </main>
 
@@ -3885,6 +3992,313 @@ async function poll(id) {
   setTimeout(() => poll(id), 4000);
 }
 
+/* ===================================================== THE CUTTING ROOM ==
+   A timeline, not an ordered list. A clip knows where it STARTS, so gaps
+   exist, clips can overlap on different tracks, and the topmost video track
+   wins at any given time.
+
+   EVERYTHING IS FRAMES. Positions, lengths and trims are integer frames at
+   FPS2; pixels are derived at paint time from one pixels-per-frame number.
+   That keeps zoom a single multiplier, keeps snapping exact, and means what
+   the editor stores is what VideoTrimLoad's `spans` already takes -- the
+   same `start count` the reference trimmer writes. Storing seconds would put
+   a rounding step between the edit and the render.
+   ======================================================================= */
+const FPS2 = 24;
+let EDIT = null;          // {tracks:[{id,kind,clips:[...]}], playhead, zoom}
+let BIN = [];             // the output folder, newest first
+let SEL2 = new Set();     // selected clip ids
+let DUR = {};             // source path -> duration in frames, learned lazily
+
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+function blankProject() {
+  return {
+    name: "untitled",
+    playhead: 0,
+    zoom: 0,                                   // the slider; pxPerFrame below
+    tracks: [
+      { id: uid(), kind: "video", name: "V2", clips: [] },
+      { id: uid(), kind: "video", name: "V1", clips: [] },
+      { id: uid(), kind: "audio", name: "A1", clips: [] },
+    ],
+  };
+}
+
+// one number decides the whole layout. The slider is exponential so a few
+// notches cover a 5-second trim and a 10-minute assembly.
+function pxPerFrame() {
+  return 0.25 * Math.pow(1.06, (EDIT && EDIT.zoom) || 0);
+}
+
+const f2x = (f) => f * pxPerFrame();
+const x2f = (x) => Math.max(0, Math.round(x / pxPerFrame()));
+
+function clipLen(c) { return Math.max(1, c.out - c.in); }
+function clipEnd(c) { return c.start + clipLen(c); }
+
+function projectEnd() {
+  let e = 0;
+  for (const t of EDIT.tracks) for (const c of t.clips) e = Math.max(e, clipEnd(c));
+  return e;
+}
+
+function allClips() {
+  return EDIT.tracks.flatMap(t => t.clips.map(c => ({ c, t })));
+}
+
+function findClip(id) {
+  for (const t of EDIT.tracks) {
+    const c = t.clips.find(x => x.id === id);
+    if (c) return { c, t };
+  }
+  return null;
+}
+
+function tc(frames) {
+  const f = Math.max(0, Math.round(frames));
+  const s = f / FPS2;
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+       + `.${String(Math.round((s % 1) * 1000)).padStart(3, "0")}`;
+}
+
+/* ---------------------------------------------------------------- the bin */
+async function loadBin() {
+  const host = $("binlist");
+  try {
+    const r = await getJSON(`${API}/clips?limit=400`);
+    BIN = (r && r.clips) || [];
+  } catch { BIN = []; }
+  drawBin();
+}
+
+function drawBin() {
+  const host = $("binlist");
+  if (!host) return;
+  const q = ($("bin_q").value || "").trim().toLowerCase();
+  const shown = BIN.filter(c => !q || c.path.toLowerCase().includes(q));
+  host.innerHTML = "";
+  if (!shown.length) {
+    host.innerHTML = `<p class="hint">${BIN.length
+      ? "Nothing matches." : "No video in the output folder yet."}</p>`;
+    return;
+  }
+  for (const c of shown.slice(0, 200)) {
+    const el = document.createElement("div");
+    el.className = "binclip";
+    el.draggable = true;
+    const v = document.createElement("video");
+    v.preload = "metadata"; v.muted = true; v.playsInline = true;
+    v.src = outURL(c.path);
+    v.addEventListener("loadedmetadata", () => {
+      // the browser hands us the duration for free while making the
+      // thumbnail -- no server probe over a folder that grows without bound
+      DUR[c.path] = Math.round((v.duration || 0) * FPS2);
+      try { v.currentTime = Math.min(0.5, (v.duration || 1) / 10); } catch {}
+      const sp = el.querySelector("span");
+      if (sp) sp.textContent = tc(DUR[c.path]);
+    }, { once: true });
+    const t = document.createElement("div");
+    t.className = "t";
+    t.innerHTML = `<b>${escapeHTML(c.name)}</b><span>…</span>`;
+    el.append(v, t);
+    el.ondragstart = (e) => {
+      e.dataTransfer.setData("text/plain", "clip:" + c.path);
+      e.dataTransfer.effectAllowed = "copy";
+    };
+    host.appendChild(el);
+  }
+}
+
+// output/, not input/ -- the bin reads what has been RENDERED
+function outURL(path) {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const sub = i < 0 ? "" : path.slice(0, i);
+  const file = i < 0 ? path : path.slice(i + 1);
+  return `/view?filename=${encodeURIComponent(file)}`
+       + `&subfolder=${encodeURIComponent(sub)}&type=output`;
+}
+
+/* ------------------------------------------------------------ the timeline */
+function drawEdit() {
+  if (!EDIT) return;
+  drawRuler2();
+  const host = $("tracks2");
+  host.innerHTML = "";
+  for (const t of EDIT.tracks) {
+    const row = document.createElement("div");
+    row.className = "track2" + (t.kind === "audio" ? " audio" : "");
+    const lbl = document.createElement("div");
+    lbl.className = "lbl"; lbl.textContent = t.name;
+    row.appendChild(lbl);
+
+    for (const c of t.clips) row.appendChild(clipEl(c, t));
+
+    // dropping a bin clip lands it WHERE YOU DROP IT, not at the end
+    row.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; };
+    row.ondrop = (e) => {
+      e.preventDefault();
+      const d = e.dataTransfer.getData("text/plain") || "";
+      if (!d.startsWith("clip:")) return;
+      const path = d.slice(5);
+      const box = row.getBoundingClientRect();
+      const at = snap(x2f(e.clientX - box.left + row.parentElement.scrollLeft),
+                      null);
+      const len = DUR[path] || FPS2 * 5;       // until metadata says otherwise
+      t.clips.push({ id: uid(), source: path, in: 0, out: len,
+                     start: Math.max(0, at), name: path.split("/").pop() });
+      editChanged();
+    };
+    host.appendChild(row);
+  }
+  const w = Math.max(f2x(projectEnd()) + 400, 600);
+  $("ruler2").style.width = w + "px";
+  host.style.width = w + "px";
+  $("ph2").style.left = f2x(EDIT.playhead) + "px";
+  $("ed_at").textContent = tc(EDIT.playhead);
+  $("ed_proj").textContent = EDIT.name;
+}
+
+function clipEl(c, t) {
+  const el = document.createElement("div");
+  el.className = "clip2" + (SEL2.has(c.id) ? " sel" : "");
+  el.style.left = f2x(c.start) + "px";
+  el.style.width = Math.max(2, f2x(clipLen(c))) + "px";
+  el.innerHTML = `<div class="nm">${escapeHTML(c.name || c.source)}</div>`
+               + `<div class="h l"></div><div class="h r"></div>`;
+  el.title = `${c.name}\n${tc(c.start)} → ${tc(clipEnd(c))}`
+           + `\nsource frames ${c.in}–${c.out}`;
+
+  el.onmousedown = (e) => {
+    const edge = e.target.classList.contains("h")
+      ? (e.target.classList.contains("l") ? "l" : "r") : null;
+    if (!e.shiftKey && !SEL2.has(c.id)) SEL2 = new Set();
+    SEL2.add(c.id);
+    drag(e, c, t, edge);
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  return el;
+}
+
+function drawRuler2() {
+  const r = $("ruler2");
+  r.innerHTML = "";
+  const end = projectEnd() + FPS2 * 10;
+  // a tick roughly every 90px, rounded to a whole number of seconds
+  const perTick = Math.max(1, Math.round(90 / f2x(FPS2)));
+  for (let sec = 0; sec * FPS2 < end; sec += perTick) {
+    const d = document.createElement("div");
+    d.className = "tick";
+    d.style.left = f2x(sec * FPS2) + "px";
+    d.textContent = tc(sec * FPS2).replace(/\.000$/, "");
+    r.appendChild(d);
+  }
+}
+
+/* ------------------------------------------------------------ interaction */
+// SNAPPING is to the things an editor actually aligns to: other clips' edges
+// and the playhead. The threshold is in PIXELS, so it feels the same at every
+// zoom -- a frame-based threshold would be unusable zoomed out and useless
+// zoomed in.
+function snap(frame, ignoreId) {
+  if (!$("ed_snap").checked) return frame;
+  const tol = 8 / pxPerFrame();
+  let best = frame, bestD = tol;
+  const marks = [0, EDIT.playhead];
+  for (const { c } of allClips()) {
+    if (c.id === ignoreId) continue;
+    marks.push(c.start, clipEnd(c));
+  }
+  for (const m of marks) {
+    const d = Math.abs(m - frame);
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return Math.max(0, Math.round(best));
+}
+
+function drag(e, c, track, edge) {
+  const startX = e.clientX;
+  const was = { start: c.start, in: c.in, out: c.out };
+  const moved = { yes: false };
+
+  const onMove = (ev) => {
+    const df = Math.round((ev.clientX - startX) / pxPerFrame());
+    if (df === 0 && !moved.yes) return;
+    moved.yes = true;
+    if (edge === "l") {
+      // trimming the head moves the IN point and the start together, so the
+      // frames either side of the cut stay where they are on the timeline
+      const limit = was.out - 1;
+      const nin = Math.max(0, Math.min(limit, was.in + df));
+      c.in = nin;
+      c.start = Math.max(0, was.start + (nin - was.in));
+    } else if (edge === "r") {
+      const max = DUR[c.source] || (was.out + 100000);
+      c.out = Math.max(c.in + 1, Math.min(max, was.out + df));
+    } else {
+      c.start = snap(Math.max(0, was.start + df), c.id);
+    }
+    drawEdit();
+  };
+  const onUp = () => {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    if (moved.yes) editChanged(); else drawEdit();
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
+// THE BLADE splits at the playhead. A split is two clips sharing one source
+// with adjacent in/out ranges -- no media is copied and nothing is decoded,
+// which is why an NLE can cut instantly.
+function blade() {
+  let n = 0;
+  for (const t of EDIT.tracks) {
+    const add = [];
+    for (const c of t.clips) {
+      const at = EDIT.playhead;
+      if (at <= c.start || at >= clipEnd(c)) continue;
+      const cut = c.in + (at - c.start);
+      add.push({ id: uid(), source: c.source, name: c.name,
+                 in: cut, out: c.out, start: at });
+      c.out = cut;
+      n++;
+    }
+    t.clips.push(...add);
+  }
+  if (n) editChanged();
+  return n;
+}
+
+function delSelected() {
+  if (!SEL2.size) return 0;
+  let n = 0;
+  for (const t of EDIT.tracks) {
+    const before = t.clips.length;
+    t.clips = t.clips.filter(c => !SEL2.has(c.id));
+    n += before - t.clips.length;
+  }
+  SEL2 = new Set();
+  if (n) editChanged();
+  return n;
+}
+
+function editChanged() {
+  drawEdit();
+  try { localStorage.setItem(LS + ":edit", JSON.stringify(EDIT)); } catch {}
+}
+
+function loadEdit() {
+  try {
+    const raw = localStorage.getItem(LS + ":edit");
+    EDIT = raw ? JSON.parse(raw) : blankProject();
+  } catch { EDIT = blankProject(); }
+  if (!EDIT || !Array.isArray(EDIT.tracks)) EDIT = blankProject();
+}
+
 /* -------------------------------------------------------------------- init */
 /* checkModel is called from BOTH wireControls() and init(), so it lives at
    module scope — it was swept inside wireControls() once and init's call then
@@ -4036,6 +4450,56 @@ function wireControls() {
   // than click away.
   $("inline_done").onclick = () => $("inline").close();
 
+  // ---- the cutting room
+  loadEdit();
+  $("ed_addv").onclick = () => {
+    const n = EDIT.tracks.filter(t => t.kind === "video").length + 1;
+    EDIT.tracks.unshift({ id: uid(), kind: "video", name: "V" + n, clips: [] });
+    editChanged();
+  };
+  $("ed_adda").onclick = () => {
+    const n = EDIT.tracks.filter(t => t.kind === "audio").length + 1;
+    EDIT.tracks.push({ id: uid(), kind: "audio", name: "A" + n, clips: [] });
+    editChanged();
+  };
+  $("ed_blade").onclick = () => {
+    const n = blade();
+    $("ed_note").textContent = n
+      ? `Split ${n} clip${n === 1 ? "" : "s"} at ${tc(EDIT.playhead)}.`
+      : "Nothing crosses the playhead.";
+  };
+  $("ed_del").onclick = () => {
+    const n = delSelected();
+    $("ed_note").textContent = n
+      ? `Removed ${n} clip${n === 1 ? "" : "s"}.`
+      : "Nothing selected.";
+  };
+  $("ed_zoom").oninput = () => { EDIT.zoom = +$("ed_zoom").value; drawEdit(); };
+  $("bin_q").addEventListener("input", drawBin);
+  $("bin_reload").onclick = loadBin;
+
+  // the ruler scrubs: press and drag, which is how a playhead behaves
+  const scrub = (ev) => {
+    const r = $("ruler2").getBoundingClientRect();
+    EDIT.playhead = snap(x2f(ev.clientX - r.left), "none");
+    drawEdit();
+  };
+  $("ruler2").onmousedown = (ev) => {
+    scrub(ev);
+    const mv = (e2) => scrub(e2);
+    const up = () => { document.removeEventListener("mousemove", mv);
+                       document.removeEventListener("mouseup", up);
+                       editChanged(); };
+    document.addEventListener("mousemove", mv);
+    document.addEventListener("mouseup", up);
+  };
+  // clicking empty timeline clears the selection, as an NLE does
+  $("tracks2").onmousedown = (ev) => {
+    if (ev.target.id === "tracks2" || ev.target.classList.contains("track2")) {
+      SEL2 = new Set(); drawEdit();
+    }
+  };
+
   // ---- tabs. Generate is what exists; Library is the store, which was a
   // panel inside Generate and is not part of a take; Edit is declared and
   // empty rather than hidden, because a tab that says "not built yet" is more
@@ -4047,6 +4511,12 @@ function wireControls() {
       }
       for (const pane of document.querySelectorAll(".tabpane")) {
         pane.hidden = pane.id !== "tab-" + b.dataset.tab;
+      }
+      if (b.dataset.tab === "edit") {
+        // the bin is read once, on first entry: the output folder is large
+        // and nothing else in the app needs it
+        if (!BIN.length) loadBin();
+        drawEdit();
       }
       try { localStorage.setItem(LS + ":tab", b.dataset.tab); } catch {}
     };
