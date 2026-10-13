@@ -32,8 +32,10 @@ const api = new Function("getEDIT", "setEDIT", "snapOn", `
   const x2f = (x) => Math.max(0, Math.round(x / pxPerFrame()));
   ${grab("clipLen")}${grab("clipEnd")}${grab("projectEnd")}
   ${grab("allClips")}${grab("snap")}${grab("blade")}
+  ${grab("covers")}${grab("videoAt")}${grab("audioAt")}${grab("srcTime")}
   function editChanged() {}
-  return { clipLen, clipEnd, projectEnd, snap, blade, pxPerFrame, f2x, x2f };
+  return { clipLen, clipEnd, projectEnd, snap, blade, pxPerFrame, f2x, x2f,
+           covers, videoAt, audioAt, srcTime };
 `)(() => EDIT, (v) => { EDIT = v; }, SNAP);
 
 let bad = 0;
@@ -108,6 +110,46 @@ EDIT = proj([], 40);
 const hi = api.pxPerFrame();
 ck("zooming in magnifies", hi > lo * 50, true);
 ck("and never reaches zero", lo > 0, true);
+
+console.log("\nWHAT IS ON SCREEN is a question about the stack");
+// Video tracks composite bottom-up and the topmost clip covering the
+// playhead wins. Tracks are stored TOP FIRST, so the first match is the
+// winner — and that has to be the same order the export composites in, or
+// the preview lies about the result.
+EDIT = {
+  name: "t", playhead: 0, zoom: 0,
+  tracks: [
+    { id: "v2", kind: "video", name: "V2",
+      clips: [clip({ id: "top", start: 48, in: 0, out: 48 })] },
+    { id: "v1", kind: "video", name: "V1",
+      clips: [clip({ id: "bed", start: 0, in: 0, out: 240 })] },
+    { id: "a1", kind: "audio", name: "A1",
+      clips: [clip({ id: "mus", start: 0, in: 0, out: 240 })] },
+  ],
+};
+ck("below the overlay, the bed shows", api.videoAt(24).id, "bed");
+ck("where they overlap, the TOP track wins", api.videoAt(60).id, "top");
+ck("after the overlay, the bed again", api.videoAt(120).id, "bed");
+ck("audio plays throughout, regardless",
+   api.audioAt(60).map(c => c.id), ["mus"]);
+ck("and a gap shows nothing", api.videoAt(900), null);
+
+console.log("\ncovers() is half-open — a clip owns its start, not its end");
+// Otherwise two adjacent clips both claim the boundary frame and the winner
+// depends on track order rather than on the edit.
+ck("owns its first frame", api.covers(clip({ start: 10, out: 10 }), 10), true);
+ck("not the frame after its last",
+   api.covers(clip({ start: 10, in: 0, out: 10 }), 20), false);
+ck("and the one before it is not its", api.covers(clip({ start: 10 }), 9), false);
+
+console.log("\nSOURCE TIME accounts for the trim, not just the position");
+// A clip trimmed to start 24 frames in, placed 48 frames along the timeline,
+// must show source frame 24 at timeline frame 48 — reading the playhead
+// directly would show the wrong part of the file.
+const trimmed = clip({ start: 48, in: 24, out: 120 });
+ck("its first frame is its IN point", api.srcTime(trimmed, 48), 24 / 24);
+ck("and ten frames later is ten frames further in",
+   api.srcTime(trimmed, 58), 34 / 24);
 
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }

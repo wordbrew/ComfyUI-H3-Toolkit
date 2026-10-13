@@ -501,6 +501,26 @@
   .hmirror .h { color: #5aa9ff; font-weight: 600; }
   .hmirror .h.bad { color: var(--bad); text-decoration: underline wavy; }
 
+  /* the preview: one <video> per clip, stacked, only the owner visible */
+  .prevwrap { margin-top: 12px; }
+  .prev {
+    position: relative; width: 100%; max-width: 520px; aspect-ratio: 2/3;
+    max-height: 46vh; background: #000; border-radius: var(--r);
+    overflow: hidden; display: flex; align-items: center;
+    justify-content: center; margin: 0 auto;
+  }
+  .prev video {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; background: #000;
+  }
+  .prev video[hidden] { display: none; }
+  .prev .hint { color: var(--ink-faint); }
+  .prevbar {
+    display: flex; align-items: center; gap: 10px; max-width: 520px;
+    margin: 8px auto 0;
+  }
+  .prevbar button { width: 34px; padding: 4px 0; }
+
   /* ------------------------------------------------- the cutting room */
   .cutbar {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -994,6 +1014,19 @@
       <span class="sub">zoom</span>
       <input type="range" id="ed_zoom" min="-40" max="40" value="0" style="width:120px">
       <span class="sub" id="ed_at">0:00.000</span>
+    </div>
+
+    <div class="prevwrap">
+      <div class="prev" id="prev">
+        <p class="hint" id="prevnone">Nothing under the playhead.</p>
+      </div>
+      <div class="prevbar">
+        <button id="ed_play" title="space">▶</button>
+        <span class="sub" id="ed_pos">0:00.000</span>
+        <span class="sub" id="ed_of"></span>
+        <span style="flex:1"></span>
+        <span class="sub" id="ed_shows"></span>
+      </div>
     </div>
 
     <div class="cut">
@@ -4120,6 +4153,153 @@ function outURL(path) {
        + `&subfolder=${encodeURIComponent(sub)}&type=output`;
 }
 
+/* ----------------------------------------------------------- playback ---
+   ONE <video> PER CLIP, stacked in the preview and all but one hidden. The
+   obvious approach — a single element whose src changes at each cut — stalls
+   for a beat at every boundary while the browser fetches and decodes the next
+   file. Keeping each clip's element alive and pre-seeked makes a cut a
+   visibility change, which is instant and is how an NLE gets away with it in
+   a browser.
+
+   WHO IS ON SCREEN is a question about the stack: video tracks composite
+   bottom-up and the topmost clip covering the playhead wins. Audio clips
+   covering it all play together, which is what a mix is -- browsers will
+   happily run several media elements at once.
+   ----------------------------------------------------------------------- */
+const VEL = new Map();          // clip id -> its media element
+let PLAYING = false, RAF = 0, LASTT = 0;
+
+function covers(c, f) { return f >= c.start && f < clipEnd(c); }
+
+// topmost VIDEO clip under the playhead. Tracks are stored top-first, so the
+// first match is the winner -- the same order the export will composite in.
+function videoAt(f) {
+  for (const t of EDIT.tracks) {
+    if (t.kind !== "video") continue;
+    const c = t.clips.find(x => covers(x, f));
+    if (c) return c;
+  }
+  return null;
+}
+
+function audioAt(f) {
+  const out = [];
+  for (const t of EDIT.tracks) {
+    if (t.kind !== "audio") continue;
+    for (const c of t.clips) if (covers(c, f)) out.push(c);
+  }
+  return out;
+}
+
+function elFor(c) {
+  let v = VEL.get(c.id);
+  if (!v) {
+    v = document.createElement("video");
+    v.preload = "auto";
+    v.playsInline = true;
+    v.src = outURL(c.source);
+    v.hidden = true;
+    $("prev").appendChild(v);
+    VEL.set(c.id, v);
+  }
+  return v;
+}
+
+// drop elements for clips that no longer exist, or the preview accumulates a
+// decoder per clip ever placed
+function pruneEls() {
+  const live = new Set(allClips().map(x => x.c.id));
+  for (const [id, v] of [...VEL]) {
+    if (!live.has(id)) { v.remove(); VEL.delete(id); }
+  }
+}
+
+// where in the SOURCE a timeline frame falls
+function srcTime(c, f) { return (c.in + (f - c.start)) / FPS2; }
+
+function paintPreview(seek = true) {
+  if (!EDIT) return;
+  pruneEls();
+  const f = EDIT.playhead;
+  const v = videoAt(f);
+  const auds = audioAt(f);
+  const wanted = new Set([v, ...auds].filter(Boolean).map(c => c.id));
+
+  for (const [id, el] of VEL) {
+    if (!wanted.has(id)) {
+      if (!el.paused) el.pause();
+      el.hidden = true;
+    }
+  }
+  for (const c of [v, ...auds].filter(Boolean)) {
+    const el = elFor(c);
+    el.hidden = c !== v;                    // audio plays unseen
+    if (seek) {
+      const t = srcTime(c, f);
+      if (Math.abs(el.currentTime - t) > 1 / FPS2) {
+        try { el.currentTime = t; } catch {}
+      }
+    }
+  }
+  $("prevnone").hidden = !!v;
+  $("ed_pos").textContent = tc(f);
+  $("ed_of").textContent = projectEnd() ? "of " + tc(projectEnd()) : "";
+  $("ed_shows").textContent = v
+    ? (v.name || v.source) + (auds.length ? ` + ${auds.length} audio` : "")
+    : (auds.length ? `${auds.length} audio only` : "");
+  $("ed_play").textContent = PLAYING ? "❚❚" : "▶";
+}
+
+function playPause() {
+  PLAYING ? stopPlay() : startPlay();
+}
+
+function startPlay() {
+  if (!EDIT || !projectEnd()) return;
+  if (EDIT.playhead >= projectEnd()) EDIT.playhead = 0;
+  PLAYING = true;
+  LASTT = performance.now();
+  paintPreview(true);
+  for (const c of [videoAt(EDIT.playhead), ...audioAt(EDIT.playhead)].filter(Boolean)) {
+    elFor(c).play().catch(() => {});
+  }
+  const step = (now) => {
+    if (!PLAYING) return;
+    // THE CLOCK IS THE WALL, not a media element. Driving the playhead from
+    // one clip's currentTime means time stops in a gap, and jumps when the
+    // owner changes. Elapsed real time is continuous across both.
+    const dt = (now - LASTT) / 1000;
+    LASTT = now;
+    const before = videoAt(EDIT.playhead);
+    EDIT.playhead = Math.min(projectEnd(), EDIT.playhead + dt * FPS2);
+    const after = videoAt(EDIT.playhead);
+    if (after !== before) {
+      // crossed a boundary: hand over, seeking only the clip taking on
+      paintPreview(true);
+      for (const c of [after, ...audioAt(EDIT.playhead)].filter(Boolean)) {
+        elFor(c).play().catch(() => {});
+      }
+    } else {
+      paintPreview(false);
+    }
+    $("ph2").style.left = f2x(EDIT.playhead) + "px";
+    $("ed_at").textContent = tc(EDIT.playhead);
+    if (EDIT.playhead >= projectEnd()) { stopPlay(); return; }
+    RAF = requestAnimationFrame(step);
+  };
+  RAF = requestAnimationFrame(step);
+}
+
+function stopPlay() {
+  PLAYING = false;
+  if (RAF) cancelAnimationFrame(RAF);
+  RAF = 0;
+  for (const [, el] of VEL) if (!el.paused) el.pause();
+  EDIT.playhead = Math.round(EDIT.playhead);
+  paintPreview(true);
+  drawEdit();
+}
+
 /* ------------------------------------------------------------ the timeline */
 function drawEdit() {
   if (!EDIT) return;
@@ -4288,6 +4468,7 @@ function delSelected() {
 
 function editChanged() {
   drawEdit();
+  if (!PLAYING) paintPreview(true);
   try { localStorage.setItem(LS + ":edit", JSON.stringify(EDIT)); } catch {}
 }
 
@@ -4475,14 +4656,27 @@ function wireControls() {
       : "Nothing selected.";
   };
   $("ed_zoom").oninput = () => { EDIT.zoom = +$("ed_zoom").value; drawEdit(); };
+  $("ed_play").onclick = playPause;
+  // space plays, the way it does everywhere else — but not while someone is
+  // typing a beat into a textarea on another tab
+  document.addEventListener("keydown", (e) => {
+    if (e.code !== "Space") return;
+    const t = e.target;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if ($("tab-edit").hidden) return;
+    e.preventDefault();
+    playPause();
+  });
   $("bin_q").addEventListener("input", drawBin);
   $("bin_reload").onclick = loadBin;
 
   // the ruler scrubs: press and drag, which is how a playhead behaves
   const scrub = (ev) => {
     const r = $("ruler2").getBoundingClientRect();
+    if (PLAYING) stopPlay();
     EDIT.playhead = snap(x2f(ev.clientX - r.left), "none");
     drawEdit();
+    paintPreview(true);
   };
   $("ruler2").onmousedown = (ev) => {
     scrub(ev);
@@ -4517,6 +4711,9 @@ function wireControls() {
         // and nothing else in the app needs it
         if (!BIN.length) loadBin();
         drawEdit();
+        paintPreview(true);
+      } else if (PLAYING) {
+        stopPlay();                       // leaving the tab stops the sound
       }
       try { localStorage.setItem(LS + ":tab", b.dataset.tab); } catch {}
     };
