@@ -214,6 +214,96 @@ def _register_routes():
             return web.json_response({"ok": False, "subjects": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
 
+    @routes.post(ROUTE_PREFIX + "/edit/export")
+    async def _edit_export(request):
+        """Composite a cutting-room project into one file. Blocking.
+
+        POST {"project": {...}, "name": "cut", "width": 832, "height": 1248}
+
+        The command is built by editexport.build(), which has no I/O and is
+        tested by RUNNING it against clips of known colours and reading the
+        colours back — a filter graph is wrong in ways that produce a file
+        rather than an error, so asserting on the string would prove nothing.
+
+        It runs to completion rather than streaming progress. An assembly of
+        a few minutes takes seconds to tens of seconds on libx264, which is
+        worth a spinner and not worth a job queue.
+        """
+        from . import editexport as EX
+        data = await _body(request)
+        project = data.get("project") or {}
+        try:
+            import folder_paths
+            outdir = folder_paths.get_output_directory()
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI output directory"})
+
+        # THE BINARY: ComfyUI's venv bundles one through imageio_ffmpeg, which
+        # is there whether or not the machine has ffmpeg on PATH. Preferring it
+        # means the export works on a stock install.
+        exe = None
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:                                       # noqa: BLE001
+            import shutil as _sh
+            exe = _sh.which("ffmpeg")
+        if not exe:
+            return web.json_response({
+                "ok": False,
+                "error": "no ffmpeg — ComfyUI normally bundles one through "
+                         "imageio_ffmpeg; install that or put ffmpeg on PATH"})
+
+        # clip sources are paths RELATIVE TO THE OUTPUT FOLDER, as /clips
+        # returns them. Resolving here keeps the browser from ever naming an
+        # absolute path, and refuses anything that climbs out.
+        def resolve(rel):
+            full = os.path.normpath(os.path.join(outdir, str(rel)))
+            if not full.startswith(os.path.normpath(outdir)):
+                raise ValueError(f"{rel!r} is outside the output folder")
+            if not os.path.isfile(full):
+                raise ValueError(f"{rel!r} is not a file")
+            return full
+
+        try:
+            proj = {"tracks": []}
+            for t in project.get("tracks") or []:
+                clips = []
+                for c in t.get("clips") or []:
+                    clips.append({**c, "source": resolve(c.get("source"))})
+                proj["tracks"].append({"kind": t.get("kind") or "video",
+                                       "clips": clips})
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+
+        safe = "".join(ch for ch in str(data.get("name") or "cut")
+                       if ch.isalnum() or ch in "-_") or "cut"
+        dest_dir = os.path.join(outdir, "H3", "cuts")
+        os.makedirs(dest_dir, exist_ok=True)
+        n = 1
+        while os.path.exists(os.path.join(dest_dir, f"{safe}_{n:04d}.mp4")):
+            n += 1
+        dest = os.path.join(dest_dir, f"{safe}_{n:04d}.mp4")
+
+        try:
+            argv, notes = EX.build(proj, dest,
+                                   int(data.get("width") or 832),
+                                   int(data.get("height") or 1248),
+                                   ffmpeg=exe)
+        except EX.ExportError as exc:
+            return web.json_response({"ok": False, "error": str(exc)})
+
+        import subprocess
+        r = subprocess.run(argv, capture_output=True, text=True)
+        if r.returncode != 0:
+            tail = (r.stderr or "").strip().splitlines()[-6:]
+            return web.json_response({"ok": False,
+                                      "error": "ffmpeg failed",
+                                      "detail": "\n".join(tail)})
+        rel = os.path.relpath(dest, outdir).replace("\\", "/")
+        return web.json_response({"ok": True, "path": rel, "notes": notes})
+
     @routes.get(ROUTE_PREFIX + "/clips")
     async def _clips(request):
         """Finished video in the OUTPUT folder, newest first — the bin.

@@ -1011,6 +1011,7 @@
       <button id="ed_blade" title="split every selected clip at the playhead">Blade</button>
       <button id="ed_del" title="remove the selected clips">Delete</button>
       <label class="chk"><input type="checkbox" id="ed_snap" checked> snap</label>
+      <button id="ed_export" class="primary">Export…</button>
       <span class="sub">zoom</span>
       <input type="range" id="ed_zoom" min="-40" max="40" value="0" style="width:120px">
       <span class="sub" id="ed_at">0:00.000</span>
@@ -4153,6 +4154,63 @@ function outURL(path) {
        + `&subfolder=${encodeURIComponent(sub)}&type=output`;
 }
 
+/* --------------------------------------------------------------- export */
+async function exportCut() {
+  if (!EDIT || !projectEnd()) { $("ed_note").textContent =
+    "Nothing on the timeline to export."; return; }
+  if (PLAYING) stopPlay();
+
+  // THE CANVAS. Layers composite into one frame, so the output needs a size,
+  // and the honest default is the BOTTOM-most video clip's own — the bed is
+  // what everything else is laid over. Reading it from the element the
+  // preview already loaded costs nothing.
+  let w = 0, h = 0;
+  const beds = EDIT.tracks.filter(t => t.kind === "video").slice(-1)[0];
+  const first = beds && beds.clips.slice().sort((a, b) => a.start - b.start)[0];
+  if (first) {
+    const v = VEL.get(first.id);
+    if (v && v.videoWidth) { w = v.videoWidth; h = v.videoHeight; }
+  }
+  if (!w || !h) { w = 832; h = 1248; }
+
+  const name = (prompt("Name this cut", EDIT.name === "untitled"
+                       ? "cut" : EDIT.name) || "").trim();
+  if (!name) return;
+  EDIT.name = name;
+  editChanged();
+
+  const btn = $("ed_export");
+  btn.disabled = true;
+  $("ed_note").textContent =
+    `Compositing ${w}x${h}, ${tc(projectEnd())} — this encodes, so it is not `
+    + `instant.`;
+  try {
+    const r = await post("/edit/export", {
+      project: {
+        tracks: EDIT.tracks.map(t => ({
+          kind: t.kind,
+          clips: t.clips.map(c => ({ source: c.source, in: c.in,
+                                     out: c.out, start: c.start })),
+        })),
+      },
+      name, width: w, height: h,
+    });
+    if (!r || !r.ok) {
+      $("ed_note").textContent =
+        "Export failed: " + ((r && (r.detail || r.error)) || "no reason given");
+      return;
+    }
+    $("ed_note").innerHTML =
+      `Exported <b>${escapeHTML(r.path)}</b> — ${escapeHTML(
+        (r.notes || []).join(" · "))}`;
+    await loadBin();                       // it is a clip now, like any other
+  } catch (e) {
+    $("ed_note").textContent = "Export failed: " + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* ----------------------------------------------------------- playback ---
    ONE <video> PER CLIP, stacked in the preview and all but one hidden. The
    obvious approach — a single element whose src changes at each cut — stalls
@@ -4657,6 +4715,7 @@ function wireControls() {
   };
   $("ed_zoom").oninput = () => { EDIT.zoom = +$("ed_zoom").value; drawEdit(); };
   $("ed_play").onclick = playPause;
+  $("ed_export").onclick = exportCut;
   // space plays, the way it does everywhere else — but not while someone is
   // typing a beat into a textarea on another tab
   document.addEventListener("keydown", (e) => {
