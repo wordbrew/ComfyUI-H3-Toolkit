@@ -608,6 +608,9 @@
     border-radius: 3px; cursor: grab; min-width: 2px;
   }
   .clip2.sel { outline: 2px solid var(--ink); outline-offset: -2px; }
+  /* a muted clip is still a clip — dimmed and struck, not hidden */
+  .clip2.mute { background: var(--ground); border-style: dashed; }
+  .clip2.mute .nm { opacity: .65; }
   .clip2 .nm {
     position: absolute; left: 5px; right: 5px; top: 3px; font-size: 10px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -4317,6 +4320,11 @@ function clipMenu(e, c, t) {
     { label: "Trim end to playhead", key: "]", off: !crosses,
       go: () => { snapshot(); trimTo(c, "r"); afterMutate(); } },
     "-",
+    { label: c.mute ? "Unmute" + many : "Mute" + many, key: "M",
+      go: () => { snapshot(); toggleMute(); afterMutate(); } },
+    { label: "Solo this clip's audio",
+      go: () => { snapshot(); soloAudio(c); afterMutate(); } },
+    "-",
     { label: "Duplicate" + many, key: "Ctrl+D",
       go: () => { snapshot(); duplicate(); afterMutate(); } },
     { label: "Delete" + many, key: "Del",
@@ -4324,8 +4332,18 @@ function clipMenu(e, c, t) {
     { label: "Ripple delete" + many, key: "Shift+Del",
       go: () => { snapshot(); rippleDelete(); afterMutate(); } },
     "-",
-    { label: "Move playhead to start",
-      go: () => { EDIT.playhead = c.start; afterMutate(); } },
+    // "Move playhead to start" did not say WHOSE start, and when the playhead
+    // was already there it did nothing visible — which reads as broken. Both
+    // ends now, each naming the clip's own time, so the item is a statement
+    // of where you will land.
+    { label: `Playhead to this clip's start (${tc(c.start)})`,
+      off: EDIT.playhead === c.start,
+      go: () => { EDIT.playhead = c.start; afterMutate();
+                  edNote(`Playhead at ${tc(c.start)}.`); } },
+    { label: `Playhead to this clip's end (${tc(clipEnd(c))})`,
+      off: EDIT.playhead === clipEnd(c),
+      go: () => { EDIT.playhead = clipEnd(c); afterMutate();
+                  edNote(`Playhead at ${tc(clipEnd(c))}.`); } },
     { label: "Select all on this track",
       go: () => { SEL2 = new Set(t.clips.map(x => x.id)); drawEdit(); } },
   ]);
@@ -4376,6 +4394,30 @@ function trimTo(c, edge) {
 
 function selectedClips() {
   return allClips().filter(x => SEL2.has(x.c.id));
+}
+
+// MUTE is per clip and toggles as a GROUP: if any selected clip is unmuted,
+// the action is "mute"; only when all are muted does it unmute. Toggling each
+// independently makes a multi-select do two different things at once, which
+// is never what was meant.
+function toggleMute() {
+  const sel = selectedClips();
+  if (!sel.length) return 0;
+  const silence = sel.some(x => !x.c.mute);
+  for (const { c } of sel) c.mute = silence;
+  return sel.length;
+}
+
+// SOLO is "mute everything else that would be heard", not a separate mode.
+// A mode has to be remembered and undone; this is an ordinary edit that undo
+// already covers.
+function soloAudio(keep) {
+  let n = 0;
+  for (const { c } of allClips()) {
+    const want = c.id !== keep.id;
+    if (!!c.mute !== want) { c.mute = want; n++; }
+  }
+  return n;
 }
 
 function duplicate() {
@@ -4554,6 +4596,10 @@ function paintPreview(seek = true) {
   for (const c of [v, ...auds].filter(Boolean)) {
     const el = elFor(c);
     el.hidden = c !== v;                    // audio plays unseen
+    // PER CLIP, not per track: two clips on one track can want different
+    // things, and a video clip's own sound is as mutable as a music bed's.
+    el.muted = !!c.mute;
+    el.volume = Math.max(0, Math.min(1, c.gain === undefined ? 1 : c.gain));
     if (seek) {
       const t = srcTime(c, f);
       if (Math.abs(el.currentTime - t) > 1 / FPS2) {
@@ -4668,13 +4714,18 @@ function drawEdit() {
 
 function clipEl(c, t) {
   const el = document.createElement("div");
-  el.className = "clip2" + (SEL2.has(c.id) ? " sel" : "");
+  el.className = "clip2" + (SEL2.has(c.id) ? " sel" : "")
+               + (c.mute ? " mute" : "");
   el.style.left = f2x(c.start) + "px";
   el.style.width = Math.max(2, f2x(clipLen(c))) + "px";
-  el.innerHTML = `<div class="nm">${escapeHTML(c.name || c.source)}</div>`
+  el.innerHTML = `<div class="nm">${c.mute ? "🔇 " : ""}`
+               + `${escapeHTML(c.name || c.source)}</div>`
                + `<div class="h l"></div><div class="h r"></div>`;
   el.title = `${c.name}\n${tc(c.start)} → ${tc(clipEnd(c))}`
-           + `\nsource frames ${c.in}–${c.out}`;
+           + `\nsource frames ${c.in}–${c.out}`
+           + (c.mute ? "\nmuted"
+                     : c.gain !== undefined && c.gain !== 1
+                       ? `\ngain ${c.gain}` : "");
 
   el.oncontextmenu = (e) => {
     e.preventDefault();
@@ -4737,14 +4788,45 @@ function snap(frame, ignoreId) {
   return Math.max(0, Math.round(best));
 }
 
+// WHICH TRACK IS THE CURSOR OVER? Rows are laid out vertically, so this is a
+// hit test rather than arithmetic -- and it has to read the live elements
+// because track heights differ between video and audio.
+function trackUnder(clientY) {
+  const rows = [...document.querySelectorAll(".track2")];
+  for (let i = 0; i < rows.length; i++) {
+    const b = rows[i].getBoundingClientRect();
+    if (clientY >= b.top && clientY <= b.bottom) return EDIT.tracks[i];
+  }
+  return null;
+}
+
+function moveToTrack(c, from, to) {
+  if (!to || to === from) return false;
+  from.clips = from.clips.filter(x => x.id !== c.id);
+  to.clips.push(c);
+  return true;
+}
+
 function drag(e, c, track, edge) {
   const startX = e.clientX;
   snapshot();                       // before the first pixel, not after
   const was = { start: c.start, in: c.in, out: c.out };
   const moved = { yes: false };
+  let home = track;
 
   const onMove = (ev) => {
     const df = Math.round((ev.clientX - startX) / pxPerFrame());
+    // A CLIP CAN CHANGE TRACKS while being dragged, which is how layering is
+    // actually done. The TRACK decides what a clip is for -- the same file on
+    // a video track shows and on an audio track only sounds -- so moving one
+    // down to A1 is a real operation, not a mistake to prevent.
+    if (!edge) {
+      const over = trackUnder(ev.clientY);
+      if (over && over !== home && moveToTrack(c, home, over)) {
+        home = over;
+        moved.yes = true;
+      }
+    }
     if (df === 0 && !moved.yes) return;
     moved.yes = true;
     if (edge === "l") {
@@ -5043,6 +5125,12 @@ function wireControls() {
     switch (key) {
       case " ":
         e.preventDefault(); playPause(); return;
+      case "m": case "M": {
+        snapshot();
+        const n = toggleMute();
+        edNote(n ? `${n} clip(s) toggled.` : "Nothing selected.");
+        afterMutate(); return;
+      }
       case "s": case "S":
         snapshot();
         edNote(blade() ? "Split at the playhead." : "Nothing crosses it.");

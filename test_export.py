@@ -150,6 +150,46 @@ a1, _ = EX.build(proj, out3, 160, 240, ffmpeg=FFMPEG)
 a2, _ = EX.build(proj, out3, 160, 240, ffmpeg=FFMPEG)
 ok("built twice, identical", a1 == a2)
 
+# ---------------------------------------------------------------- muting
+print("\na MUTED clip is seen and not heard")
+proj = {"tracks": [{"kind": "video", "clips": [
+    {"source": red, "in": 0, "out": 48, "start": 0, "mute": True},
+    {"source": blue, "in": 0, "out": 48, "start": 48},
+]}]}
+out4 = str(tmp / "mute.mp4")
+argv, notes = EX.build(proj, out4, 160, 240, ffmpeg=FFMPEG)
+r = subprocess.run(argv, capture_output=True, text=True)
+ok(f"it runs — {r.returncode}", r.returncode == 0)
+if r.returncode:
+    print(r.stderr[-600:])
+check("the muted clip is still on screen", colour_at(out4, 1), "red")
+ok("and the report says one is muted",
+   any("1 muted" in n for n in notes))
+check("only one clip feeds the mix",
+      " ".join(argv).count("adelay"), 1)
+
+print("\nmuting everything leaves a silent file rather than a broken one")
+proj = {"tracks": [{"kind": "video", "clips": [
+    {"source": red, "in": 0, "out": 48, "start": 0, "mute": True},
+]}]}
+out5 = str(tmp / "silent.mp4")
+argv, notes = EX.build(proj, out5, 160, 240, ffmpeg=FFMPEG)
+r = subprocess.run(argv, capture_output=True, text=True)
+ok(f"it runs — {r.returncode}", r.returncode == 0)
+ok("and says so", any("silent" in n for n in notes))
+ok("with no audio stream mapped",
+   "audio" not in probe(out5, "stream=codec_type"))
+
+print("\ngain scales without muting")
+proj = {"tracks": [{"kind": "video", "clips": [
+    {"source": red, "in": 0, "out": 48, "start": 0, "gain": 0.25},
+]}]}
+argv, _ = EX.build(proj, str(tmp / "g.mp4"), 160, 240, ffmpeg=FFMPEG)
+ok("a volume filter appears", "volume=0.2500" in " ".join(argv))
+proj["tracks"][0]["clips"][0]["gain"] = 1.0
+argv, _ = EX.build(proj, str(tmp / "g2.mp4"), 160, 240, ffmpeg=FFMPEG)
+ok("and unity gain adds nothing", "volume=" not in " ".join(argv))
+
 shutil.rmtree(tmp, ignore_errors=True)
 print()
 if fails:

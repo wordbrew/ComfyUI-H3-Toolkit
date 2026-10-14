@@ -142,15 +142,25 @@ def build(project, out_path, width, height, fps=FPS, crf=18, preset="medium",
     for j, c in enumerate(auds):
         aidx.append((len(vids) + j, c))
 
+    # A MUTED CLIP CONTRIBUTES NOTHING. It still occupies its input slot --
+    # the video half may be on screen -- so it is skipped here rather than
+    # dropped from the inputs, which would renumber every stream after it.
+    # Without this the preview and the file disagree about what is audible,
+    # and the file is the one you find out about last.
+    aidx = [(i, c) for (i, c) in aidx if not c.get("mute")]
+
     alabels = []
     for n, (i, c) in enumerate(aidx):
         ms = int(round(_secs(c["start"], fps) * 1000))
         lbl = f"a{n}"
+        gain = c.get("gain")
+        vol = ("" if gain is None or float(gain) == 1.0
+               else f"volume={float(gain):.4f},")
         # `?` on the stream spec: a clip with no audio track is not an error,
         # it simply contributes nothing. apad+atrim gives every input the same
         # length so amix cannot shorten the result.
         chains.append(
-            f"[{i}:a]aresample=async=1,adelay={ms}|{ms},"
+            f"[{i}:a]aresample=async=1,{vol}adelay={ms}|{ms},"
             f"apad,atrim=0:{_secs(total, fps):.6f},asetpts=PTS-STARTPTS[{lbl}]")
         alabels.append(lbl)
 
@@ -174,8 +184,10 @@ def build(project, out_path, width, height, fps=FPS, crf=18, preset="medium",
         args += ["-c:a", "aac", "-b:a", "192k"]
     args += [str(out_path)]
 
+    muted = sum(1 for c in vids + auds if c.get("mute"))
     notes.append(f"{len(vids)} video clip(s), {len(auds)} audio clip(s), "
-                 f"{total} frames = {_secs(total, fps):.2f}s at {fps} fps")
+                 + (f"{muted} muted, " if muted else "")
+                 + f"{total} frames = {_secs(total, fps):.2f}s at {fps} fps")
     return args, notes
 
 
