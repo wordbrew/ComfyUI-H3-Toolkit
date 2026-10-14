@@ -33,6 +33,7 @@ const api = new Function("getEDIT", "setEDIT", "snapOn", `
   ${grab("clipLen")}${grab("clipEnd")}${grab("projectEnd")}
   ${grab("allClips")}${grab("snap")}${grab("blade")}
   ${grab("covers")}${grab("videoAt")}${grab("audioAt")}${grab("srcTime")}
+  ${grab("trackEnd")}
   let SEL2 = new Set();
   let CLIPBOARD = [];
   ${grab("selectedClips")}${grab("trimTo")}${grab("duplicate")}
@@ -43,7 +44,7 @@ const api = new Function("getEDIT", "setEDIT", "snapOn", `
            covers, videoAt, audioAt, srcTime,
            trimTo, duplicate, rippleDelete, pasteAt, delSelected,
            sel: (ids) => { SEL2 = new Set(ids); },
-           board: (cs) => { CLIPBOARD = cs; } };
+           board: (cs) => { CLIPBOARD = cs; }, trackEnd };
 `)(() => EDIT, (v) => { EDIT = v; }, SNAP);
 
 let bad = 0;
@@ -249,6 +250,31 @@ if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui timeline: frames, gaps, splits and snapping all hold");
 
 // ---------------------------------------------------------------------------
+console.log("\nA DROPPED CLIP APPENDS TO ITS OWN TRACK");
+// CJ: "if no video is there, then it drops at the start for that layer. if
+// video is there, then it snaps and drops to the end." PER TRACK — each
+// layer fills from its own start, so dropping a run onto V1 builds a
+// sequence instead of a pile wherever the cursor happened to be.
+EDIT = { name: "t", playhead: 0, zoom: 0, tracks: [
+  { id: "v1", kind: "video", name: "V1", clips: [] },
+  { id: "v2", kind: "video", name: "V2", clips: [
+      clip({ id: "x", start: 0, in: 0, out: 48 }),
+      clip({ id: "y", start: 48, in: 0, out: 72 }) ] },
+] };
+ck("an empty track starts at zero", api.trackEnd(EDIT.tracks[0]), 0);
+ck("a filled one appends after its last clip",
+   api.trackEnd(EDIT.tracks[1]), 120);
+ck("and it is the LAST end, not the clip count",
+   api.trackEnd({ clips: [clip({ start: 500, in: 0, out: 24 }),
+                          clip({ start: 0, in: 0, out: 24 })] }), 524);
+ck("a gap before the last clip does not shrink it",
+   api.trackEnd({ clips: [clip({ start: 240, in: 0, out: 48 })] }), 288);
+
+console.log("\nand each layer is independent — one track filling does not " +
+            "move another");
+ck("V1 still starts at zero while V2 is full",
+   [api.trackEnd(EDIT.tracks[0]), api.trackEnd(EDIT.tracks[1])], [0, 120]);
+
 console.log("\nA CONTEXT MENU ITEM MUST SURVIVE BEING PRESSED");
 // The first version dismissed on ANY mousedown. mousedown fires before click,
 // so pressing an item removed the element out from under the click that was

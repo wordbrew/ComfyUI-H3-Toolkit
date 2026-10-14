@@ -622,6 +622,10 @@
   }
   .clip2 .h.l { left: -1px; } .clip2 .h.r { right: -1px; }
   .clip2 .h:hover { background: #fff6; }
+  .marquee {
+    position: absolute; z-index: 5; pointer-events: none;
+    border: 1px solid var(--ink); background: #ffffff14;
+  }
   .ph2 {
     position: absolute; top: 0; bottom: 10px; width: 1px; background: var(--bad);
     pointer-events: none; z-index: 6;
@@ -1078,7 +1082,9 @@
       </div>
     </div>
     <p class="hint" id="ed_note">Right-click a clip for everything. Drag to
-    move, drag an edge to trim, click the ruler to scrub.</p>
+    move it, between tracks too; drag an edge to trim; drag empty track space
+    to marquee-select; click the ruler to scrub. A dropped clip lands after
+    whatever is already on that track.</p>
     <details id="ed_keys"><summary>Keys</summary><div class="body">
       <div class="keys">
         <span><kbd>Space</kbd> play / pause</span>
@@ -4141,6 +4147,13 @@ const x2f = (x) => Math.max(0, Math.round(x / pxPerFrame()));
 function clipLen(c) { return Math.max(1, c.out - c.in); }
 function clipEnd(c) { return c.start + clipLen(c); }
 
+// where this track's last clip ends — 0 when it is empty
+function trackEnd(t) {
+  let e = 0;
+  for (const c of t.clips || []) e = Math.max(e, clipEnd(c));
+  return e;
+}
+
 function projectEnd() {
   let e = 0;
   for (const t of EDIT.tracks) for (const c of t.clips) e = Math.max(e, clipEnd(c));
@@ -4707,9 +4720,14 @@ function drawEdit() {
       const d = e.dataTransfer.getData("text/plain") || "";
       if (!d.startsWith("clip:")) return;
       const path = d.slice(5);
-      const box = row.getBoundingClientRect();
-      const at = snap(x2f(e.clientX - box.left + row.parentElement.scrollLeft),
-                      null);
+      // A NEW CLIP APPENDS. CJ: "if no video is there, then it drops at the
+      // start for that layer. if video is there, then it snaps and drops to
+      // the end." Per TRACK, not per project — each layer fills from its own
+      // start, which is what makes dropping a run of clips onto V1 build a
+      // sequence rather than a pile at wherever the cursor happened to be.
+      // Dragging it elsewhere afterwards is one gesture; hunting for the
+      // right pixel on every drop is one per clip.
+      const at = trackEnd(t);
       const len = DUR[path] || FPS2 * 5;       // until metadata says otherwise
       snapshot();
       t.clips.push({ id: uid(), source: path, in: 0, out: len,
@@ -4730,6 +4748,7 @@ function clipEl(c, t) {
   const el = document.createElement("div");
   el.className = "clip2" + (SEL2.has(c.id) ? " sel" : "")
                + (c.mute ? " mute" : "");
+  el.dataset.cid = c.id;
   el.style.left = f2x(c.start) + "px";
   el.style.width = Math.max(2, f2x(clipLen(c))) + "px";
   el.innerHTML = `<div class="nm">${c.mute ? "🔇 " : ""}`
@@ -5202,11 +5221,61 @@ function wireControls() {
     document.addEventListener("mousemove", mv);
     document.addEventListener("mouseup", up);
   };
-  // clicking empty timeline clears the selection, as an NLE does
+  // MARQUEE SELECT. Pressing empty track space and dragging draws a box and
+  // takes everything it touches — the only way to grab a run of clips across
+  // several layers without clicking each one. Shift adds to what is already
+  // selected rather than replacing it.
   $("tracks2").onmousedown = (ev) => {
-    if (ev.target.id === "tracks2" || ev.target.classList.contains("track2")) {
-      SEL2 = new Set(); drawEdit();
-    }
+    const onEmpty = ev.target.id === "tracks2"
+                 || ev.target.classList.contains("track2")
+                 || ev.target.classList.contains("lbl");
+    if (!onEmpty || ev.button !== 0) return;
+    ev.preventDefault();
+    closeMenu();
+
+    const host = $("tracks2");
+    const base = host.getBoundingClientRect();
+    const x0 = ev.clientX - base.left, y0 = ev.clientY - base.top;
+    const keep = ev.shiftKey ? new Set(SEL2) : new Set();
+
+    const box = document.createElement("div");
+    box.className = "marquee";
+    host.appendChild(box);
+    let dragged = false;
+
+    const place = (ev2) => {
+      const x1 = ev2.clientX - base.left, y1 = ev2.clientY - base.top;
+      if (Math.abs(x1 - x0) > 3 || Math.abs(y1 - y0) > 3) dragged = true;
+      const L = Math.min(x0, x1), T = Math.min(y0, y1);
+      const W = Math.abs(x1 - x0), H = Math.abs(y1 - y0);
+      Object.assign(box.style, { left: L + "px", top: T + "px",
+                                width: W + "px", height: H + "px" });
+      // hit-test against the LIVE clip elements rather than recomputing
+      // geometry: the rows are already laid out, and asking them is both
+      // shorter and immune to the track heights differing
+      const hit = new Set(keep);
+      for (const el of host.querySelectorAll(".clip2")) {
+        const r = el.getBoundingClientRect();
+        const l = r.left - base.left, t2 = r.top - base.top;
+        if (l < L + W && l + r.width > L && t2 < T + H && t2 + r.height > T) {
+          hit.add(el.dataset.cid);
+        }
+      }
+      SEL2 = hit;
+      for (const el of host.querySelectorAll(".clip2")) {
+        el.classList.toggle("sel", SEL2.has(el.dataset.cid));
+      }
+    };
+
+    const up = () => {
+      document.removeEventListener("mousemove", place);
+      document.removeEventListener("mouseup", up);
+      box.remove();
+      if (!dragged) SEL2 = ev.shiftKey ? keep : new Set();
+      drawEdit();
+    };
+    document.addEventListener("mousemove", place);
+    document.addEventListener("mouseup", up);
   };
 
   // ---- tabs. Generate is what exists; Library is the store, which was a
