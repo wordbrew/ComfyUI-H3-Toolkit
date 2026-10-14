@@ -501,6 +501,32 @@
   .hmirror .h { color: #5aa9ff; font-weight: 600; }
   .hmirror .h.bad { color: var(--bad); text-decoration: underline wavy; }
 
+  /* the context menu. Operations belong ON the thing they act on. */
+  .ctxmenu {
+    position: absolute; z-index: 120; min-width: 212px; padding: 4px;
+    background: var(--panel); border: 1px solid var(--line-strong);
+    border-radius: var(--r); box-shadow: 0 8px 26px #0008;
+  }
+  .ctxmenu button {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 18px; width: 100%; padding: 6px 9px; background: none; border: 0;
+    border-radius: 3px; font: inherit; font-size: 12px; color: var(--ink);
+    text-align: left; cursor: pointer;
+  }
+  .ctxmenu button:hover:not(:disabled) { background: var(--ground-2); }
+  .ctxmenu button:disabled { color: var(--ink-faint); cursor: default; }
+  .ctxmenu kbd {
+    font: 10px/1 var(--mono); color: var(--ink-faint);
+    border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px;
+  }
+  .keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+          gap: 5px 18px; font-size: 11.5px; color: var(--ink-soft); }
+  .keys kbd {
+    font: 10px/1 var(--mono); color: var(--ink); background: var(--ground-2);
+    border: 1px solid var(--line); border-radius: 3px; padding: 2px 5px;
+  }
+  .ctxmenu .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+
   /* the preview: one <video> per clip, stacked, only the owner visible */
   .prevwrap { margin-top: 12px; }
   .prev {
@@ -1048,9 +1074,21 @@
         <div class="ph2" id="ph2"></div>
       </div>
     </div>
-    <p class="hint" id="ed_note">Drag to move a clip · drag an edge to trim ·
-    click the ruler to move the playhead · a clip knows where it starts, so
-    gaps are allowed and the topmost video track wins.</p>
+    <p class="hint" id="ed_note">Right-click a clip for everything. Drag to
+    move, drag an edge to trim, click the ruler to scrub.</p>
+    <details id="ed_keys"><summary>Keys</summary><div class="body">
+      <div class="keys">
+        <span><kbd>Space</kbd> play / pause</span>
+        <span><kbd>S</kbd> split at the playhead</span>
+        <span><kbd>Del</kbd> delete · <kbd>Shift</kbd>+<kbd>Del</kbd> ripple delete</span>
+        <span><kbd>[</kbd> <kbd>]</kbd> trim start / end to the playhead</span>
+        <span><kbd>←</kbd> <kbd>→</kbd> a frame · with <kbd>Shift</kbd> a second</span>
+        <span><kbd>Home</kbd> <kbd>End</kbd> start / end</span>
+        <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Shift</kbd> to redo</span>
+        <span><kbd>Ctrl</kbd>+<kbd>C</kbd> <kbd>X</kbd> <kbd>V</kbd> <kbd>D</kbd> copy, cut, paste, duplicate</span>
+        <span><kbd>Ctrl</kbd>+<kbd>A</kbd> select all · <kbd>Esc</kbd> deselect</span>
+      </div>
+    </div></details>
   </section>
 </main>
 
@@ -4183,6 +4221,201 @@ function outURL(path) {
        + `&subfolder=${encodeURIComponent(sub)}&type=output`;
 }
 
+/* ------------------------------------------------------------ undo ------
+   Every mutation snapshots the project first. An edit list is small — a
+   hundred clips is a few KB — so cloning it is cheaper than tracking deltas
+   and cannot drift from the thing it claims to describe. Depth is capped
+   because the only cost that grows is memory nobody asked to spend.
+   ----------------------------------------------------------------------- */
+const UNDO = [], REDO = [];
+const UNDO_MAX = 60;
+
+function snapshot() {
+  try {
+    UNDO.push(JSON.stringify(EDIT));
+    if (UNDO.length > UNDO_MAX) UNDO.shift();
+    REDO.length = 0;              // a new edit forks the future
+  } catch {}
+}
+
+function undo() {
+  if (!UNDO.length) { edNote("Nothing to undo."); return; }
+  REDO.push(JSON.stringify(EDIT));
+  EDIT = JSON.parse(UNDO.pop());
+  SEL2 = new Set();
+  afterMutate();
+  edNote("Undone.");
+}
+
+function redo() {
+  if (!REDO.length) { edNote("Nothing to redo."); return; }
+  UNDO.push(JSON.stringify(EDIT));
+  EDIT = JSON.parse(REDO.pop());
+  SEL2 = new Set();
+  afterMutate();
+  edNote("Redone.");
+}
+
+function afterMutate() {
+  drawEdit();
+  if (!PLAYING) paintPreview(true);
+  try { localStorage.setItem(LS + ":edit", JSON.stringify(EDIT)); } catch {}
+}
+
+function edNote(t) { const n = $("ed_note"); if (n) n.textContent = t; }
+
+/* ------------------------------------------------------- the context menu */
+/* CJ: "you can't right click on anything for clips, it's a headache to have to
+   split and delete through clicking top right." Right. An editor's operations
+   belong ON the thing they act on. */
+function closeMenu() {
+  const m = document.getElementById("ctxmenu");
+  if (m) m.remove();
+}
+
+function openMenu(x, y, items) {
+  closeMenu();
+  const m = document.createElement("div");
+  m.id = "ctxmenu"; m.className = "ctxmenu";
+  for (const it of items) {
+    if (it === "-") {
+      const hr = document.createElement("div");
+      hr.className = "sep";
+      m.appendChild(hr);
+      continue;
+    }
+    const b = document.createElement("button");
+    b.type = "button";
+    b.disabled = !!it.off;
+    b.innerHTML = `<span>${escapeHTML(it.label)}</span>`
+                + (it.key ? `<kbd>${escapeHTML(it.key)}</kbd>` : "");
+    b.onclick = () => { closeMenu(); it.go(); };
+    m.appendChild(b);
+  }
+  document.body.appendChild(m);
+  // keep it on screen: a menu opened near the bottom edge opens upward
+  const r = m.getBoundingClientRect();
+  const px = Math.min(x, window.innerWidth - r.width - 8);
+  const py = y + r.height > window.innerHeight ? y - r.height : y;
+  m.style.left = px + window.scrollX + "px";
+  m.style.top = Math.max(4, py) + window.scrollY + "px";
+  setTimeout(() => {
+    document.addEventListener("mousedown", closeMenu, { once: true });
+  }, 0);
+}
+
+function clipMenu(e, c, t) {
+  const at = EDIT.playhead;
+  const crosses = at > c.start && at < clipEnd(c);
+  const n = SEL2.size > 1 ? SEL2.size : 1;
+  const many = n > 1 ? ` (${n})` : "";
+  openMenu(e.clientX, e.clientY, [
+    { label: "Split at playhead", key: "S", off: !crosses,
+      go: () => { snapshot(); blade(); afterMutate(); } },
+    { label: "Trim start to playhead", key: "[", off: !crosses,
+      go: () => { snapshot(); trimTo(c, "l"); afterMutate(); } },
+    { label: "Trim end to playhead", key: "]", off: !crosses,
+      go: () => { snapshot(); trimTo(c, "r"); afterMutate(); } },
+    "-",
+    { label: "Duplicate" + many, key: "Ctrl+D",
+      go: () => { snapshot(); duplicate(); afterMutate(); } },
+    { label: "Delete" + many, key: "Del",
+      go: () => { snapshot(); delSelected(); afterMutate(); } },
+    { label: "Ripple delete" + many, key: "Shift+Del",
+      go: () => { snapshot(); rippleDelete(); afterMutate(); } },
+    "-",
+    { label: "Move playhead to start",
+      go: () => { EDIT.playhead = c.start; afterMutate(); } },
+    { label: "Select all on this track",
+      go: () => { SEL2 = new Set(t.clips.map(x => x.id)); drawEdit(); } },
+  ]);
+}
+
+function trackMenu(e, t) {
+  openMenu(e.clientX, e.clientY, [
+    { label: "Paste here", off: !CLIPBOARD.length,
+      go: () => { snapshot(); pasteAt(t, EDIT.playhead); afterMutate(); } },
+    { label: "Select all on this track", off: !t.clips.length,
+      go: () => { SEL2 = new Set(t.clips.map(x => x.id)); drawEdit(); } },
+    "-",
+    { label: t.kind === "video" ? "Add video track" : "Add audio track",
+      go: () => { snapshot(); addTrack(t.kind); afterMutate(); } },
+    { label: "Remove this track", off: EDIT.tracks.length < 2,
+      go: () => {
+        snapshot();
+        EDIT.tracks = EDIT.tracks.filter(x => x.id !== t.id);
+        afterMutate();
+      } },
+  ]);
+}
+
+/* ------------------------------------------------------------- operations */
+let CLIPBOARD = [];
+
+function addTrack(kind) {
+  const n = EDIT.tracks.filter(t => t.kind === kind).length + 1;
+  const row = { id: uid(), kind, name: (kind === "video" ? "V" : "A") + n,
+                clips: [] };
+  if (kind === "video") EDIT.tracks.unshift(row); else EDIT.tracks.push(row);
+}
+
+// TRIMMING TO THE PLAYHEAD is the operation an editor reaches for constantly
+// and the one that is fiddliest with a mouse: it is exact by definition.
+function trimTo(c, edge) {
+  const at = EDIT.playhead;
+  if (at <= c.start || at >= clipEnd(c)) return 0;
+  if (edge === "l") {
+    const d = at - c.start;
+    c.in += d;
+    c.start = at;
+  } else {
+    c.out = c.in + (at - c.start);
+  }
+  return 1;
+}
+
+function selectedClips() {
+  return allClips().filter(x => SEL2.has(x.c.id));
+}
+
+function duplicate() {
+  let n = 0;
+  for (const { c, t } of selectedClips()) {
+    t.clips.push({ ...c, id: uid(), start: clipEnd(c) });
+    n++;
+  }
+  return n;
+}
+
+// RIPPLE DELETE closes the hole. Everything after the removed clip ON THAT
+// TRACK slides back by its length — the other tracks do not move, because a
+// ripple across all tracks would silently re-time footage the editor was not
+// looking at.
+function rippleDelete() {
+  let n = 0;
+  for (const t of EDIT.tracks) {
+    const gone = t.clips.filter(c => SEL2.has(c.id))
+                        .sort((a, b) => a.start - b.start);
+    for (const g of gone) {
+      const len = clipLen(g);
+      t.clips = t.clips.filter(c => c.id !== g.id);
+      for (const c of t.clips) if (c.start > g.start) c.start -= len;
+      n++;
+    }
+  }
+  SEL2 = new Set();
+  return n;
+}
+
+function pasteAt(track, at) {
+  let off = null;
+  for (const c of CLIPBOARD) {
+    if (off === null) off = at - c.start;
+    track.clips.push({ ...c, id: uid(), start: Math.max(0, c.start + off) });
+  }
+  return CLIPBOARD.length;
+}
+
 /* --------------------------------------------------------------- export */
 async function exportCut() {
   if (!EDIT || !projectEnd()) { $("ed_note").textContent =
@@ -4403,6 +4636,11 @@ function drawEdit() {
     for (const c of t.clips) row.appendChild(clipEl(c, t));
 
     // dropping a bin clip lands it WHERE YOU DROP IT, not at the end
+    row.oncontextmenu = (e) => {
+      if (e.target.closest(".clip2")) return;    // the clip's own menu wins
+      e.preventDefault();
+      trackMenu(e, t);
+    };
     row.ondragover = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; };
     row.ondrop = (e) => {
       e.preventDefault();
@@ -4413,6 +4651,7 @@ function drawEdit() {
       const at = snap(x2f(e.clientX - box.left + row.parentElement.scrollLeft),
                       null);
       const len = DUR[path] || FPS2 * 5;       // until metadata says otherwise
+      snapshot();
       t.clips.push({ id: uid(), source: path, in: 0, out: len,
                      start: Math.max(0, at), name: path.split("/").pop() });
       editChanged();
@@ -4437,6 +4676,19 @@ function clipEl(c, t) {
   el.title = `${c.name}\n${tc(c.start)} → ${tc(clipEnd(c))}`
            + `\nsource frames ${c.in}–${c.out}`;
 
+  el.oncontextmenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!SEL2.has(c.id)) { SEL2 = new Set([c.id]); drawEdit(); }
+    clipMenu(e, c, t);
+  };
+  el.ondblclick = (e) => {
+    // double-click sets the playhead to the clip's start, which is what every
+    // editor does and what makes the trim-to-playhead items reachable
+    e.stopPropagation();
+    EDIT.playhead = c.start;
+    afterMutate();
+  };
   el.onmousedown = (e) => {
     const edge = e.target.classList.contains("h")
       ? (e.target.classList.contains("l") ? "l" : "r") : null;
@@ -4487,6 +4739,7 @@ function snap(frame, ignoreId) {
 
 function drag(e, c, track, edge) {
   const startX = e.clientX;
+  snapshot();                       // before the first pixel, not after
   const was = { start: c.start, in: c.in, out: c.out };
   const moved = { yes: false };
 
@@ -4720,23 +4973,17 @@ function wireControls() {
 
   // ---- the cutting room
   loadEdit();
-  $("ed_addv").onclick = () => {
-    const n = EDIT.tracks.filter(t => t.kind === "video").length + 1;
-    EDIT.tracks.unshift({ id: uid(), kind: "video", name: "V" + n, clips: [] });
-    editChanged();
-  };
-  $("ed_adda").onclick = () => {
-    const n = EDIT.tracks.filter(t => t.kind === "audio").length + 1;
-    EDIT.tracks.push({ id: uid(), kind: "audio", name: "A" + n, clips: [] });
-    editChanged();
-  };
+  $("ed_addv").onclick = () => { snapshot(); addTrack("video"); afterMutate(); };
+  $("ed_adda").onclick = () => { snapshot(); addTrack("audio"); afterMutate(); };
   $("ed_blade").onclick = () => {
+    snapshot();
     const n = blade();
     $("ed_note").textContent = n
       ? `Split ${n} clip${n === 1 ? "" : "s"} at ${tc(EDIT.playhead)}.`
       : "Nothing crosses the playhead.";
   };
   $("ed_del").onclick = () => {
+    snapshot();
     const n = delSelected();
     $("ed_note").textContent = n
       ? `Removed ${n} clip${n === 1 ? "" : "s"}.`
@@ -4747,13 +4994,91 @@ function wireControls() {
   $("ed_export").onclick = exportCut;
   // space plays, the way it does everywhere else — but not while someone is
   // typing a beat into a textarea on another tab
+  // ---- THE KEYBOARD. An editor's hands do not leave the timeline, which is
+  // the whole complaint: splitting by travelling to a toolbar button is a
+  // trip per cut. These are the bindings every NLE shares, so muscle memory
+  // from Resolve or Premiere arrives working.
   document.addEventListener("keydown", (e) => {
-    if (e.code !== "Space") return;
     const t = e.target;
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-    if ($("tab-edit").hidden) return;
-    e.preventDefault();
-    playPause();
+    if (!$("tab-edit") || $("tab-edit").hidden) return;
+    if (document.querySelector("dialog[open]")) return;
+
+    const mod = e.ctrlKey || e.metaKey;
+    const step = e.shiftKey ? FPS2 : 1;          // shift nudges by a second
+    const key = e.key;
+
+    if (mod && key.toLowerCase() === "z") {
+      e.preventDefault(); e.shiftKey ? redo() : undo(); return;
+    }
+    if (mod && key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+    if (mod && key.toLowerCase() === "d") {
+      e.preventDefault(); snapshot();
+      edNote(`Duplicated ${duplicate()}.`); afterMutate(); return;
+    }
+    if (mod && key.toLowerCase() === "c") {
+      CLIPBOARD = selectedClips().map(x => ({ ...x.c }));
+      edNote(`Copied ${CLIPBOARD.length}.`); return;
+    }
+    if (mod && key.toLowerCase() === "x") {
+      snapshot();
+      CLIPBOARD = selectedClips().map(x => ({ ...x.c }));
+      delSelected(); afterMutate();
+      edNote(`Cut ${CLIPBOARD.length}.`); return;
+    }
+    if (mod && key.toLowerCase() === "v") {
+      const t0 = EDIT.tracks.find(x => x.kind === "video");
+      if (t0 && CLIPBOARD.length) {
+        snapshot(); pasteAt(t0, EDIT.playhead); afterMutate();
+        edNote(`Pasted ${CLIPBOARD.length}.`);
+      }
+      return;
+    }
+    if (mod && key.toLowerCase() === "a") {
+      e.preventDefault();
+      SEL2 = new Set(allClips().map(x => x.c.id));
+      drawEdit(); return;
+    }
+
+    switch (key) {
+      case " ":
+        e.preventDefault(); playPause(); return;
+      case "s": case "S":
+        snapshot();
+        edNote(blade() ? "Split at the playhead." : "Nothing crosses it.");
+        afterMutate(); return;
+      case "Delete": case "Backspace": {
+        e.preventDefault();
+        snapshot();
+        const n = e.shiftKey ? rippleDelete() : delSelected();
+        edNote(n ? `${e.shiftKey ? "Rippled" : "Removed"} ${n}.`
+                 : "Nothing selected.");
+        afterMutate(); return;
+      }
+      case "[": case "]": {
+        const edge = key === "[" ? "l" : "r";
+        snapshot();
+        let n = 0;
+        for (const { c } of selectedClips()) n += trimTo(c, edge);
+        edNote(n ? `Trimmed ${n} to the playhead.`
+                 : "Select a clip the playhead crosses.");
+        afterMutate(); return;
+      }
+      case "ArrowLeft":
+        e.preventDefault();
+        EDIT.playhead = Math.max(0, EDIT.playhead - step);
+        afterMutate(); return;
+      case "ArrowRight":
+        e.preventDefault();
+        EDIT.playhead = Math.min(projectEnd(), EDIT.playhead + step);
+        afterMutate(); return;
+      case "Home":
+        EDIT.playhead = 0; afterMutate(); return;
+      case "End":
+        EDIT.playhead = projectEnd(); afterMutate(); return;
+      case "Escape":
+        closeMenu(); SEL2 = new Set(); drawEdit(); return;
+    }
   });
   $("bin_q").addEventListener("input", drawBin);
   $("bin_reload").onclick = loadBin;

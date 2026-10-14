@@ -33,9 +33,17 @@ const api = new Function("getEDIT", "setEDIT", "snapOn", `
   ${grab("clipLen")}${grab("clipEnd")}${grab("projectEnd")}
   ${grab("allClips")}${grab("snap")}${grab("blade")}
   ${grab("covers")}${grab("videoAt")}${grab("audioAt")}${grab("srcTime")}
+  let SEL2 = new Set();
+  let CLIPBOARD = [];
+  ${grab("selectedClips")}${grab("trimTo")}${grab("duplicate")}
+  ${grab("rippleDelete")}${grab("pasteAt")}${grab("delSelected")}
+  const uidq = uid;
   function editChanged() {}
   return { clipLen, clipEnd, projectEnd, snap, blade, pxPerFrame, f2x, x2f,
-           covers, videoAt, audioAt, srcTime };
+           covers, videoAt, audioAt, srcTime,
+           trimTo, duplicate, rippleDelete, pasteAt, delSelected,
+           sel: (ids) => { SEL2 = new Set(ids); },
+           board: (cs) => { CLIPBOARD = cs; } };
 `)(() => EDIT, (v) => { EDIT = v; }, SNAP);
 
 let bad = 0;
@@ -150,6 +158,91 @@ const trimmed = clip({ start: 48, in: 24, out: 120 });
 ck("its first frame is its IN point", api.srcTime(trimmed, 48), 24 / 24);
 ck("and ten frames later is ten frames further in",
    api.srcTime(trimmed, 58), 34 / 24);
+
+console.log("\nRIPPLE DELETE closes the hole — on that track only");
+// A ripple across every track would silently re-time footage the editor was
+// not looking at. Resolve and Premiere both scope it to the track for that
+// reason, and a layered timeline makes the alternative actively dangerous.
+EDIT = {
+  name: "t", playhead: 0, zoom: 0,
+  tracks: [
+    { id: "v1", kind: "video", name: "V1", clips: [
+      clip({ id: "a", start: 0, in: 0, out: 48 }),
+      clip({ id: "b", start: 48, in: 0, out: 48 }),
+      clip({ id: "c", start: 96, in: 0, out: 48 }),
+    ] },
+    { id: "v2", kind: "video", name: "V2", clips: [
+      clip({ id: "z", start: 96, in: 0, out: 48 }),
+    ] },
+  ],
+};
+api.sel(["b"]);
+ck("one clip removed", api.rippleDelete(), 1);
+const v1 = EDIT.tracks[0].clips.slice().sort((x, y) => x.start - y.start);
+ck("what followed slid back by its length",
+   v1.map(c => [c.id, c.start]), [["a", 0], ["c", 48]]);
+ck("THE OTHER TRACK DID NOT MOVE", EDIT.tracks[1].clips[0].start, 96);
+
+console.log("\nand a plain delete leaves the hole");
+EDIT = {
+  name: "t", playhead: 0, zoom: 0,
+  tracks: [{ id: "v1", kind: "video", name: "V1", clips: [
+    clip({ id: "a", start: 0, in: 0, out: 48 }),
+    clip({ id: "b", start: 48, in: 0, out: 48 }),
+    clip({ id: "c", start: 96, in: 0, out: 48 }),
+  ] }],
+};
+api.sel(["b"]);
+ck("removed", api.delSelected(), 1);
+ck("the survivors stay where they were",
+   EDIT.tracks[0].clips.map(c => [c.id, c.start]), [["a", 0], ["c", 96]]);
+
+console.log("\nTRIM TO PLAYHEAD moves one edge and keeps the frames aligned");
+EDIT = { name: "t", playhead: 24, zoom: 0,
+         tracks: [{ id: "v1", kind: "video", name: "V1",
+                    clips: [clip({ id: "a", start: 0, in: 10, out: 58 })] }] };
+const c0 = EDIT.tracks[0].clips[0];
+ck("trimming the start", api.trimTo(c0, "l"), 1);
+ck("  the in point advanced by the same amount the start did",
+   [c0.in, c0.start], [34, 24]);
+ck("  so the frame under the playhead is the one that was there",
+   api.srcTime(c0, 24), 34 / 24);
+
+EDIT = { name: "t", playhead: 24, zoom: 0,
+         tracks: [{ id: "v1", kind: "video", name: "V1",
+                    clips: [clip({ id: "a", start: 0, in: 10, out: 58 })] }] };
+const c1 = EDIT.tracks[0].clips[0];
+ck("trimming the end", api.trimTo(c1, "r"), 1);
+ck("  it now ends at the playhead", api.clipEnd(c1), 24);
+ck("  and still starts where it did", [c1.start, c1.in], [0, 10]);
+
+EDIT = { name: "t", playhead: 500, zoom: 0,
+         tracks: [{ id: "v1", kind: "video", name: "V1",
+                    clips: [clip({ id: "a", start: 0, in: 0, out: 48 })] }] };
+ck("a playhead outside the clip trims nothing",
+   api.trimTo(EDIT.tracks[0].clips[0], "l"), 0);
+
+console.log("\nDUPLICATE lands after the original, not on top of it");
+EDIT = { name: "t", playhead: 0, zoom: 0,
+         tracks: [{ id: "v1", kind: "video", name: "V1",
+                    clips: [clip({ id: "a", start: 12, in: 0, out: 48 })] }] };
+api.sel(["a"]);
+ck("one made", api.duplicate(), 1);
+const dup = EDIT.tracks[0].clips.find(c => c.id !== "a");
+ck("it starts where the original ends", dup.start, 60);
+ck("and has its own identity", dup.id !== "a", true);
+
+console.log("\nPASTE keeps the relative spacing of what was copied");
+EDIT = { name: "t", playhead: 0, zoom: 0,
+         tracks: [{ id: "v1", kind: "video", name: "V1", clips: [] }] };
+const board = [clip({ id: "p", start: 100, in: 0, out: 24 }),
+               clip({ id: "q", start: 160, in: 0, out: 24 })];
+api.board(board);
+ck("two pasted", api.pasteAt(EDIT.tracks[0], 10), 2);
+const pasted = EDIT.tracks[0].clips.slice().sort((a, b) => a.start - b.start);
+ck("the first lands at the playhead", pasted[0].start, 10);
+ck("and the gap between them survives",
+   pasted[1].start - pasted[0].start, 60);
 
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
