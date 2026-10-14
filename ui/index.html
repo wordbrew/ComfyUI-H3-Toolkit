@@ -4273,7 +4273,9 @@ function edNote(t) { const n = $("ed_note"); if (n) n.textContent = t; }
    belong ON the thing they act on. */
 function closeMenu() {
   const m = document.getElementById("ctxmenu");
-  if (m) m.remove();
+  if (!m) return;
+  if (m._away) document.removeEventListener("mousedown", m._away, true);
+  m.remove();
 }
 
 function openMenu(x, y, items) {
@@ -4302,9 +4304,21 @@ function openMenu(x, y, items) {
   const py = y + r.height > window.innerHeight ? y - r.height : y;
   m.style.left = px + window.scrollX + "px";
   m.style.top = Math.max(4, py) + window.scrollY + "px";
+  // DISMISS ONLY ON A CLICK OUTSIDE. The first version listened for any
+  // mousedown and removed the menu — and mousedown fires BEFORE click, so
+  // pressing a menu item deleted the element out from under the click that
+  // was about to run it. Every item looked inert: CJ pressed "move playhead
+  // to start" and then the trim items and reported both as doing nothing,
+  // which they were, along with every other item in the menu.
+  const away = (ev) => {
+    if (m.contains(ev.target)) return;        // let the button have its click
+    document.removeEventListener("mousedown", away, true);
+    closeMenu();
+  };
   setTimeout(() => {
-    document.addEventListener("mousedown", closeMenu, { once: true });
+    document.addEventListener("mousedown", away, true);
   }, 0);
+  m._away = away;
 }
 
 function clipMenu(e, c, t) {

@@ -247,3 +247,30 @@ ck("and the gap between them survives",
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui timeline: frames, gaps, splits and snapping all hold");
+
+// ---------------------------------------------------------------------------
+console.log("\nA CONTEXT MENU ITEM MUST SURVIVE BEING PRESSED");
+// The first version dismissed on ANY mousedown. mousedown fires before click,
+// so pressing an item removed the element out from under the click that was
+// about to run it — every item in the menu was inert, and the two CJ happened
+// to try were the two he reported. A menu that closes before its own button
+// fires is indistinguishable from a menu whose handlers are wrong.
+{
+  let bad2 = 0;
+  const ck2 = (l, c) => {
+    console.log(`  ${c ? "ok  " : "FAIL"} ${l}`);
+    if (!c) bad2++;
+  };
+  const open = src.slice(src.indexOf("function openMenu"));
+  const body = open.slice(0, open.indexOf("\nfunction "));
+  ck2("dismissal ignores clicks inside the menu",
+      /m\.contains\(ev\.target\)/.test(body));
+  ck2("and does not blanket-close on mousedown",
+      !/addEventListener\("mousedown",\s*closeMenu/.test(body));
+  ck2("closeMenu removes its own listener, so menus do not leak one each",
+      /removeEventListener\("mousedown"/.test(
+        src.slice(src.indexOf("function closeMenu"),
+                  src.indexOf("function closeMenu") + 400)));
+  if (bad2) { console.log(`FAIL — ${bad2} check(s)`); process.exit(1); }
+}
+console.log("ui timeline: and the menu can actually be used");
