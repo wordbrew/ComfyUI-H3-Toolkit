@@ -1626,7 +1626,8 @@ function drawLanes() {
     spanOf: (r) => r.chunks || "all",
     setSpan: (r, v) => { r.chunks = v; },
     name: (r) => r.from_library || r.describe || r.setting || "subject",
-    note: (r) => `${(r.images || []).length} pic`,
+    note: (r) => `${(r.images || []).length} pic`
+                 + (r.use_voice && r.voice_path ? " · voice" : ""),
     // the FIRST anchor stands for the subject: it is the one the store lists
     // first and the one <Picture 1> cites, so the thumbnail and the prompt
     // agree about who this is
@@ -1822,6 +1823,14 @@ function handleFor(libraryName, ownId) {
   return uniqueHandle(libraryName, ownId);
 }
 
+// Does the STORE hold a voice for this library entry? Known from the listing
+// without staging anything -- which matters because the toggle has to be
+// there when the modal opens, not after an async copy into input/ finishes.
+function libHasVoice(name) {
+  const e = SUBJECTS.find(x => x.name === name);
+  return !!(e && e.has_voice);
+}
+
 function subjectModal(r, kind) {
   // `r` always exists: adding creates the row first so the modal can apply on
   // every keystroke. "fresh" only decides the title.
@@ -1870,9 +1879,13 @@ function subjectModal(r, kind) {
           <button id="as_pics" type="button">Choose images…</button>
           <p class="hint" id="as_picn">${ADDPICS.length ? ADDPICS.length + " chosen" : "none chosen"}</p></div>
         ${kind === "person" ? `
-        <div><label>Voice sample</label>
+        <div><label>Voice</label>
           <button id="as_voice" type="button">Choose a clip…</button>
-          <p class="hint" id="as_voicen">${ADDVOICE || "none chosen"}</p></div>`
+          <p class="hint" id="as_voicen">${ADDVOICE || "none chosen"}</p>
+          <label class="chk" id="as_usevbox" ${
+            ADDVOICE || libHasVoice(r.from_library) ? "" : "hidden"}>
+            <input type="checkbox" id="as_usev"${r.use_voice ? " checked" : ""}>
+            send it to the model as &lt;Audio N&gt;</label></div>`
         : `<div></div>`}
       </div>
       <label class="chk"><input type="checkbox" id="as_save">
@@ -1907,6 +1920,12 @@ function subjectModal(r, kind) {
         row.kind = k === "place" ? "setting" : "library";
         row.subkind = k;
         row.from_library = from;
+        // A LIBRARY SUBJECT'S VOICE WAS UNREACHABLE. Staging set voice_path
+        // from the store, but nothing ever set use_voice — the only control
+        // that could was the cast-row checkbox, and the cast panel has been
+        // hidden since the timeline took over. So a stored voice was found,
+        // copied into input/, listed in the references panel, and never sent.
+        if ($("as_usev")) row.use_voice = $("as_usev").checked;
 
       } else {
         row.kind = k === "place" ? "setting" : "library";
@@ -1918,7 +1937,8 @@ function subjectModal(r, kind) {
         else row.describe = $("as_desc").value.trim();
         row.images = ADDPICS.slice();
         row.voice_path = kind === "person" ? (ADDVOICE || null) : null;
-        row.use_voice = kind === "person" && !!ADDVOICE;
+        row.use_voice = kind === "person" && !!ADDVOICE
+                        && ($("as_usev") ? $("as_usev").checked : true);
         // the library write is the one thing that must not repeat: it is a
         // POST, so it fires when the box is ticked and not again
         if ($("as_save").checked && !r._saved) {
@@ -1946,6 +1966,8 @@ function subjectModal(r, kind) {
   if (r.from_library) $("as_lib").value = r.from_library;
   const syncKey = () => {
     const from = $("as_lib").value;
+    const uv = $("as_usevbox");
+    if (uv) uv.hidden = !(ADDVOICE || (from && libHasVoice(from)));
     const k = $("as_key");
     if (from) {
       // derived, not typed: the store already named this thing
@@ -1978,8 +2000,15 @@ function subjectModal(r, kind) {
     if (!AUDIOS.length) AUDIOS = await optionsFor("LoadAudio", "audio");
     openPicker({
       title: "Voice sample", multi: false, chosen: [], assets: AUDIOS,
-      done: paths => { ADDVOICE = paths[0] || null;
-        $("as_voicen").textContent = ADDVOICE || "none chosen"; },
+      done: paths => {
+        ADDVOICE = paths[0] || null;
+        $("as_voicen").textContent = ADDVOICE || "none chosen";
+        if ($("as_usevbox")) {
+          $("as_usevbox").hidden = !ADDVOICE;
+          if (ADDVOICE && $("as_usev")) $("as_usev").checked = true;
+        }
+        if (inlineDone) inlineDone();
+      },
     });
   };
   $("as_save").onchange = () => {

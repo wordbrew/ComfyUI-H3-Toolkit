@@ -185,6 +185,46 @@ console.log("\nSWAP IS SCOPED, and counts what it will actually change");
 console.log("\nthe per-bar swap is gone; edit does that job");
 ck("no recast left in the page", /recast/.test(src), false);
 
+console.log("\nA VOICE CAN BE TURNED ON FROM SOMEWHERE THE APP ACTUALLY DRAWS");
+// CJ: "audio reference for cast/characters doesn't work. or at least isn't
+// being carried forward." Two things compounding:
+//
+//   `use_voice` lived only on a CAST ROW, and the cast panel has been hidden
+//   since the timeline took over — drawCast() returns before building rows,
+//   so the one control that could turn a voice on was never drawn.
+//
+//   The subject modal's `if (from)` branch — a LIBRARY subject — set kind,
+//   subkind and from_library, and nothing about voice. So a stored voice was
+//   staged into input/, listed in the references panel, and never sent.
+//
+// This checks the control exists in the modal and that the library branch
+// writes it, because "the markup has a checkbox" was true the whole time it
+// was broken.
+ck("the modal declares a use-voice toggle",
+   /id="as_usev"/.test(src), true);
+ck("and a box to reveal it when a voice exists",
+   /id="as_usevbox"/.test(src), true);
+
+const body = src.slice(src.indexOf("function subjectModal"));
+const apply = body.slice(0, body.indexOf("\n  const syncKey"));
+// matched on the STATEMENT rather than on a distance from `if (from)` — the
+// first version allowed 420 characters and the explanatory comment is longer
+// than that, so it failed against correct code
+const libBranch = apply.slice(apply.indexOf("if (from) {"),
+                              apply.indexOf("} else {"));
+ck("the LIBRARY branch writes use_voice",
+   /row\.use_voice = \$\("as_usev"\)\.checked/.test(libBranch), true);
+ck("and the hand-written branch still does",
+   /row\.use_voice = kind === "person"/.test(apply), true);
+
+ck("the toggle does not wait for staging — it asks the LIBRARY listing",
+   /function libHasVoice/.test(src) && /libHasVoice\(r\.from_library\)/.test(src),
+   true);
+
+console.log("\nand a voice that is on is visible without opening anything");
+ck("the cast lane says so", /r\.use_voice && r\.voice_path \? " · voice"/.test(src),
+   true);
+
 console.log();
 if (bad) { console.log(`FAIL — ${bad} check(s)`); process.exit(1); }
 console.log("ui cast: the page and takeapi order the cast identically");
