@@ -33,7 +33,7 @@ const api = new Function("getEDIT", "setEDIT", "snapOn", `
   ${grab("clipLen")}${grab("clipEnd")}${grab("projectEnd")}
   ${grab("allClips")}${grab("snap")}${grab("blade")}
   ${grab("covers")}${grab("videoAt")}${grab("audioAt")}${grab("srcTime")}
-  ${grab("trackEnd")}
+  ${grab("trackEnd")}${grab("resolveOverlaps")}
   let SEL2 = new Set();
   let CLIPBOARD = [];
   ${grab("selectedClips")}${grab("trimTo")}${grab("duplicate")}
@@ -44,7 +44,7 @@ const api = new Function("getEDIT", "setEDIT", "snapOn", `
            covers, videoAt, audioAt, srcTime,
            trimTo, duplicate, rippleDelete, pasteAt, delSelected,
            sel: (ids) => { SEL2 = new Set(ids); },
-           board: (cs) => { CLIPBOARD = cs; }, trackEnd };
+           board: (cs) => { CLIPBOARD = cs; }, trackEnd, resolveOverlaps };
 `)(() => EDIT, (v) => { EDIT = v; }, SNAP);
 
 let bad = 0;
@@ -274,6 +274,68 @@ console.log("\nand each layer is independent — one track filling does not " +
             "move another");
 ck("V1 still starts at zero while V2 is full",
    [api.trackEnd(EDIT.tracks[0]), api.trackEnd(EDIT.tracks[1])], [0, 120]);
+
+console.log("\nONE TRACK, ONE CLIP PER FRAME — landing OVERWRITES");
+// Two clips on a track both claiming a frame left the PREVIEW choosing by
+// array order and the EXPORT by overlay order: two arbitrary rules that can
+// disagree, so the file shows something the preview did not.
+const track = (clips) => ({ id: "v1", kind: "video", name: "V1", clips });
+const ids = (t) => t.clips.slice().sort((a, b) => a.start - b.start)
+                    .map(c => [c.id, c.start, api.clipEnd(c)]);
+
+// fully covered
+let t1 = track([clip({ id: "old", start: 20, in: 0, out: 20 }),
+                clip({ id: "new", start: 10, in: 0, out: 60 })]);
+ck("a swallowed clip is removed", api.resolveOverlaps(t1, t1.clips[1]), 1);
+ck("  leaving only the winner", ids(t1), [["new", 10, 70]]);
+
+// overlapped at its END — the old clip's tail is taken
+t1 = track([clip({ id: "old", start: 0, in: 0, out: 48 }),
+            clip({ id: "new", start: 24, in: 0, out: 48 })]);
+api.resolveOverlaps(t1, t1.clips[1]);
+ck("the earlier clip is shortened to the boundary",
+   ids(t1), [["old", 0, 24], ["new", 24, 72]]);
+
+// overlapped at its START — in AND start move together
+t1 = track([clip({ id: "old", start: 24, in: 10, out: 58 }),
+            clip({ id: "new", start: 0, in: 0, out: 48 })]);
+api.resolveOverlaps(t1, t1.clips[1]);
+const old2 = t1.clips.find(c => c.id === "old");
+ck("the later clip starts at the boundary", old2.start, 48);
+ck("  and its IN moved by the same amount, so its remaining frames "
+   + "did not slide", old2.in, 34);
+
+// the winner lands INSIDE — a split
+t1 = track([clip({ id: "old", start: 0, in: 0, out: 120 }),
+            clip({ id: "new", start: 40, in: 0, out: 40 })]);
+api.resolveOverlaps(t1, t1.clips[1]);
+const pieces = t1.clips.filter(c => c.id !== "new")
+                       .sort((a, b) => a.start - b.start);
+ck("it becomes two pieces", pieces.length, 2);
+ck("  which stop and resume at the winner's edges",
+   [api.clipEnd(pieces[0]), pieces[1].start], [40, 80]);
+ck("  and the right-hand piece keeps its own source frames",
+   [pieces[1].in, pieces[1].out], [80, 120]);
+
+// no contact
+t1 = track([clip({ id: "far", start: 500, in: 0, out: 24 }),
+            clip({ id: "new", start: 0, in: 0, out: 48 })]);
+ck("a clip it does not touch is untouched",
+   api.resolveOverlaps(t1, t1.clips[1]), 0);
+ck("and one that merely ABUTS it is not touched either",
+   api.resolveOverlaps(track([clip({ id: "a", start: 0, in: 0, out: 48 }),
+                              clip({ id: "b", start: 48, in: 0, out: 48 })]),
+                       clip({ id: "b", start: 48, in: 0, out: 48 })), 0);
+
+console.log("\nand the PREVIEW resolves any leftover overlap by position");
+// a project saved before overwrite existed may still hold one
+EDIT = { name: "t", playhead: 0, zoom: 0, tracks: [track([
+  clip({ id: "under", start: 0, in: 0, out: 96 }),
+  clip({ id: "over", start: 24, in: 0, out: 48 }),
+])] };
+ck("the latest-starting clip wins, not the first in the array",
+   api.videoAt(30).id, "over");
+ck("and outside it the other is back", api.videoAt(80).id, "under");
 
 console.log("\nA CONTEXT MENU ITEM MUST SURVIVE BEING PRESSED");
 // The first version dismissed on ANY mousedown. mousedown fires before click,

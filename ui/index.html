@@ -4447,10 +4447,51 @@ function soloAudio(keep) {
   return n;
 }
 
+// OVERWRITE. A track is a single strip of time: two clips cannot both own a
+// frame on it, and until now two could — which left the PREVIEW picking by
+// array order and the EXPORT by overlay order, two arbitrary rules that can
+// disagree. Dropping or dragging a clip onto occupied time now takes that
+// time, exactly as Premiere's overwrite and Resolve's default do.
+//
+// Four cases, and the third is the one that is easy to miss:
+//   fully covered        the old clip goes
+//   overlapped at its END   its out is pulled back
+//   overlapped at its START its in AND start move together, so its remaining
+//                           frames stay where they are on the timeline
+//   SPLIT                the new clip lands inside it — it becomes two, and
+//                        the right-hand piece keeps its own source frames
+function resolveOverlaps(track, winner) {
+  const a = winner.start, b = clipEnd(winner);
+  const add = [];
+  let touched = 0;
+  track.clips = track.clips.filter(c => {
+    if (c.id === winner.id) return true;
+    const s0 = c.start, e0 = clipEnd(c);
+    if (e0 <= a || s0 >= b) return true;             // no contact
+    touched++;
+    if (s0 >= a && e0 <= b) return false;            // swallowed whole
+    if (s0 < a && e0 > b) {                          // the winner lands inside
+      const rightIn = c.in + (b - s0);
+      add.push({ ...c, id: uid(), in: rightIn, out: c.out, start: b });
+      c.out = c.in + (a - s0);                       // left piece ends at `a`
+      return true;
+    }
+    if (s0 < a) { c.out = c.in + (a - s0); return true; }   // trimmed at end
+    const d = b - s0;                                        // trimmed at head
+    c.in += d;
+    c.start = b;
+    return true;
+  });
+  track.clips.push(...add);
+  return touched;
+}
+
 function duplicate() {
   let n = 0;
   for (const { c, t } of selectedClips()) {
-    t.clips.push({ ...c, id: uid(), start: clipEnd(c) });
+    const copy = { ...c, id: uid(), start: clipEnd(c) };
+    t.clips.push(copy);
+    resolveOverlaps(t, copy);
     n++;
   }
   return n;
@@ -4480,7 +4521,9 @@ function pasteAt(track, at) {
   let off = null;
   for (const c of CLIPBOARD) {
     if (off === null) off = at - c.start;
-    track.clips.push({ ...c, id: uid(), start: Math.max(0, c.start + off) });
+    const copy = { ...c, id: uid(), start: Math.max(0, c.start + off) };
+    track.clips.push(copy);
+    resolveOverlaps(track, copy);
   }
   return CLIPBOARD.length;
 }
@@ -4565,8 +4608,19 @@ function covers(c, f) { return f >= c.start && f < clipEnd(c); }
 function videoAt(f) {
   for (const t of EDIT.tracks) {
     if (t.kind !== "video") continue;
-    const c = t.clips.find(x => covers(x, f));
-    if (c) return c;
+    // BY POSITION, NOT ARRAY ORDER. Overwrite stops new overlaps, but a
+    // project saved before it existed may still hold some — and `find` would
+    // pick whichever clip happened to be pushed first, while the export
+    // picks by overlay order. Two arbitrary rules that disagree is worse
+    // than one arbitrary rule, so both now take the LATEST-starting clip:
+    // the one most recently laid down, which is what overwrite would have
+    // left behind.
+    let best = null;
+    for (const c of t.clips) {
+      if (!covers(c, f)) continue;
+      if (!best || c.start > best.start) best = c;
+    }
+    if (best) return best;
   }
   return null;
 }
@@ -4730,8 +4784,10 @@ function drawEdit() {
       const at = trackEnd(t);
       const len = DUR[path] || FPS2 * 5;       // until metadata says otherwise
       snapshot();
-      t.clips.push({ id: uid(), source: path, in: 0, out: len,
-                     start: Math.max(0, at), name: path.split("/").pop() });
+      const fresh = { id: uid(), source: path, in: 0, out: len,
+                      start: Math.max(0, at), name: path.split("/").pop() };
+      t.clips.push(fresh);
+      resolveOverlaps(t, fresh);
       editChanged();
     };
     host.appendChild(row);
@@ -4880,7 +4936,16 @@ function drag(e, c, track, edge) {
   const onUp = () => {
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", onUp);
-    if (moved.yes) editChanged(); else drawEdit();
+    // resolved ON RELEASE, not on every mousemove: trimming the neighbours
+    // continuously would eat them as the cursor passed over, and there would
+    // be nothing to put back when it moved on
+    if (moved.yes) {
+      const n = resolveOverlaps(home, c);
+      if (n) edNote(`Overwrote ${n} clip${n === 1 ? "" : "s"} on ${home.name}.`);
+      editChanged();
+    } else {
+      drawEdit();
+    }
   };
   document.addEventListener("mousemove", onMove);
   document.addEventListener("mouseup", onUp);

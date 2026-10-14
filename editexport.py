@@ -65,13 +65,29 @@ def _placed(project):
     built twice from one project is byte-identical -- which is what makes the
     tests meaningful.
     """
-    vids, auds = [], []
+    # TWO DIFFERENT ORDERINGS, and conflating them cost a correct fix.
+    #
+    #   BETWEEN tracks: the editor stores them top-first and the topmost wins,
+    #   so the bottom-most has to be laid down first -- the track LIST is
+    #   reversed.
+    #
+    #   WITHIN a track: later-starting wins, matching how the preview resolves
+    #   a leftover overlap, so clips are sorted ASCENDING by start.
+    #
+    # Reversing the flattened list applies the first rule to the second and
+    # undoes the sort -- which looked right on a two-track project and showed
+    # the wrong clip the moment both were on one track.
+    vid_tracks, auds = [], []
     for t in project.get("tracks") or []:
-        kind = t.get("kind") or "video"
-        for c in t.get("clips") or []:
-            (vids if kind == "video" else auds).append(c)
-    # tracks came top-first; reverse so the bottom-most is laid down first
-    vids.reverse()
+        clips = sorted(t.get("clips") or [],
+                       key=lambda x: (int(x.get("start", 0)),
+                                      str(x.get("source", ""))))
+        if (t.get("kind") or "video") == "video":
+            vid_tracks.append(clips)
+        else:
+            auds.extend(clips)
+    vid_tracks.reverse()                     # bottom track laid down first
+    vids = [c for clips in vid_tracks for c in clips]
     return vids, auds
 
 

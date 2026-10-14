@@ -190,6 +190,37 @@ proj["tracks"][0]["clips"][0]["gain"] = 1.0
 argv, _ = EX.build(proj, str(tmp / "g2.mp4"), 160, 240, ffmpeg=FFMPEG)
 ok("and unity gain adds nothing", "volume=" not in " ".join(argv))
 
+# ------------------------------------------- the export agrees with the UI
+print("\nan overlap on ONE track resolves the same way the preview does")
+# The editor prevents these now, but a project saved before it did may hold
+# one — and the two halves used to decide by different arbitrary rules: the
+# preview by array order, the export by overlay order. Both take the
+# latest-STARTING clip now, so the file shows what the preview showed.
+proj = {"tracks": [{"kind": "video", "clips": [
+    {"source": red, "in": 0, "out": 96, "start": 0},        # listed FIRST
+    {"source": green, "in": 0, "out": 48, "start": 24},     # starts LATER
+]}]}
+out6 = str(tmp / "overlap.mp4")
+argv, _ = EX.build(proj, out6, 160, 240, ffmpeg=FFMPEG)
+r = subprocess.run(argv, capture_output=True, text=True)
+ok(f"it runs — {r.returncode}", r.returncode == 0)
+check("before the later clip, the earlier one shows", colour_at(out6, 0.5),
+      "red")
+check("where they overlap, the LATER-STARTING one wins — as the preview says",
+      colour_at(out6, 2), "green")
+check("and after it, the earlier one is back", colour_at(out6, 3.5), "red")
+
+print("\nand the array order does not decide it")
+flipped = {"tracks": [{"kind": "video", "clips": [
+    {"source": green, "in": 0, "out": 48, "start": 24},     # listed FIRST now
+    {"source": red, "in": 0, "out": 96, "start": 0},
+]}]}
+out7 = str(tmp / "overlap2.mp4")
+argv, _ = EX.build(flipped, out7, 160, 240, ffmpeg=FFMPEG)
+subprocess.run(argv, capture_output=True, text=True)
+check("the same project listed the other way round exports the same",
+      colour_at(out7, 2), "green")
+
 shutil.rmtree(tmp, ignore_errors=True)
 print()
 if fails:
