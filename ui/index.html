@@ -4224,6 +4224,12 @@ function drawBin() {
       e.dataTransfer.setData("text/plain", "clip:" + c.path);
       e.dataTransfer.effectAllowed = "copy";
     };
+    el.oncontextmenu = (e) => {
+      e.preventDefault();
+      openMenu(e.clientX, e.clientY, [
+        { label: "Open its settings in Generate", go: () => reopen(c.path) },
+      ]);
+    };
     host.appendChild(el);
   }
 }
@@ -4373,6 +4379,9 @@ function clipMenu(e, c, t) {
                   edNote(`Playhead at ${tc(clipEnd(c))}.`); } },
     { label: "Select all on this track",
       go: () => { SEL2 = new Set(t.clips.map(x => x.id)); drawEdit(); } },
+    "-",
+    { label: "Open its settings in Generate",
+      go: () => reopen(c.source) },
   ]);
 }
 
@@ -4526,6 +4535,95 @@ function pasteAt(track, at) {
     resolveOverlaps(track, copy);
   }
   return CLIPBOARD.length;
+}
+
+/* --------------------------------------------------------------- reopen */
+/* A FINISHED RENDER IS THE PROJECT FILE. Every one carries its whole graph,
+   and build() stamps a role on every node it mints, so the request that made
+   a take can be read back out of it — including one from six weeks ago, or
+   one whose node ids were renumbered by an edit in ComfyUI.
+
+   What it cannot bring back is the CAST as rows: those are compiled to
+   subject_definitions text before they reach a node, so a reopened take holds
+   the words and not the people. That is said plainly rather than papered
+   over, because the difference shows up the moment you try to drag a cast
+   bar that is not there. */
+async function reopen(path) {
+  edNote("Reading its graph…");
+  let r;
+  try { r = await post("/take/reopen", { path }); }
+  catch (e) { edNote("Could not read it: " + e); return; }
+  if (!r || !r.ok) {
+    edNote("Could not read it: " + ((r && r.error) || "no reason given"));
+    return;
+  }
+  applyRequest(r.request);
+  for (const b of document.querySelectorAll("#tabs button")) {
+    if (b.dataset.tab === "generate") b.click();
+  }
+  const extra = (r.notes || []).join(" ");
+  fail(`Loaded the settings from ${path}.`
+       + (extra ? " " + extra : "")
+       + " Nothing has been rendered — change what you want and press Render.");
+  $("err").style.color = "var(--ink-soft)";
+}
+
+// Put a recovered request back into the controls. Only what the graph
+// actually carried is touched, so anything it could not hold keeps whatever
+// is on screen rather than being blanked.
+function applyRequest(req) {
+  const m = req.models || {};
+  const put = (id, v) => { if (v !== undefined && v !== null && $(id)) {
+    $(id).value = v; } };
+  put("unet", m.unet); put("clip", m.clip);
+  put("vae", m.vae); put("avae", m.audio_vae);
+  STATICS = (m.loras || []).map(l => ({ name: l.name,
+                                        strength: l.strength ?? 0.8 }));
+  drawStatics();
+
+  for (const f of ["head", "tail", "soundscape", "music"]) {
+    const id = f === "soundscape" ? "sound" : f;
+    put(id, req[f]);
+  }
+  put("seed", req.seed);
+  put("prefix", req.filename_prefix);
+  put("mp", req.megapixels);
+  put("ar", req.aspect_ratio);
+  put("sched", req.lora_schedule);
+  if (req.context !== undefined) put("ctx", String(req.context));
+
+  // the beats become the chunks, with their lengths and joins
+  const beats = String(req.beats || "").split("\n").filter(x => x.trim());
+  const lens = String(req.scene_frames || "").split(/[\s,]+/)
+    .filter(x => x.trim()).map(Number).filter(Boolean);
+  const conts = String(req.continuity || "").split(/[\n,]+/)
+    .map(x => x.trim()).filter(Boolean);
+  const n = Math.max(beats.length, lens.length,
+                     Number(req.chunk_count) || 0, 1);
+  SCENES = [];
+  for (let i = 0; i < n; i++) {
+    SCENES.push(newScene({
+      frames: lens[i] || Number(req.chunk_frames) || 192,
+      beat: beats[i] || "",
+      continuity: i ? (conts[i - 1] || "carry") : undefined,
+    }));
+  }
+  SEL = 0;
+
+  CHUNKREFS = (req.chunk_references || []).map(r => ({
+    id: Math.random().toString(36).slice(2, 9),
+    source: r.source, kind: r.kind || "image", role: r.role,
+    chunks: r.chunks || "all", label: r.label || r.source,
+    spans: r.spans || "", span_index: r.span_index || 0,
+    ...(r.marker ? { marker: r.marker } : {}),
+    ...(r.with_audio ? { with_audio: true,
+                         audio_marker: r.audio_marker || "reference" } : {}),
+  }));
+
+  sceneChanged();
+  drawLanes();
+  checkHandles();
+  save();
 }
 
 /* --------------------------------------------------------------- export */

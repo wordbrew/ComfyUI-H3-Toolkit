@@ -529,6 +529,77 @@ ok("no audio slots appear unbidden",
    not any(k.startswith(("ref_audios.", "ref_video_audios."))
            for k in _none[ta._one(_none, "h3.conditioning")]["inputs"]))
 
+
+# --------------------------------------------- read(): the inverse of build
+# Every render carries its whole graph, and build() stamps a role on every
+# node it mints — so a finished mp4 IS the project file. The test that means
+# anything is the ROUND TRIP: build a request, read it back, and compare.
+# Asserting on a hand-written graph would only prove read() agrees with
+# whatever I imagined build() emits.
+print("\na request survives build() and read()")
+_RT = dict(REQ,
+           chunk_count=3, context=39,
+           audio_references=["jen/voice.wav"],
+           chunk_references=[
+               {"source": "plate.png", "kind": "image",
+                "role": "composition", "chunks": "1-2"},
+               {"source": "mv.mp4", "kind": "video",
+                "role": "composition and motion", "spans": "48 96 push",
+                "with_audio": True},
+           ],
+           megapixels=0.5, seed=4242)
+_g = ta.build(_RT)
+_back, _notes = ta.read(_g)
+
+for _f in ("head", "beats", "tail", "chunk_count", "context", "seed",
+           "filename_prefix", "megapixels", "lora_schedule"):
+    if _f in _RT:
+        check(f"{_f} came back", _back.get(_f), _RT[_f])
+
+check("both static LoRAs, in order",
+      [l["name"] for l in _back["models"]["loras"]],
+      [l["name"] for l in _RT["models"]["loras"]])
+check("the plain references, in slot order",
+      _back.get("references"), _RT["references"])
+check("the standalone sound", _back.get("audio_references"),
+      _RT["audio_references"])
+
+_cr = {c["source"]: c for c in _back.get("chunk_references", [])}
+check("the composition reference, with its scope",
+      (_cr["plate.png"]["role"], _cr["plate.png"]["chunks"]),
+      ("composition", "1-2"))
+check("the clip, read back THROUGH its depth pass",
+      _cr["mv.mp4"]["kind"], "video")
+check("  keeping its trim", _cr["mv.mp4"].get("spans"), "48 96 push")
+ok("  and remembering its soundtrack was sent",
+   _cr["mv.mp4"].get("with_audio") is True)
+
+print("it reads by ROLE, so renumbering a graph changes nothing")
+_shifted = {}
+for _k, _v in _g.items():
+    _shifted["9" + _k] = _v
+for _n in _shifted.values():
+    _ins = _n.get("inputs") or {}
+    for _f, _v in list(_ins.items()):
+        if isinstance(_v, list) and len(_v) == 2 and isinstance(_v[0], str):
+            _ins[_f] = ["9" + _v[0], _v[1]]
+_again, _ = ta.read(_shifted)
+check("the same request comes out of a renumbered graph",
+      _again.get("head"), _back.get("head"))
+check("  including the chunk references",
+      len(_again.get("chunk_references", [])),
+      len(_back.get("chunk_references", [])))
+
+print("and a graph it did not make is refused, not half-read")
+_empty, _n2 = ta.read({"1": {"class_type": "KSampler", "inputs": {}}})
+check("nothing comes back", _empty, {})
+ok("and it says why", any("not made by the app" in x for x in _n2))
+
+print("what the graph cannot hold is REPORTED, not guessed")
+ok("a compiled cast is flagged as text rather than rows",
+   any("WORDS" in x or "words" in x for x in _notes)
+   or "subject_def_1" not in _back)
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

@@ -497,6 +497,185 @@ def compile_cast(cast, parse, emit, lint=None):
         "lint": notes,
     }
 
+def read(graph):
+    """A composed graph -> the request that would build it. -> (req, notes).
+
+    THE INVERSE OF build(), and it exists because every render carries its
+    whole graph in its metadata. That makes a finished mp4 the project file:
+    open a take from six weeks ago, change one beat, render it again. No
+    second format, nothing to keep in sync, and it works on any clip the app
+    made.
+
+    IT WALKS ROLES, NOT NODE IDS. build() stamps `_meta.title` on everything
+    it mints -- h3.links, h3.plan, h3.chunkref.0 -- and those survive into the
+    file. Reading by role means a graph whose ids were renumbered, or which
+    the user edited in ComfyUI and re-saved, still reads back.
+
+    What it cannot recover is anything the graph does not carry: a cast is
+    compiled to subject_definitions text before it reaches a node, so a
+    reopened take has the TEXT and not the rows that produced it. That is
+    reported in `notes` rather than guessed at.
+    """
+    req, notes = {}, []
+
+    def one(role):
+        ids = roles_of(graph).get(role) or []
+        return graph[ids[0]] if ids else None
+
+    def val(role, field, default=None):
+        n = one(role)
+        if n is None:
+            return default
+        v = (n.get("inputs") or {}).get(field, default)
+        return default if isinstance(v, list) else v
+
+    # ---- the prompt
+    links = one("h3.links")
+    if links is None:
+        return {}, ["no h3.links node — this graph was not made by the app"]
+    for f in ("head", "beats", "tail", "soundscape", "music", "task_type",
+              "heads", "tails", "subject_def_1", "retention_1"):
+        v = (links.get("inputs") or {}).get(f)
+        if isinstance(v, str) and v.strip():
+            req[f] = v
+    if isinstance((links.get("inputs") or {}).get("retention_1"), list):
+        notes.append("retention_1 was WIRED to a reference gate, so its text "
+                     "is assembled at render time and is not in the graph")
+
+    # ---- the plan
+    plan = one("h3.plan")
+    if plan is not None:
+        pin = plan.get("inputs") or {}
+        for src, dst in (("chunk_frames", "chunk_frames"),
+                         ("chunk_count", "chunk_count"),
+                         ("continuity", "continuity"),
+                         ("scene_frames", "scene_frames")):
+            if isinstance(pin.get(src), (str, int, float)):
+                req[dst] = pin[src]
+        if isinstance(pin.get("context"), (str, int)):
+            req["context"] = int(pin["context"])
+
+    # ---- the models, including however many LoRAs were chained
+    models = {}
+    for role, field, key in (("h3.unet", "unet_name", "unet"),
+                             ("h3.clip", "clip_name", "clip"),
+                             ("h3.vae.video", "vae_name", "vae"),
+                             ("h3.vae.audio", "vae_name", "audio_vae")):
+        v = val(role, field)
+        if v:
+            models[key] = v
+    loras = []
+    for r in sorted((r for r in roles_of(graph)
+                     if r == "h3.lora.static" or r.startswith("h3.lora.static.")),
+                    key=lambda r: (len(r), r)):
+        n = one(r)
+        if n is None:
+            continue
+        ins = n.get("inputs") or {}
+        if ins.get("lora_name"):
+            loras.append({"name": ins["lora_name"],
+                          "strength": ins.get("strength_model", 0.8)})
+    if loras:
+        models["loras"] = loras
+    if models:
+        req["models"] = models
+
+    # ---- plain references, by slot order
+    refs = []
+    for r in sorted((r for r in roles_of(graph) if r.startswith("h3.ref.")),
+                    key=lambda r: int(r.rsplit(".", 1)[1])):
+        v = val(r, "image")
+        if v:
+            refs.append(v)
+    if refs:
+        req["references"] = refs
+
+    # ---- the per-chunk references, read back THROUGH their chains
+    chunk_refs = []
+    gates = sorted((r for r in roles_of(graph) if r.startswith("h3.chunkref.")),
+                   key=lambda r: int(r.rsplit(".", 1)[1]))
+    for r in gates:
+        n = one(r)
+        ins = n.get("inputs") or {}
+        src_link = ins.get("image")
+        source, kind, spans, span_index = None, "image", "", 0
+        seen = 0
+        # walk back past the depth pass to whatever loaded the file
+        while isinstance(src_link, list) and seen < 6:
+            seen += 1
+            up = graph.get(src_link[0]) or {}
+            ct, uin = up.get("class_type"), up.get("inputs") or {}
+            if ct == "LoadImage":
+                source = uin.get("image"); break
+            if ct == "VideoTrimLoad":
+                source, kind = uin.get("file"), "video"
+                spans = uin.get("spans") or ""
+                span_index = uin.get("span_index") or 0
+                break
+            # DepthAnything_V2 and anything else: keep going upstream
+            src_link = uin.get("images") or uin.get("image")
+        if not source:
+            continue
+        entry = {"source": source, "kind": kind,
+                 "role": ins.get("role") or "composition",
+                 "chunks": ins.get("chunks") or "all"}
+        if ins.get("label"):
+            entry["label"] = ins["label"]
+        if kind == "video":
+            if spans:
+                entry["spans"] = spans
+            if span_index:
+                entry["span_index"] = span_index
+        chunk_refs.append(entry)
+
+    # a clip whose soundtrack was sent shows up as a ref_video_audios wiring
+    cond = one("h3.conditioning")
+    if cond is not None and chunk_refs:
+        cin = cond.get("inputs") or {}
+        tracks = {k: v for k, v in cin.items()
+                  if k.startswith("ref_video_audios.")}
+        for v in tracks.values():
+            if not isinstance(v, list):
+                continue
+            node = graph.get(v[0]) or {}
+            f = (node.get("inputs") or {}).get("file")
+            for e in chunk_refs:
+                if e["kind"] == "video" and e["source"] == f:
+                    e["with_audio"] = True
+
+    # standalone sounds, which are their own loaders
+    for r in sorted((r for r in roles_of(graph)
+                     if r.startswith("h3.refaudio.")),
+                    key=lambda r: int(r.rsplit(".", 1)[1])):
+        v = val(r, "audio")
+        if v:
+            req.setdefault("audio_references", []).append(v)
+    if chunk_refs:
+        req["chunk_references"] = chunk_refs
+
+    # ---- the rest
+    v = val("h3.noise", "noise_seed")
+    if v is not None:
+        req["seed"] = v
+    v = val("h3.save", "filename_prefix")
+    if v:
+        req["filename_prefix"] = v
+    v = val("h3.lora.schedule", "schedule")
+    if isinstance(v, str) and v.strip() and not v.strip().startswith("#"):
+        req["lora_schedule"] = v
+    for field, key in (("megapixels", "megapixels"),
+                       ("aspect_ratio", "aspect_ratio")):
+        v = val("h3.resolution", field)
+        if v is not None:
+            req[key] = v
+
+    if "subject_def_1" in req:
+        notes.append("the cast was compiled to text before it reached the "
+                     "graph, so the subject definitions come back as WORDS "
+                     "rather than as rows you can edit individually")
+    return req, notes
+
+
 def set_static_loras(graph, loras):
     """Chain N static LoRAs between the attention backend and the sampler.
 

@@ -9,6 +9,7 @@ cropplan, avlatent — carry the arithmetic the nodes share, and are kept torch-
 where possible so they can be tested without ComfyUI.
 """
 
+import json
 import os
 import pathlib
 import time
@@ -213,6 +214,76 @@ def _register_routes():
         except Exception as exc:                                # noqa: BLE001
             return web.json_response({"ok": False, "subjects": [],
                                       "error": f"{type(exc).__name__}: {exc}"})
+
+    @routes.post(ROUTE_PREFIX + "/take/reopen")
+    async def _take_reopen(request):
+        """Recover the request that made a rendered clip. POST {"path": ...}
+
+        Every render carries its whole graph in its metadata, and build()
+        stamps a role on every node it mints — so a finished mp4 IS the
+        project file. No second format, nothing to keep in sync, and it works
+        on a take from six weeks ago.
+
+        The graph is read with ffprobe rather than a video library: it is one
+        metadata field, and the binary is already here for the export.
+        """
+        from . import takeapi as TA
+        data = await _body(request)
+        rel = str(data.get("path") or "").strip()
+        if not rel:
+            return web.json_response({"ok": False, "error": "no path"})
+        try:
+            import folder_paths
+            outdir = folder_paths.get_output_directory()
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI output directory"})
+        full = os.path.normpath(os.path.join(outdir, rel))
+        if not full.startswith(os.path.normpath(outdir)) \
+                or not os.path.isfile(full):
+            return web.json_response({"ok": False,
+                                      "error": f"{rel!r} is not in the output "
+                                               f"folder"})
+
+        exe = None
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe().replace("ffmpeg", "ffprobe")
+            if not os.path.isfile(exe):
+                exe = None
+        except Exception:                                       # noqa: BLE001
+            pass
+        if not exe:
+            import shutil as _sh
+            exe = _sh.which("ffprobe")
+        if not exe:
+            return web.json_response({"ok": False, "error": "no ffprobe"})
+
+        import subprocess
+        r = subprocess.run([exe, "-v", "error", "-show_entries",
+                            "format_tags=prompt", "-of",
+                            "default=nw=1:nk=1", full],
+                           capture_output=True, text=True)
+        raw = (r.stdout or "").strip()
+        if not raw:
+            return web.json_response({
+                "ok": False,
+                "error": "this file carries no graph — it was not rendered by "
+                         "ComfyUI, or its metadata was stripped by a re-encode"})
+        try:
+            graph = json.loads(raw)
+        except json.JSONDecodeError:
+            return web.json_response({"ok": False,
+                                      "error": "its metadata is not a graph"})
+        try:
+            req, notes = TA.read(graph)
+        except Exception as exc:                                # noqa: BLE001
+            return web.json_response({"ok": False, "error": str(exc)})
+        if not req:
+            return web.json_response({"ok": False,
+                                      "error": (notes or ["nothing to read"])[0],
+                                      "notes": notes})
+        return web.json_response({"ok": True, "request": req, "notes": notes})
 
     @routes.post(ROUTE_PREFIX + "/edit/export")
     async def _edit_export(request):
