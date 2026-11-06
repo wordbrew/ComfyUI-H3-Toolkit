@@ -500,19 +500,28 @@ check("two of them, and no more",
       len([k for k in _ins if k.startswith("ref_audios.")]), 2)
 
 print("the <Audio j> numbering follows the MODEL, not the wiring order")
+# A SOUNDTRACK'S CLAUSE IS NO LONGER WRITTEN HERE. `<Audio j>` and `<Video k>`
+# are both per-chunk facts -- core only emits a clip's audio label where the
+# clip itself is live -- so H3ChunkRef emits that clause at execution, off the
+# tally. test_ref_numbering.py checks it against core's own rule.
+#
+# What stays here is the part that CANNOT move: a voice is a plain LoadAudio
+# with no gate to number it. It is numbered after every soundtrack, which is
+# exact because a clip sending its soundtrack is forced to span the take.
 _head = next(n for n, d in _g.items() if d["class_type"] == "H3ChunkRef"
              and not isinstance((d.get("inputs") or {}).get("retention_in"),
                                 list))
-_cl = _g[_head]["inputs"]["retention_in"].splitlines()
-ok("<Audio 1> is the clip's soundtrack, though the voice was wired first",
-   _cl[0].startswith("<Audio 1>") and "soundtrack of <Video 1>" in _cl[0])
-ok("<Audio 2> is the voice", _cl[1].startswith("<Audio 2>"))
-ok("<Audio 3> is the standalone sound", _cl[2].startswith("<Audio 3>"))
+_cl = [l for l in _g[_head]["inputs"]["retention_in"].splitlines()
+       if l.startswith("<Audio")]
+check("two audio clauses are seeded, not three", len(_cl), 2)
+ok("the VOICE is <Audio 2>, because the soundtrack took <Audio 1>",
+   _cl[0].startswith("<Audio 2>"))
+ok("<Audio 3> is the standalone sound", _cl[1].startswith("<Audio 3>"))
 
 print("and each marker says the right thing")
-ok("a soundtrack reference takes timbre and cadence, not the recording",
+ok("a voice reference takes timbre and cadence, not the recording",
    "timbre, tone and cadence" in _cl[0] and "do not reuse" in _cl[0])
-ok("weak_reference is looser still", "diverge freely" in _cl[2])
+ok("weak_reference is looser still", "diverge freely" in _cl[1])
 _fc = ta.build(dict(REQ, chunk_references=[
     {"source": "s.wav", "kind": "audio", "marker": "fully_copy"}]))
 _lk = ta._one(_fc, "h3.links")

@@ -446,19 +446,38 @@ class H3ChunkClose:
 
         Returning [] on the expansion path is the whole point: the body is about
         to be cloned once per chunk, so evaluating the original copy first is a
-        whole wasted render. Every path that falls back to passing `images`
-        through asks for it, so a misconfigured graph still returns something.
+        whole wasted render.
+
+        EVERY PASS-THROUGH PATH MUST ASK FOR `audio` AS WELL AS `images`, and
+        this is where it did not. CJ: "the long form page is producing video
+        but no audio. I was running a test gen of just 1 chunk at 14 sec and it
+        was always without audio."
+
+        A one-chunk plan has nothing to repeat, so `go` hands the single result
+        straight out -- and these paths asked only for `images`. `audio` was
+        therefore never evaluated, arrived as None, and CreateVideo wrote an
+        mp4 with no track. The model generated the audio; it was dropped one
+        node from the end. Multi-chunk runs were unaffected, because the
+        expansion path joins each clone's audio itself, which is why this only
+        ever showed up on a single-chunk test.
+
+        `latent` and `mask` are deliberately NOT requested: they are not among
+        this node's outputs, so on a pass-through there is nothing to put them
+        in, and evaluating them would be the wasted render this avoids.
         """
+        # whatever is returned, `images` and `audio` travel together: they are
+        # the two halves of the same result and this node returns both
+        THROUGH = ["images", "audio"]
         if GraphBuilder is None or dynprompt is None or unique_id is None:
-            return ["images"]
+            return THROUGH
         chunks = ((flow or {}).get("plan") or {}).get("chunks") or []
         if len(chunks) <= 1:
-            return ["images"]          # nothing to repeat; the one result IS it
+            return THROUGH             # nothing to repeat; the one result IS it
         try:
             _, opens = upstream_of(dynprompt, unique_id, OPEN_CLASS)
         except Exception:
-            return ["images"]
-        return [] if opens else ["images"]
+            return THROUGH
+        return [] if opens else THROUGH
 
     def go(self, flow, images=None, audio=None, latent=None, mask=None,
            dynprompt=None,

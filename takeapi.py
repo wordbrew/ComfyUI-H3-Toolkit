@@ -151,6 +151,23 @@ def plan_fields(req, planner):   # noqa: C901
     }, lint
 
 
+def _plan_chunks(req):
+    """The chunk shape this request will render, for scoping references.
+
+    A `frame 0` reference defaults to the chunks that OPEN a shot and a
+    `last frame` one to the chunks that close one, so the builder needs to
+    know where the cuts fall. It is the planner's own answer -- no second
+    implementation -- and a request too incomplete to plan simply scopes to
+    `all`, which is what every reference did before roles existed.
+    """
+    try:
+        from .chunkplan import count_plan
+        plan, _lint = plan_fields(req, count_plan)
+        return plan.get("chunks") or []
+    except Exception:                                           # noqa: BLE001
+        return []
+
+
 # ------------------------------------------------------------ graph building
 def build(req, template=None):
     """A render request -> a submittable API graph. Raises TakeError with why."""
@@ -250,7 +267,14 @@ def build(req, template=None):
     # would have been the quiet version of this bug.
     gate, ref_lint, tracks = set_chunk_references(
         graph, req.get("chunk_references") or [],
-        seed=req.get("retention_1") or "") or (None, [], [])
+        seed=req.get("retention_1") or "",
+        plan=_plan_chunks(req)) or (None, [], [])
+    # OPT-IN, and after the references exist. Turning it on makes `frame 0`
+    # and `last frame` positional instead of merely asked for; leaving it off
+    # changes nothing, which is the only honest default for a route this app
+    # has never submitted.
+    if req.get("keyframe_anchors"):
+        ref_lint = list(ref_lint) + set_keyframe_anchors(graph)
     # ---- AUDIO LAST, once the videos have their slots. One function owns
     # every audio slot so the cast's voices and the request's own sounds
     # cannot both claim ref_audio_0, and so <Audio j> is numbered in the
@@ -621,6 +645,17 @@ def read(graph):
                  "chunks": ins.get("chunks") or "all"}
         if ins.get("label"):
             entry["label"] = ins["label"]
+        # THE MARKER ONLY MEANS SOMETHING ON THE PLAIN `reference` ROLE, and
+        # reading it back for the others would put a widget default into a
+        # request that never set one -- which is how a reopened take acquires
+        # settings nobody chose.
+        if entry["role"] == "reference" and ins.get("marker"):
+            entry["marker"] = ins["marker"]
+        if entry["role"] == "reference" and str(ins.get("how") or "").strip():
+            entry["how"] = ins["how"]
+        # `tally_in` and `cast_images` are DERIVED, never settings: they are
+        # how the chain counts itself, and reading them back would put
+        # plumbing into a request a person is about to edit.
         if kind == "video":
             if spans:
                 entry["spans"] = spans
@@ -642,6 +677,27 @@ def read(graph):
             for e in chunk_refs:
                 if e["kind"] == "video" and e["source"] == f:
                     e["with_audio"] = True
+    # THE MARKER IS ON THE GATE NOW, so read it from there rather than
+    # inferring it: the gate emits the soundtrack's clause, so the gate holds
+    # the terms on which it was sent.
+    for r in gates:
+        gin = (one(r) or {}).get("inputs") or {}
+        if not gin.get("with_audio"):
+            continue
+        link = gin.get("image")
+        for _ in range(6):
+            if not isinstance(link, list):
+                break
+            up = graph.get(link[0]) or {}
+            if up.get("class_type") == "VideoTrimLoad":
+                f = (up.get("inputs") or {}).get("file")
+                for e in chunk_refs:
+                    if e["kind"] == "video" and e["source"] == f:
+                        e["audio_marker"] = gin.get("audio_marker") \
+                            or "reference"
+                break
+            link = (up.get("inputs") or {}).get("images") \
+                or (up.get("inputs") or {}).get("image")
 
     # standalone sounds, which are their own loaders
     for r in sorted((r for r in roles_of(graph)
@@ -745,16 +801,12 @@ def set_static_loras(graph, loras):
 #: H3's audio markers, from the guide. Distinct from the visual ones and
 #: easy to confuse: `reference` means take the CHARACTER of the sound,
 #: `fully_copy` means reuse the recording itself.
-AUDIO_MARKERS = ("fully_copy", "partially_copy", "reference", "weak_reference")
-
-#: What each one tells the model, in the guide's marker-then-how shape.
-AUDIO_CLAUSE = {
-    "fully_copy": "reuse this recording in full.",
-    "partially_copy": "reuse part of this recording.",
-    "reference": "take only the timbre, tone and cadence; do not reuse the "
-                 "recording itself.",
-    "weak_reference": "loose inspiration for the sound only; diverge freely.",
-}
+#:
+#: DEFINED IN chunkref, not here. The gate emits a clip's soundtrack clause at
+#: execution now -- that clause names an <Audio j> and a <Video k> that are
+#: both per-chunk facts -- and chunkref cannot import this module. These names
+#: stay as re-exports so callers do not have to care which module owns them.
+from .chunkref import AUDIO_CLAUSE, AUDIO_MARKERS                # noqa: E402
 
 
 def wire_audio(graph, voices=(), standalone=(), video_tracks=()):
@@ -804,14 +856,22 @@ def wire_audio(graph, voices=(), standalone=(), video_tracks=()):
 
     made, clauses, j = [], [], 0
 
-    # ---- 1. clip soundtracks FIRST, because they are numbered first
+    # ---- 1. clip soundtracks FIRST, because they are numbered first.
+    #
+    # THE SLOT IS WIRED HERE; THE CLAUSE IS NOT. It used to be written here
+    # too, and it could not be right: it said `<Video {slot + 1}>` from the
+    # SLOT rather than the clip's live position, and it counted <Audio j> once
+    # for the whole take. Both are per-chunk facts, so H3ChunkRef emits that
+    # clause at execution, where the tally knows them.
+    #
+    # The COUNT still matters here, because the voices below are numbered
+    # after every soundtrack. That is exact rather than a guess: a clip
+    # sending its soundtrack is forced to span the whole take (see
+    # set_chunk_references), so the number of soundtrack labels is the same on
+    # every chunk.
     for slot, track in video_tracks:
         j += 1
         ins[f"ref_video_audios.ref_video_audio_{slot}"] = [track["node"], 1]
-        marker = track.get("marker") or "reference"
-        clauses.append(f"<Audio {j}>: {marker} - "
-                       + AUDIO_CLAUSE.get(marker, AUDIO_CLAUSE["reference"])
-                       + f" It is the soundtrack of <Video {slot + 1}>.")
 
     # ---- 2. then the cast's voices and any standalone sound, in that order
     k = 0
@@ -881,11 +941,12 @@ REF_CAPS = {"image": 9, "video": 3, "audio": 3}
 
 # the role vocabulary lives with the node that emits the clause, so the two
 # cannot drift
-from .chunkref import ROLES_FOR, canonical as canonical_role
+from .chunkref import ROLES_FOR, DEFAULT_MARKER, MARKER_HOW
+from .chunkref import canonical as canonical_role
 from .chunkref import depth_for_role as role_wants_depth
 
 
-def set_chunk_references(graph, refs, seed=""):
+def set_chunk_references(graph, refs, seed="", plan=()):
     """Wire per-chunk references: loader -> [trim] -> [depth] -> gate -> slot.
 
     Each entry is
@@ -951,6 +1012,10 @@ def set_chunk_references(graph, refs, seed=""):
 
     counts = {"image": 0, "video": 0}
     last_ret, lint, tracks = None, [], []
+    # Reference images wired OUTSIDE this chain and always live: the cast's
+    # own anchors, as set_references wired them. Counted here rather than
+    # passed in, so the two cannot disagree.
+    plain_images = sum(1 for r in roles_of(graph) if r.startswith("h3.ref."))
 
     for i, r in enumerate(refs):
         raw_kind = str(r.get("kind", "image")).lower()
@@ -992,6 +1057,29 @@ def set_chunk_references(graph, refs, seed=""):
             # it is SENT is the request's call; its slot is not, because
             # ref_video_audios.N is the soundtrack of ref_videos.N.
             if r.get("with_audio"):
+                # A GATED CLIP THAT SENDS ITS SOUND BREAKS EVERY AUDIO NUMBER
+                # AFTER IT. Core reads a clip's soundtrack inside the video
+                # loop, after it skips a dark video -- so on a chunk where the
+                # clip is gated off, its <Audio j> label is not emitted and
+                # every voice moves up one, while the clauses still name the
+                # old numbers.
+                #
+                # The gate can renumber itself. A VOICE CANNOT: it is a plain
+                # LoadAudio with no gate and no tally. So the combination is
+                # widened rather than allowed to lie, and the escape hatch is
+                # to drop the soundtrack if the clip really must be gated.
+                # Audio costs its whole length wherever it sits, so spanning
+                # the take is close to free.
+                scope = str(r.get("chunks") or "all").strip().lower()
+                if scope not in ("", "all", "every", "*"):
+                    lint.append(
+                        f"{src_name}: scoped to {scope!r} AND sending its "
+                        f"soundtrack. A clip's audio label is only emitted "
+                        f"where the clip is live, which would renumber every "
+                        f"voice on the chunks it is dark — so this clip now "
+                        f"spans the whole take. Untick its soundtrack if you "
+                        f"need it gated.")
+                    r = dict(r); r["chunks"] = "all"
                 tracks.append((counts["video"],
                                {"node": clip,
                                 "marker": r.get("audio_marker") or "reference"}))
@@ -1016,7 +1104,11 @@ def set_chunk_references(graph, refs, seed=""):
         counts[kind] += 1
         # a role that is only legal on some chunks defaults to THOSE chunks,
         # rather than to `all` and a refusal on most of them
-        plan_chunks = []
+        # THE PLAN, not an empty list. This was `[]`, so `default_scope`
+        # could only ever answer "all" -- and the whole point of the default
+        # is that `frame 0` lands on the shot OPENERS and `last frame` on the
+        # closers. The code read as though it resolved them and did not.
+        plan_chunks = list(plan or ())
         if plan_node is not None:
             try:
                 from .chunkref import default_scope
@@ -1030,15 +1122,38 @@ def set_chunk_references(graph, refs, seed=""):
                    "chunk_index": [open_node, idx_slot],
                    "image": out,
                    "ordinal": counts[kind],
-                   "label": str(r.get("label") or src_name)}
+                   "label": str(r.get("label") or src_name),
+                   # THE PLAIN `reference` ROLE IS THE ONLY ONE THAT CAN BE
+                   # EITHER KIND, so the gate has to be told which -- a clip
+                   # cited as <Picture 1> names the wrong thing. Every other
+                   # role fixes its tag, and passing the kind is harmless.
+                   "kind": kind,
+                   "marker": str(r.get("marker") or "").strip()
+                             or DEFAULT_MARKER,
+                   # the user's own sentence for a plain `reference`
+                   "how": str(r.get("how") or ""),
+                   # the soundtrack's clause is the GATE's to emit now: both
+                   # <Audio j> and <Video k> are per-chunk facts
+                   "with_audio": bool(r.get("with_audio")),
+                   "audio_marker": str(r.get("audio_marker")
+                                       or "reference")}
         if plan_node is not None:
             gate_in["chunk_plan"] = [plan_node, 0]
         if last_ret is not None:
             gate_in["retention_in"] = [last_ret, 2]
-        elif seed:
-            # the cast's own retention_analysis opens the chain, so the
-            # subjects' wording survives alongside the references' clauses
-            gate_in["retention_in"] = str(seed)
+            # SAME CHAIN, SAME ORDER. `tally` is output 4; see the slot
+            # contract -- it was appended, so 0..3 kept their meaning.
+            gate_in["tally_in"] = [last_ret, 4]
+        else:
+            # THE HEAD OF THE CHAIN STARTS WHERE THE CAST LEAVES OFF. The
+            # cast's anchors are plain loaders in the first slots and are
+            # never dark, so they are a constant -- and the number this used
+            # to cite instead of its own.
+            gate_in["cast_images"] = plain_images
+            if seed:
+                # the cast's own retention_analysis opens the chain, so the
+                # subjects' wording survives alongside the references' clauses
+                gate_in["retention_in"] = str(seed)
         gate = mint("H3ChunkRef", gate_in, f"h3.chunkref.{i}")
         last_ret = gate
 
@@ -1046,7 +1161,144 @@ def set_chunk_references(graph, refs, seed=""):
             else "ref_images.ref_image_"
         ins[f"{slot}{counts[kind] - 1 if kind == 'video' else _next_image_slot(ins)}"] = [gate, 0]
 
+    # THE REFERENCE SAMPLER MOVES TO THE BACK. It emits None except at a
+    # reference_sample join, and core SKIPS an empty slot when it numbers the
+    # references it presents -- so sitting in the middle of the list it made
+    # every citation after it depend on whether this chunk happens to be a
+    # join. Last, it can be empty or full without moving anybody.
+    # `_next_image_slot` is the FIRST FREE index, which is how the first
+    # attempt at this put the sampler straight back where it started. The
+    # whole image list is rebuilt instead, contiguously and in the order the
+    # chain assumes: the cast's always-live anchors, then the gates in chain
+    # order, then the sampler.
+    sampler = _one(graph, "h3.refsample", required=False)
+    if sampler is not None:
+        titles = {}
+        for role, nids in roles_of(graph).items():
+            for nid in nids:
+                titles[nid] = role
+
+        def rank(link):
+            role = titles.get(link[0], "")
+            if role == "h3.refsample":
+                return (2, 0)
+            if role.startswith("h3.chunkref."):
+                return (1, int(role.rsplit(".", 1)[1]))
+            return (0, int(role.rsplit(".", 1)[1]) if role.startswith("h3.ref.")
+                    else 0)
+
+        keys = sorted((k for k in ins if k.startswith("ref_images.ref_image_")),
+                      key=lambda k: int(k.rsplit("_", 1)[1]))
+        links = [ins[k] for k in keys]
+        for k in keys:
+            del ins[k]
+        for i, link in enumerate(sorted(links, key=rank)):
+            ins[f"ref_images.ref_image_{i}"] = link
+
     return last_ret, lint, tracks
+
+
+def set_keyframe_anchors(graph):
+    """Make `frame 0` and `last frame` REAL anchors, not a sentence. -> notes.
+
+    WHY A SENTENCE IS NOT ENOUGH, and this is the whole point of the option:
+
+      On ref2va a reference is not a frame. Its rows sit in their own cursor
+      region, and this pack's own video.py says what that means -- "a
+      reference video acts as a destination and the clip converges onto it",
+      where "a KEYFRAME is bound to frame 0 positionally". A keyframe's rows
+      are placed on the TARGET's own timeline. Identical rows; different time
+      coordinates; and the coordinates are what say "this clip, at this
+      moment" rather than "a place to arrive at".
+
+      So asking for frame 0 in retention_analysis is a request competing with
+      the reference tokens, which outnumber the prompt heavily. It holds
+      sometimes. CJ: "frame 0 isn't always keeping as frame 0 when i am using
+      reference material... it'll like start as a reference image itself, then
+      morph over."
+
+    HOW IT IS SAFE TO WIRE: H3KeyframeTimeline skips a slot whose image is
+    None (`if img is None or t is None or t < 0: continue`) and returns the
+    conditioning untouched when every slot is empty. The gates already emit
+    None on a chunk they are dark on -- and `frame 0` already REFUSES a chunk
+    that continues a shot, because those opening rows are the pin. So the
+    anchor appears exactly on the chunks it belongs on, with no second gate.
+
+    UNTESTED AS A ROUTE. First and last are the proven keyframe positions --
+    they are what core does -- but this app has never submitted one, so it is
+    an option rather than the default, and the retention clause stays either
+    way: they say the same thing, one positionally and one in words.
+    """
+    notes = []
+    anchors = {}
+    for role in roles_of(graph):
+        if not role.startswith("h3.chunkref."):
+            continue
+        nid = _one(graph, role)
+        r = canonical_role(str((graph[nid].get("inputs") or {}).get("role")))
+        if r in ("frame 0", "last frame") and r not in anchors:
+            anchors[r] = nid
+    if not anchors:
+        return notes
+
+    cond = _one(graph, "h3.conditioning", required=False)
+    vae = _one(graph, "h3.vae.video", required=False)
+    if cond is None or vae is None:
+        notes.append("no conditioning or video VAE in the template, so a "
+                     "keyframe anchor cannot be placed")
+        return notes
+    cin = graph[cond].get("inputs") or {}
+
+    kf_in = {"conditioning": [cond, 0], "vae": [vae, 0],
+             # the SAME length expression the conditioning node got, not a
+             # copy of the number: the node's docstring says they must match,
+             # and a copy is a thing that can fall out of step
+             "length": cin.get("length"),
+             # THE CANVAS, MEASURED. The node prefers a latent over typed
+             # width/height for exactly this reason, and the conditioning
+             # node's second output IS the canvas.
+             "latent": [cond, 1],
+             "snap_to_grid": True}
+    if "frame 0" in anchors:
+        kf_in["image_1"] = [anchors["frame 0"], 0]
+        kf_in["frame_1"] = 0
+        kf_in["time_1"] = -1.0            # frames win; -1 keeps seconds out
+    else:
+        # image_1 is required on the node, so a last-frame-only graph still
+        # has to fill it. time_1 = -1 disables the slot.
+        kf_in["image_1"] = [anchors["last frame"], 0]
+        kf_in["frame_1"] = -1
+        kf_in["time_1"] = -1.0
+    if "last frame" in anchors and "frame 0" in anchors:
+        kf_in["image_2"] = [anchors["last frame"], 0]
+        # PAST THE END ON PURPOSE. _place clamps to frame_count - 1 and then
+        # recognises it as the last frame -- core's own anchor, and the one
+        # position it deliberately does not snap to the 17 grid. Naming a
+        # number here would mean knowing this chunk's length, which varies.
+        kf_in["frame_2"] = 9999
+        kf_in["time_2"] = -1.0
+    elif "last frame" in anchors:
+        kf_in["frame_1"] = 9999
+
+    nid = str(max((int(k) for k in graph if k.isdigit()), default=0) + 1)
+    graph[nid] = {"class_type": "H3KeyframeTimeline", "inputs": kf_in,
+                  "_meta": {"title": "h3.keyframes"}}
+
+    # EVERY consumer of the conditioning moves to the keyframe node's output.
+    # Missing one would leave the sampler on the un-anchored conditioning and
+    # make this look like it did nothing.
+    moved = 0
+    for k, v in graph.items():
+        if k == nid:
+            continue
+        for field, link in list((v.get("inputs") or {}).items()):
+            if isinstance(link, list) and link[0] == cond and link[1] == 0:
+                v["inputs"][field] = [nid, 0]
+                moved += 1
+    notes.append(f"keyframe anchors wired for {', '.join(sorted(anchors))} "
+                 f"({moved} conditioning consumer(s) moved). UNTESTED route "
+                 f"— the clause stays too, so the two agree.")
+    return notes
 
 
 def _next_image_slot(ins):

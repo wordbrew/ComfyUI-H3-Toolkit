@@ -428,14 +428,35 @@ def test_lazy_images():
     p = make_plan(180, chunk_frames=90)
     check("expansion path asks for nothing",
           close.check_lazy_status({"plan": p}, dynprompt=dp, unique_id="close"), [])
+    # A PASS-THROUGH MUST ASK FOR THE AUDIO TOO, and this check asserted the
+    # bug for as long as it existed. CJ: "the long form page is producing video
+    # but no audio. I was running a test gen of just 1 chunk at 14 sec and it
+    # was always without audio."
+    #
+    # A one-chunk plan has nothing to repeat, so the single result goes
+    # straight out -- but only `images` was requested, so `audio` arrived as
+    # None and CreateVideo wrote a silent mp4. The model generated the sound
+    # and it was dropped one node from the end. Multi-chunk runs join each
+    # clone's audio inside the expansion, which is why only a single-chunk
+    # test ever showed it.
     one = make_plan(90, chunk_frames=90)
-    check("a single chunk still needs the value",
+    check("a single chunk needs the picture AND the sound",
           close.check_lazy_status({"plan": one}, dynprompt=dp, unique_id="close"),
-          ["images"])
+          ["images", "audio"])
     bare = DynPrompt({"close": {"class_type": "H3ChunkClose", "inputs": {}}})
-    check("no Open upstream needs the value",
+    check("no Open upstream needs both as well",
           close.check_lazy_status({"plan": p}, dynprompt=bare, unique_id="close"),
-          ["images"])
+          ["images", "audio"])
+    check("and so does a build with no GraphBuilder",
+          close.check_lazy_status({"plan": p}, dynprompt=None, unique_id=None),
+          ["images", "audio"])
+    # requesting it is only half of it -- it has to come back OUT
+    _aud = {"waveform": "WAVE", "sample_rate": 32000}
+    _r = close.go({"plan": one}, images=Fake(90), audio=_aud,
+                  dynprompt=dp, unique_id="close")
+    check("a one-chunk run returns three outputs", len(_r), 3)
+    check("THE AUDIO SURVIVES THE PASS-THROUGH", _r[2], _aud)
+    check("and the picture does too", _r[0].n, 90)
     # and when it was not asked for and cannot be produced, fail loudly rather
     # than handing None down the graph as an IMAGE
     try:

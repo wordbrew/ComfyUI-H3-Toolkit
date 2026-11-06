@@ -216,6 +216,108 @@ ok("it asks for an opening, not a held frame", "continues from it" in _f0)
 ok("and fully_preserved, because the image is the thing itself",
    "fully_preserved" in _f0)
 
+print("\nLAST FRAME is frame 0's mirror, and the asymmetry is deliberate")
+# frame 0 REFUSES on a continuing chunk because the pin owns those rows.
+# Nothing is held at a chunk's TAIL, so the same anchor at the end is a
+# direction -- "arrive at this pose" -- and only warrants a warning.
+_lf = cr.retention_clause("last frame", 3)
+ok("it names the final frame", "final frame of the video" in _lf)
+ok("and says the shot ARRIVES there, not that a still is appended",
+   "moves toward it" in _lf)
+ok("fully_preserved, same reasoning as frame 0", "fully_preserved" in _lf)
+ok("and cites its own ordinal", "<Picture 3>" in _lf)
+# PLAN is four chunks; find where a shot actually ends
+_cl = cr._closers(PLAN["chunks"])
+ok("the last chunk always closes a shot", len(PLAN["chunks"]) - 1 in _cl)
+ok("and `last frame` defaults to the closers, not to `all`",
+   cr.default_scope("last frame", PLAN["chunks"])
+   == ",".join(str(i + 1) for i in _cl))
+_mid = [i for i in range(len(PLAN["chunks"])) if i not in _cl]
+if _mid:
+    _r = run(role="last frame", chunks="all", chunk_index=_mid[0])
+    ok("mid-shot it still RENDERS, unlike frame 0", _r[1] is True)
+    ok("but says the chunk is continued", "is CONTINUED by the one after it"
+       in _r[3])
+
+print("\nboth spellings of a cut are read, because two sources use two keys")
+# H3ChunkPlan writes `cut`; takeapi.plan_fields writes `opens_shot`. Reading
+# one made a plan from the other look like a single unbroken shot.
+ok("`cut` opens a shot", cr.opens_shot({"cut": True}, 2) is True)
+ok("`opens_shot` does too", cr.opens_shot({"opens_shot": True}, 2) is True)
+ok("neither does not", cr.opens_shot({"cut": False}, 2) is False)
+ok("and chunk 1 always does", cr.opens_shot({}, 0) is True)
+check("openers read either key",
+      cr._openers([{}, {"opens_shot": True}, {}, {"cut": True}]), [0, 1, 3])
+
+print("\nthe plain `reference` role says only how hard to hold")
+_g = cr.retention_clause("reference", 2, "weak_reference", "image")
+ok("default is the weakest marker", "weak_reference" in _g)
+ok("it claims no frame", "frame 0" not in _g and "final frame" not in _g)
+ok("and says nothing about framing or motion",
+   "composition" not in _g and "motion" not in _g)
+ok("cited as a Picture for an image", "<Picture 2>" in _g)
+_gv = cr.retention_clause("reference", 1, "attribute_transfer", "video")
+ok("and as a Video for a clip", "<Video 1>" in _gv)
+ok("the marker the caller chose is the one that lands",
+   "attribute_transfer" in _gv)
+ok("with the `how` the model needs after it", " - " in _gv)
+ok("an unknown marker falls back rather than reaching the prompt",
+   "weak_reference" in cr.retention_clause("reference", 1, "nonsense"))
+ok("no depth: it is not a composition reference",
+   cr.depth_for_role("reference") is False)
+ok("and no depth for a last frame either",
+   cr.depth_for_role("last frame") is False)
+# A SINGLE-KIND ROLE MUST IGNORE `kind`. Reading the kind first made a motion
+# reference cite <Picture N> the moment a default came through.
+ok("kind cannot override a role that fixes its own tag",
+   "<Video 2>" in cr.retention_clause("composition and motion", 2,
+                                      kind="image"))
+ok("every marker in the UI's list is one the model knows",
+   all(m in cr.MARKER_HOW for m in _pl2.VISUAL_MARKERS))
+ok("the new roles are offered for the right kinds",
+   "last frame" in cr.ROLES_FOR["image"]
+   and "reference" in cr.ROLES_FOR["image"]
+   and "reference" in cr.ROLES_FOR["video"]
+   and "last frame" not in cr.ROLES_FOR["video"])
+
+print("\nand the UI offers exactly what the node accepts")
+# THE VOCABULARY LIVED IN THREE PLACES ONCE AND TWO DISAGREED, so picking a
+# marker in the UI raised an error naming a list the UI never showed. These
+# two lists are typed separately -- one in Python, one in JavaScript -- so
+# this is the only thing stopping them drifting apart again.
+import os as _os
+import re as _re
+_ui = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                         "ui", "index.html"), encoding="utf-8").read()
+_mk = _re.search(r"const VISUAL_MARKERS = \[(.*?)\];", _ui, _re.S)
+ok("the UI declares a visual marker list", _mk is not None)
+if _mk:
+    _ui_markers = _re.findall(r'\["([a-z_]+)"', _mk.group(1))
+    check("every marker the UI offers is one the node knows",
+          [m for m in _ui_markers if m not in cr.MARKER_HOW], [])
+    check("and it offers all of them",
+          sorted(_ui_markers), sorted(cr.MARKER_HOW))
+_rr = _re.search(r"const REF_ROLES = \{(.*?)\n\};", _ui, _re.S)
+ok("the UI declares a role list", _rr is not None)
+if _rr:
+    # SPLIT ON THE KEYS rather than matching each block's end. The last key
+    # has no following key to stop at, so a lookahead for one silently found
+    # nothing and reported "the UI lists no video roles" -- a test failing on
+    # its own regex, which is worse than no test.
+    _parts = _re.split(r"\n\s*(image|video):\s*", _rr.group(1))
+    _blocks = dict(zip(_parts[1::2], _parts[2::2]))
+    for _kind in ("image", "video"):
+        if _kind not in _blocks:
+            ok(f"the UI lists {_kind} roles", False)
+            continue
+        _got = _re.findall(r'\["([a-z0-9 ]+)"', _blocks[_kind])
+        # ROLES_OFFERED, not ROLES_FOR: `identity` is REACHABLE on the gated
+        # path -- a cast member scoped to part of the take goes through this
+        # gate -- but it is not offered as an additional reference, because a
+        # person who should be recognised is a cast member.
+        check(f"UI {_kind} roles are the node's",
+              sorted(_got), sorted(cr.ROLES_OFFERED[_kind]))
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

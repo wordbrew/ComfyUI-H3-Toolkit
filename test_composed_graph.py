@@ -205,6 +205,64 @@ ok("@handles resolved to numbers",
 ok("retention_1 is wired to a gate",
    isinstance(graph[_links]["inputs"].get("retention_1"), list))
 
+# ---- and again with the keyframe anchors on ---------------------------
+# A SPLICE IS THE EASIEST THING TO GET HALF RIGHT: insert a node, move SOME
+# consumers of the old output, and the sampler quietly keeps reading the
+# un-anchored conditioning -- which looks exactly like the option doing
+# nothing. So the same validators run over the spliced graph, plus the thing
+# only this graph can be wrong about: that nobody is left behind.
+print("\nthe same request with keyframe anchors on")
+kg = ta.build(dict(REQ, keyframe_anchors=True))
+ok("the keyframe node exists",
+   len([1 for n in kg.values()
+        if n["class_type"] == "H3KeyframeTimeline"]) == 1)
+_kf = next(k for k, v in kg.items()
+           if v["class_type"] == "H3KeyframeTimeline")
+_kcond = ta._one(kg, "h3.conditioning")
+_left = [f"{kg[k]['class_type']}.{f}" for k, v in kg.items()
+         for f, l in (v.get("inputs") or {}).items()
+         if k != _kf and isinstance(l, list)
+         and l[0] == _kcond and l[1] == 0]
+for x in _left:
+    print("       still on the raw conditioning: " + x)
+ok("NOTHING is left reading the un-anchored conditioning", not _left)
+ok("the keyframe node reads the canvas as a latent, not as two integers",
+   kg[_kf]["inputs"].get("latent") == [_kcond, 1])
+ok("frame 0 is anchored at frame 0", kg[_kf]["inputs"].get("frame_1") == 0)
+ok("and the frame-0 gate feeds it, so a dark chunk disables the anchor",
+   isinstance(kg[_kf]["inputs"].get("image_1"), list))
+# the same three validators, over the spliced graph
+_bad = []
+for nid, node in kg.items():
+    if node["class_type"] not in classes and node["class_type"] not in CORE:
+        _bad.append("unknown class " + node["class_type"])
+    for field, v in (node.get("inputs") or {}).items():
+        if not (isinstance(v, list) and len(v) == 2
+                and isinstance(v[0], str)):
+            continue
+        tgt, slot = v
+        if tgt not in kg:
+            _bad.append(f"{node['class_type']}.{field} -> missing {tgt}")
+            continue
+        src = kg[tgt]["class_type"]
+        cls = classes.get(src)
+        n_out = (len(getattr(cls, "RETURN_TYPES", ()) or ()) if cls is not None
+                 else CORE_OUTPUTS.get(src, 0))
+        if n_out and not (0 <= slot < n_out):
+            _bad.append(f"{node['class_type']}.{field} -> {src}[{slot}] "
+                        f"but {src} has {n_out} output(s)")
+    cls = classes.get(node["class_type"])
+    if cls is not None and hasattr(cls, "INPUT_TYPES"):
+        have = set((node.get("inputs") or {}).keys())
+        for field in (cls.INPUT_TYPES().get("required") or {}):
+            if field in have or any(k.startswith(field + ".") for k in have):
+                continue
+            _bad.append(f"{node['class_type']}.{field} unsatisfied")
+for b in _bad:
+    print("       " + b)
+ok(f"{len(_bad)} structural problem(s) with the anchors on", not _bad)
+ok("no placeholder survives there either", ta.placeholders_in(kg) == [])
+
 print()
 if fails:
     print(f"FAIL — {len(fails)} check(s)")

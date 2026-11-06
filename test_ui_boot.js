@@ -55,6 +55,13 @@ global.getComputedStyle = () => ({
 global.window = { addEventListener(){}, open(){ return { document: { write(){} } }; } };
 global.location = { protocol: "http:", host: "127.0.0.1:8188" };
 global.localStorage = { getItem(){ return null; }, setItem(){} };
+// The galleries load their thumbnails lazily, so the page builds an observer
+// at module scope. Boot is what this file tests, and without this the page
+// does not boot at all under node.
+global.IntersectionObserver = class {
+  constructor(cb) { this.cb = cb; }
+  observe() {} unobserve() {} disconnect() {}
+};
 // TWO SCENARIOS, and the second is the one that was missing. Scenario "fail"
 // proves the controls survive an unreachable ComfyUI. Scenario "ok" proves init
 // RUNS TO COMPLETION when everything is reachable -- which is where

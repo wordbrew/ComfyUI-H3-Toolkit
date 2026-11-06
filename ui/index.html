@@ -569,8 +569,8 @@
     border-radius: var(--r); cursor: grab; font-size: 11px;
   }
   .binclip:hover { border-color: var(--line-strong); }
-  .binclip video { width: 48px; height: 32px; object-fit: cover; flex: none;
-                   border-radius: 2px; background: #000; }
+  .binclip .vthumb { width: 48px; height: 32px; object-fit: cover;
+                     flex: none; border-radius: 2px; background: #000; }
   .binclip .t { min-width: 0; overflow: hidden; }
   .binclip b { display: block; font-weight: 500; overflow: hidden;
                text-overflow: ellipsis; white-space: nowrap; }
@@ -677,11 +677,11 @@
     background: var(--ink); margin-left: -1px;
   }
 
-  .picker .tile .vthumb, .lane .cap video, .slot video {
+  .picker .tile .vthumb, .lane .cap .vthumb, .slot .vthumb {
     width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
     background: var(--ground);
   }
-  .lane .cap video { width: 34px; height: 34px; border-radius: 3px;
+  .lane .cap .vthumb { width: 34px; height: 34px; border-radius: 3px;
                      object-position: top center; flex: none;
                      border: 1px solid var(--line); }
   .picker .tile .vid {
@@ -845,6 +845,17 @@
           <div><label for="ar">Shape</label><select id="ar"></select></div>
         </div>
         <p class="hint" id="mpwarn" hidden style="color:var(--bad)"></p>
+        <label class="chk" style="margin-top:10px">
+          <input type="checkbox" id="kfanchor">
+          Anchor <code>frame 0</code> / <code>last frame</code> as real
+          keyframes</label>
+        <p class="hint">On ref2va a reference is not a frame: its rows sit in
+        their own region and the clip <em>converges onto</em> them, which is
+        why a frame-0 image can open the take and then morph away. A keyframe's
+        rows sit on this clip's own timeline, so the image is the frame rather
+        than a place to arrive at. The retention clause is sent either way.
+        <b>Untested route</b> — first and last are the proven keyframe
+        positions, but this app has never submitted one.</p>
         <div class="row two">
           <div><label for="seed">Seed</label>
             <div class="bar" style="margin-top:0">
@@ -1211,6 +1222,7 @@ function save() {
                     "sched","seed","prefix","mp","ar","seedmode"]) {
     const el = $(id); if (el) s[id] = el.value;
   }
+  s.kfanchor = !!$("kfanchor").checked;
   s.theme = document.documentElement.dataset.theme || "";
   s.cast = CAST;                 // the cast is the document, so it persists too
   s.cont = CONT;
@@ -1229,6 +1241,7 @@ function restore() {
     if (k === "theme") continue;
     const el = $(k); if (el && v !== undefined && v !== "") el.value = v;
   }
+  $("kfanchor").checked = !!s.kfanchor;
   if (s.theme) document.documentElement.dataset.theme = s.theme;
   if (Array.isArray(s.cast)) CAST = s.cast;
   if (Array.isArray(s.cont)) CONT = s.cont;
@@ -1444,10 +1457,26 @@ let LANEDRAG = null;
 // the appearance its own clause tells the model to ignore.
 const REF_ROLES = {
   image: [["composition", "framing only — passes through depth"],
-          ["frame 0", "this exact image opens the chunk — no depth"]],
+          ["frame 0", "this exact image opens the chunk — no depth"],
+          ["last frame", "the chunk arrives at this exact image — no depth"],
+          ["reference", "say what to take in your own words"]],
   video: [["composition and motion",
-           "movement and framing only — passes through depth"]],
+           "movement and framing only — passes through depth"],
+          ["reference", "say what to take in your own words"]],
 };
+
+// THE FOUR VISUAL MARKERS, the model's own vocabulary. Only the plain
+// `reference` role asks for one: every other role fixes its marker, because
+// the marker is part of what that role MEANS -- `composition` is an
+// attribute_transfer by definition and `frame 0` a fully_preserved.
+// Same list, same order and same meanings as the library's retention picker;
+// the wording here says what to TAKE, which is what a reference is for.
+const VISUAL_MARKERS = [
+  ["weak_reference", "loose inspiration"],
+  ["attribute_transfer", "its qualities only — colour, texture, light"],
+  ["partially_preserved", "its main features; vary the rest"],
+  ["fully_preserved", "everything it shows, unchanged"],
+];
 
 // `1-3` / `2,5` / `all` <-> a set of 0-based chunk indices. The spec string is
 // what the node and the request take, so it stays the stored form -- a Set is
@@ -2099,9 +2128,37 @@ function editRef(r) {
         `<option value="${v}"${v === r.role ? " selected" : ""}>${v} — ${why}</option>`
       ).join("") + `</select>`;
 
+  // SHOWN ONLY FOR THE PLAIN `reference` ROLE, and hidden rather than
+  // omitted so switching role does not have to rebuild the form.
+  // A ROLE PER ATTRIBUTE IS THE WRONG SHAPE. CJ: "i dont necessarily want
+  // the additional reference to be an identity reference, tied to a cast
+  // member. but perhaps I want it to be anatomy or something like that, so
+  // how do we handle that?"
+  //
+  // retention_analysis's form is `marker - how`, so one role covers anatomy,
+  // wardrobe, hair, a prop's markings, the quality of light: the marker says
+  // how hard it holds and the sentence says what to take. It is also the
+  // phrasing testbed — these clauses are the load-bearing part of a
+  // reference, and changing one here needs no code.
+  const markerField = `
+    <div id="ed_mkbox" ${r.role === "reference" ? "" : "hidden"}>
+      <label for="ed_how" style="margin-top:12px">What to take from it</label>
+      <textarea id="ed_how" rows="2" placeholder="the body proportions and anatomy, not the face">${escapeHTML(r.how || "")}</textarea>
+      <label for="ed_mk" style="margin-top:10px">How hard to hold to it</label>
+      <select id="ed_mk">${VISUAL_MARKERS.map(([v, why]) =>
+        `<option value="${v}"${v === (r.marker || "weak_reference")
+          ? " selected" : ""}>${v} — ${why}</option>`).join("")}</select>
+      <p class="hint">Reaches the model as
+      <code>&lt;Picture N&gt;: <span id="ed_mkecho">marker</span> — your
+      sentence.</code> Left empty it says it is a general reference and leans
+      on the marker alone. Nothing is assumed about framing, motion or which
+      frame it lands on.</p>
+    </div>`;
+
   openInline(`
     <label>What the model takes from it</label>
     ${roleField}
+    ${markerField}
     ${kind === "video" ? `
       <label style="margin-top:12px">Trim</label>
       <div class="trim">
@@ -2146,6 +2203,12 @@ function editRef(r) {
     r.label || r.source,
     () => {
       r.role = $("ed_role").value;
+      r.marker = $("ed_mk").value;
+      r.how = $("ed_how").value.trim();
+      const mk = $("ed_mkbox");
+      if (mk) mk.hidden = r.role !== "reference";
+      const echo = $("ed_mkecho");
+      if (echo) echo.textContent = r.marker;
       if (kind === "video") {
         r.spans = $("ed_spans").value.trim();
         r.with_audio = $("ed_wa").checked;
@@ -2222,7 +2285,14 @@ function trimmer(r) {
       + (n && (n < 2 * FPS || n > 15 * FPS) ? "  ·  outside H3's 2–15s" : "");
   };
 
-  vid.addEventListener("loadedmetadata", () => {
+  // THE EVENT MAY HAVE ALREADY FIRED. This listener is attached after the
+  // modal's innerHTML created the element, so a clip the browser can satisfy
+  // immediately -- cached, or a local file it has already opened -- can reach
+  // readyState 1 before anyone is listening, and then nothing ever paints:
+  // the bar sits at zero and Mark in/out have no duration to work from, which
+  // looks exactly like a dead trimmer. Calling it directly when the metadata
+  // is already there costs nothing when it is not.
+  const metaReady = () => {
     dur = vid.duration || 0;
     const [st, ct] = parse();
     const total = Math.max(1, Math.round(dur * FPS));
@@ -2230,7 +2300,16 @@ function trimmer(r) {
     outF = ct ? Math.min(st + ct, total) : total;
     vid.currentTime = inF / FPS;
     paint();
-  });
+  };
+  vid.addEventListener("loadedmetadata", metaReady);
+  if (vid.readyState >= 1) metaReady();
+  // AND IT MAY NEVER FIRE. /view serves through aiohttp's FileResponse, which
+  // honours Range, so scrubbing works -- but a clip the browser cannot decode
+  // at all would otherwise leave the panel silent about why.
+  vid.addEventListener("error", () => {
+    $("ed_read").textContent = "this clip could not be opened by the browser "
+      + "— the trim needs a format it can decode";
+  }, { once: true });
   vid.addEventListener("timeupdate", paint);
 
   const seek = (ev) => {
@@ -2833,7 +2912,7 @@ function pickLora(done) {
     body.appendChild(list);
     $("pick_count").textContent = `${hit.length} of ${LORAS.length}`;
   };
-  $("pick_q").oninput = draw;
+  $("pick_q").oninput = debounce(draw);
   $("pick_ok").hidden = true;
   draw();
   $("pick").showModal();
@@ -2848,7 +2927,7 @@ function closePicker() {
   $("pick_sub").hidden = false;
   $("pick_upload").hidden = false;
   $("pick_ok").hidden = false;
-  $("pick_q").oninput = drawPicker;
+  $("pick_q").oninput = debounce(drawPicker);
 }
 
 /* -------------------------------------------------------------------- plan */
@@ -3425,30 +3504,83 @@ function assetURL(path, quality = 40) {
 // THE RAW FILE, no preview re-encode. /view's `preview` parameter asks the
 // server to transcode to webp, which is right for a still and wrong for a
 // clip -- a <video> needs the actual mp4 to seek in.
-// A CLIP'S FIRST FRAME, reliably. `preload="metadata"` plus a #t fragment
-// paints a frame in some browsers and leaves a black box in others, which is
-// why these looked broken. Seeking explicitly once metadata arrives works
-// everywhere: the browser decodes exactly one frame and shows it.
-//
-// It also reports failure instead of staying black — a clip ComfyUI cannot
-// serve should say so rather than look like a bug in the layout.
-function videoThumb(path, cls = "vthumb") {
-  const v = document.createElement("video");
-  v.className = cls;
-  v.preload = "metadata";
-  v.muted = true; v.playsInline = true;
-  v.src = rawURL(path);
-  v.addEventListener("loadedmetadata", () => {
-    // a hair past zero: frame 0 of an encoded clip is often black
-    try { v.currentTime = Math.min(0.5, (v.duration || 1) / 10); } catch {}
-  }, { once: true });
-  v.addEventListener("error", () => {
+/* ---- A CLIP'S THUMBNAIL COMES FROM THE SERVER ------------------------
+
+   WHY THE BROWSER IS THE WRONG PLACE, measured on CJ's own folder.
+
+   The galleries drew a clip's tile by handing the file to a <video
+   preload="metadata">. His input folder is 371 mp4s and 6.7 GB -- median
+   11.8 MB, p90 44.9 MB -- so opening the picker asked the browser to pull
+   metadata from dozens of multi-megabyte files at once. A browser allows
+   about six connections per host, so the rest queue; and an mp4 whose `moov`
+   atom sits at the END means a range request near the tail plus the header.
+   Everything else on the page waits behind that queue, including this app's
+   own requests. That is the freeze, and it is why a clip could not be picked
+   -- which is why loading one as a reference, and trimming it, was
+   unreachable. The trim UI was never broken; it sat behind a gallery that
+   would not open.
+
+   The previous attempt made these lazy and copied the frame into a <canvas>.
+   That removed the retained decoders but not the fetch storm, so it was still
+   slow. The work is proportional to the bytes, and the bytes are the problem:
+   it cannot be made cheap on this side.
+
+   /h3_toolkit/thumb decodes one frame with PyAV -- already a hard ComfyUI
+   dependency -- and caches it against the file's mtime and size. MEASURED on
+   those clips: 0.05s and ~3.5 KB per thumbnail, 4ms on a cache hit, including
+   0.08s for a 42 MB file because it seeks rather than decoding from the
+   start. So a tile is now an <img>, which costs exactly what the image tiles
+   beside it already cost, and `loading="lazy"` is the browser's own job.
+   --------------------------------------------------------------------- */
+
+// Typing a filter rebuilds a gallery per keystroke. "lily" is five of them
+// and only the last one is the query, so it waits for the typing to stop.
+function debounce(fn, ms = 120) {
+  let h = 0;
+  return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); };
+}
+
+function thumbURL(path, type = "input", edge = 192) {
+  return `${API}/thumb?path=${encodeURIComponent(path)}`
+       + `&type=${type}&edge=${edge}`;
+}
+
+// `onMeta(frames)` fires with the clip's length, asked of the server rather
+// than read off a <video> the browser had to download to find out.
+function videoThumb(path, cls = "vthumb", type = "input", onMeta = null) {
+  const img = document.createElement("img");
+  img.className = cls;
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.alt = "";
+  img.src = thumbURL(path, type);
+  img.addEventListener("error", () => {
+    // A FOLDER THIS SIZE HAS A FEW CLIPS THAT WILL NOT DECODE, and that is
+    // not a broken gallery. The tile says so and the rest carries on.
     const d = document.createElement("div");
     d.className = "vid"; d.textContent = "!";
-    d.title = `could not load ${path}`;
-    v.replaceWith(d);
+    d.title = `no frame could be read from ${path}`;
+    img.replaceWith(d);
   }, { once: true });
-  return v;
+  if (onMeta) clipInfo(path, type).then(f => { if (f) onMeta(f); });
+  return img;
+}
+
+// THE CONTAINER KNOWS ITS OWN LENGTH. One small JSON call, cached here, in
+// place of downloading the file to ask it.
+const CLIPLEN = new Map();
+async function clipInfo(path, type = "output") {
+  const key = type + ":" + path;
+  if (CLIPLEN.has(key)) return CLIPLEN.get(key);
+  const p = (async () => {
+    try {
+      const r = await getJSON(`${API}/clipinfo?path=`
+        + `${encodeURIComponent(path)}&type=${type}`);
+      return (r && r.ok && r.frames) || 0;
+    } catch { return 0; }
+  })();
+  CLIPLEN.set(key, p);
+  return p;
 }
 
 function rawURL(path) {
@@ -3488,8 +3620,9 @@ function openPicker({ title, multi, chosen = [], done, assets = null }) {
   pickState = { multi, chosen: new Set(chosen), done, assets };
   $("pick_title").textContent = title;
   $("pick_q").value = "";
-  drawPicker();
+  $("pick_tiles").innerHTML = "";
   $("pick").showModal();
+  drawPicker();
 }
 function drawPicker() {
   const q = $("pick_q").value.trim().toLowerCase();
@@ -3504,36 +3637,68 @@ function drawPicker() {
   if (!shown.length) {
     host.innerHTML = `<p class="hint">Nothing matches. Upload files below.</p>`;
   }
-  for (const a of shown.slice(0, 400)) {
+  const CAP = 400;
+  const tiles = new Map();                 // asset -> its element, for (2)
+  for (const a of shown.slice(0, CAP)) {
     const el = document.createElement("div");
     el.className = "tile" + (pickState.chosen.has(a) ? " sel" : "");
     // A CLIP HAS NO /view THUMBNAIL -- the server cannot transcode a video to
-    // webp -- so it gets a real <video> seeked to one frame. This is the patch
-    // that silently matched nothing twice, which is precisely why CJ kept
-    // reporting that gallery thumbs do not work: they were never changed.
+    // webp -- so it gets a frame copied out of the clip itself.
     el.innerHTML = (isVideoPath(a) ? ""
                    : isAudioPath(a) ? `<div class="vid">♪</div>`
                    : `<img loading="lazy" src="${assetURL(a)}" alt="">`) +
                    `<span class="cap">${escapeHTML(a.split(/[\\/]/).pop())}</span>`;
     if (isVideoPath(a)) el.prepend(videoThumb(a));
+    // SELECTING SOMETHING IS NOT A REASON TO REBUILD THE GALLERY. The redraw
+    // this used to do discarded every tile and rebuilt it -- including every
+    // thumbnail -- on each click, which is the other half of why the picker
+    // hung. A selection changes an outline, so it sets an outline.
     el.onclick = () => {
       if (pickState.multi) {
-        pickState.chosen.has(a) ? pickState.chosen.delete(a) : pickState.chosen.add(a);
+        if (pickState.chosen.has(a)) { pickState.chosen.delete(a); }
+        else { pickState.chosen.add(a); }
+        el.classList.toggle("sel", pickState.chosen.has(a));
       } else {
+        for (const prev of pickState.chosen) {
+          const pe = tiles.get(prev);
+          if (pe) pe.classList.remove("sel");
+        }
         pickState.chosen = new Set([a]);
+        el.classList.add("sel");
       }
-      drawPicker();
+      paintPickCount(shown.length);
     };
+    tiles.set(a, el);
     host.appendChild(el);
   }
-  $("pick_count").textContent = pickState.multi
-    ? `${pickState.chosen.size} selected · ${shown.length} shown`
-    : `${shown.length} shown`;
+  if (shown.length > CAP) {
+    const more = document.createElement("p");
+    more.className = "hint";
+    more.style.gridColumn = "1 / -1";
+    more.textContent = `${shown.length - CAP} more — narrow the filter to `
+                     + `reach them.`;
+    host.appendChild(more);
+  }
+  paintPickCount(shown.length);
 }
 
-async function uploadFiles(files, subfolder) {
-  let ok = 0, failed = [];
-  for (const f of files) {
+function paintPickCount(shown) {
+  $("pick_count").textContent = pickState.multi
+    ? `${pickState.chosen.size} selected · ${shown} shown`
+    : `${shown} shown`;
+}
+
+/* FOUR AT A TIME, with the count moving. Uploading was one `await` per file
+   in a loop, so twenty 2 MB anchors meant twenty round trips end to end and a
+   dialog that said nothing until the last one landed -- which is most of what
+   "slow as balls" was. Four in flight keeps the link busy without asking the
+   browser to hold every file in memory at once, and `onProgress` lets the
+   caller show the pile going down. */
+async function uploadFiles(files, subfolder, onProgress = null) {
+  const list = [...files];
+  let ok = 0, done = 0;
+  const failed = [];
+  const one = async (f) => {
     const fd = new FormData();
     fd.append("image", f, f.name);
     fd.append("type", "input");
@@ -3542,14 +3707,21 @@ async function uploadFiles(files, subfolder) {
     try {
       // core's own endpoint, which also CREATES the subfolder
       const r = await fetch("/upload/image", { method: "POST", body: fd });
-      if (!r.ok) { failed.push(f.name); continue; }
+      if (!r.ok) { failed.push(f.name); return; }
       const out = await r.json();
       const path = out.subfolder ? `${out.subfolder}/${out.name}` : out.name;
       if (!ASSETS.includes(path)) ASSETS.unshift(path);
       if (pickState) pickState.chosen.add(path);
       ok++;
     } catch { failed.push(f.name); }
-  }
+    finally {
+      done++;
+      if (onProgress) { try { onProgress(done, list.length); } catch {} }
+    }
+  };
+  let next = 0;
+  const worker = async () => { while (next < list.length) await one(list[next++]); };
+  await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker));
   const folders = [...new Set(ASSETS.map(folderOf))].sort();
   const keep = $("pick_folder").value;
   fill($("pick_folder"), [{ v: "", t: `all (${ASSETS.length})` }].concat(
@@ -3629,19 +3801,62 @@ function openEditor(s) {
   $("e_desc").value = (s && s.description) || "";
   $("e_ret").value = (s && s.retention) || "fully_preserved";
   $("e_voicedesc").value = (s && s.voice) || "";
+  // SHOW WHAT IS STORED. This used to clear both and tell you that saving
+  // with none would wipe them — so you could not see a subject's anchors,
+  // and opening one to change its description and pressing Save DESTROYED
+  // them. The store keeps anchors outside input/, which is why they could
+  // not go straight into a picker; staging puts them where the picker can
+  // see them, and that is a copy the app already makes for every render.
   setAnchorPaths([]);
   $("e_voice").value = "";
-  $("e_msg").textContent = s
-    ? `${s.anchors || 0} anchor(s) stored. Re-pick images to replace them; saving with none clears them.`
-    : "";
+  $("e_msg").textContent = s ? "reading its anchors…" : "";
   $("e_delete").hidden = !s;
   $("editor").open = true;
+  if (s) showStored(s);
+  return;
+}
+
+async function showStored(s) {
+  try {
+    const r = await post("/subject/stage", { names: [s.name] });
+    const paths = ((r && r.staged) || {})[s.name] || [];
+    for (const p of paths) if (!ASSETS.includes(p)) ASSETS.unshift(p);
+    setAnchorPaths(paths);
+    const v = ((r && r.voices) || {})[s.name] || "";
+    if (v) {
+      if (![...$("e_voice").options].some(o => o.value === v)) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        $("e_voice").appendChild(o);
+      }
+      $("e_voice").value = v;
+    }
+    $("e_msg").textContent =
+      `${paths.length} anchor(s)${v ? " and a voice sample" : ""} stored. `
+      + `Change them here, or leave them and only the wording is saved.`;
+  } catch {
+    $("e_msg").textContent =
+      `${s.anchors || 0} anchor(s) stored, but they could not be read — `
+      + `RESTART ComfyUI if you have just updated, then reopen this.`;
+  }
 }
 
 async function saveSubject() {
   const name = $("e_name").value.trim();
   if (!name) { $("e_msg").textContent = "a name is required"; return; }
+  // SAVING AN UNTOUCHED SUBJECT MUST NOT WIPE IT. The editor used to open
+  // with an empty picker and overwrite with whatever was in it, so changing
+  // a description and pressing Save destroyed the anchors. The picker is
+  // filled from the store now, so an unchanged list writes back what was
+  // already there — and clearing it on purpose still clears.
   const imgs = anchorPaths();
+  if (editing && !imgs.length) {
+    const ok2 = confirm(
+      `“${name}” will be saved with NO anchor images.\n\n`
+      + `If you meant to keep the ones it had, cancel — they are still in `
+      + `the store until you save.`);
+    if (!ok2) { $("e_msg").textContent = "nothing saved."; return; }
+  }
   const body = {
     name, kind: $("e_kind").value, description: $("e_desc").value,
     retention: $("e_ret").value, voice_description: $("e_voicedesc").value,
@@ -3917,7 +4132,10 @@ function request() {
       label: r.label || "",
       // the audio half: a standalone sound's own marker, and whether a clip
       // sends its soundtrack and on what terms
-      ...(r.kind === "audio" ? { marker: r.marker || "reference" } : {}),
+      ...(r.kind === "audio" ? { marker: r.marker || "reference" }
+          : r.role === "reference"
+            ? { marker: r.marker || "weak_reference",
+                ...(r.how ? { how: r.how } : {}) } : {}),
       ...(r.with_audio ? { with_audio: true,
                            audio_marker: r.audio_marker || "reference" } : {}),
       // no `depth`: it follows the role, decided once in chunkref.ROLES so a
@@ -3928,6 +4146,7 @@ function request() {
     }));
   }
   req.megapixels = +$("mp").value || 0.5;
+  if ($("kfanchor").checked) req.keyframe_anchors = true;
   req.aspect_ratio = $("ar").value;
   if (CONT.length) req.continuity = CONT.join("\n");
   if ($("sched").value.trim()) req.lora_schedule = $("sched").value;
@@ -4184,8 +4403,12 @@ function tc(frames) {
 async function loadBin() {
   const host = $("binlist");
   try {
-    const r = await getJSON(`${API}/clips?limit=400`);
+    // `durations=1`: the lengths come back with the listing, probed from the
+    // containers server-side and cached against mtime. The alternative was
+    // 200 <video> elements, which is what froze the tab.
+    const r = await getJSON(`${API}/clips?limit=400&durations=1`);
     BIN = (r && r.clips) || [];
+    for (const c of BIN) if (c.frames) DUR[c.path] = c.frames;
   } catch { BIN = []; }
   drawBin();
 }
@@ -4201,24 +4424,24 @@ function drawBin() {
       ? "Nothing matches." : "No video in the output folder yet."}</p>`;
     return;
   }
-  for (const c of shown.slice(0, 200)) {
+  const CAP = 200;
+  for (const c of shown.slice(0, CAP)) {
     const el = document.createElement("div");
     el.className = "binclip";
     el.draggable = true;
-    const v = document.createElement("video");
-    v.preload = "metadata"; v.muted = true; v.playsInline = true;
-    v.src = outURL(c.path);
-    v.addEventListener("loadedmetadata", () => {
-      // the browser hands us the duration for free while making the
-      // thumbnail -- no server probe over a folder that grows without bound
-      DUR[c.path] = Math.round((v.duration || 0) * FPS2);
-      try { v.currentTime = Math.min(0.5, (v.duration || 1) / 10); } catch {}
-      const sp = el.querySelector("span");
-      if (sp) sp.textContent = tc(DUR[c.path]);
-    }, { once: true });
+    // The browser hands us the duration for free while making the thumbnail,
+    // so there is still no server probe over a folder that grows without
+    // bound -- but it now happens when the row is ON SCREEN, one at a time,
+    // instead of for 200 rows the moment the tab opens.
+    const v = videoThumb(c.path, "vthumb", "output", (frames) => {
+      DUR[c.path] = frames;
+      const sp = el.querySelector(".t span");
+      if (sp) sp.textContent = tc(frames);
+    });
     const t = document.createElement("div");
     t.className = "t";
-    t.innerHTML = `<b>${escapeHTML(c.name)}</b><span>…</span>`;
+    t.innerHTML = `<b>${escapeHTML(c.name)}</b>`
+                + `<span>${DUR[c.path] ? tc(DUR[c.path]) : "…"}</span>`;
     el.append(v, t);
     el.ondragstart = (e) => {
       e.dataTransfer.setData("text/plain", "clip:" + c.path);
@@ -4232,6 +4455,24 @@ function drawBin() {
     };
     host.appendChild(el);
   }
+  if (shown.length > CAP) {
+    const more = document.createElement("p");
+    more.className = "hint";
+    more.textContent = `${shown.length - CAP} more — filter to reach them.`;
+    host.appendChild(more);
+  }
+}
+
+/* A CLIP CAN BE DROPPED BEFORE ITS LENGTH IS KNOWN, so the drop asks for
+   the one it needs. This used to open a <video> to read the duration off it,
+   which on a 45 MB mp4 is megabytes to learn one number; the container knows
+   it, so the server answers. */
+function learnDuration(path) {
+  if (DUR[path]) return Promise.resolve(DUR[path]);
+  return clipInfo(path, "output").then((frames) => {
+    if (frames) DUR[path] = frames;
+    return frames || 0;
+  });
 }
 
 // output/, not input/ -- the bin reads what has been RENDERED
@@ -4588,6 +4829,7 @@ function applyRequest(req) {
   put("seed", req.seed);
   put("prefix", req.filename_prefix);
   put("mp", req.megapixels);
+  $("kfanchor").checked = !!req.keyframe_anchors;
   put("ar", req.aspect_ratio);
   put("sched", req.lora_schedule);
   if (req.context !== undefined) put("ctx", String(req.context));
@@ -4616,6 +4858,7 @@ function applyRequest(req) {
     chunks: r.chunks || "all", label: r.label || r.source,
     spans: r.spans || "", span_index: r.span_index || 0,
     ...(r.marker ? { marker: r.marker } : {}),
+    ...(r.how ? { how: r.how } : {}),
     ...(r.with_audio ? { with_audio: true,
                          audio_marker: r.audio_marker || "reference" } : {}),
   }));
@@ -4880,13 +5123,24 @@ function drawEdit() {
       // Dragging it elsewhere afterwards is one gesture; hunting for the
       // right pixel on every drop is one per clip.
       const at = trackEnd(t);
-      const len = DUR[path] || FPS2 * 5;       // until metadata says otherwise
+      const known = DUR[path];
+      const len = known || FPS2 * 5;            // until metadata says otherwise
       snapshot();
       const fresh = { id: uid(), source: path, in: 0, out: len,
                       start: Math.max(0, at), name: path.split("/").pop() };
       t.clips.push(fresh);
       resolveOverlaps(t, fresh);
       editChanged();
+      // NO SECOND SNAPSHOT. Correcting the guess is not an edit the user
+      // made, so undo must not have to step through it.
+      if (!known) {
+        learnDuration(path).then((d) => {
+          if (!d || fresh.out !== len || !t.clips.includes(fresh)) return;
+          fresh.out = d;
+          resolveOverlaps(t, fresh);
+          editChanged();
+        });
+      }
     };
     host.appendChild(row);
   }
@@ -5194,25 +5448,31 @@ function wireControls() {
     pickState = null;
   };
   $("pick_close").onclick = closePicker;
-  $("pick_q").addEventListener("input", drawPicker);
+  $("pick_q").oninput = debounce(drawPicker);
   $("pick_kind").addEventListener("change", drawPicker);
   $("pick_folder").addEventListener("change", drawPicker);
+  const uploadProgress = (n, total) => {
+    $("pick_count").textContent = `uploading ${n} of ${total}…`;
+  };
   $("pick_file").addEventListener("change", async e => {
-    const r = await uploadFiles([...e.target.files], $("pick_sub").value.trim());
+    const r = await uploadFiles([...e.target.files], $("pick_sub").value.trim(),
+                                uploadProgress);
     $("pick_count").textContent = `uploaded ${r.ok}` +
       (r.failed.length ? `, failed: ${r.failed.join(", ")}` : "");
     e.target.value = "";
   });
   $("pick_upload").onclick = () => $("pick_file").click();
   dropzone($("pick_body"), async files => {
-    const r = await uploadFiles(files, $("pick_sub").value.trim());
+    const r = await uploadFiles(files, $("pick_sub").value.trim(),
+                                uploadProgress);
     $("pick_count").textContent = `uploaded ${r.ok}` +
       (r.failed.length ? `, failed: ${r.failed.join(", ")}` : "");
   });
   // dropping straight onto the editor uploads AND selects, no dialog needed
   dropzone($("e_dz"), async files => {
-    $("e_dz").textContent = `uploading ${files.length}…`;
-    const r = await uploadFiles(files, "");
+    const r = await uploadFiles(files, "", (n, total) => {
+      $("e_dz").textContent = `uploading ${n} of ${total}…`;
+    });
     setAnchorPaths(anchorPaths().concat(
       ASSETS.filter(a => files.some(f => a.endsWith(f.name)))));
     $("e_dz").textContent = r.failed.length
@@ -5364,7 +5624,7 @@ function wireControls() {
         closeMenu(); SEL2 = new Set(); drawEdit(); return;
     }
   });
-  $("bin_q").addEventListener("input", drawBin);
+  $("bin_q").addEventListener("input", debounce(drawBin));
   $("bin_reload").onclick = loadBin;
 
   // the ruler scrubs: press and drag, which is how a playhead behaves

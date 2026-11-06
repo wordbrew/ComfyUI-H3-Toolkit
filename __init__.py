@@ -9,6 +9,7 @@ cropplan, avlatent — carry the arithmetic the nodes share, and are kept torch-
 where possible so they can be tested without ComfyUI.
 """
 
+import asyncio
 import json
 import os
 import pathlib
@@ -375,6 +376,73 @@ def _register_routes():
         rel = os.path.relpath(dest, outdir).replace("\\", "/")
         return web.json_response({"ok": True, "path": rel, "notes": notes})
 
+    @routes.get(ROUTE_PREFIX + "/thumb")
+    async def _thumb(request):
+        """One frame of a clip, as a cached WebP. ?path= &type= &edge=
+
+        THE BROWSER MUST NOT OPEN THESE FILES. CJ's input folder is 371 mp4s
+        and 6.7 GB; a gallery that draws each tile with a <video> asks for
+        metadata from dozens of 12-45 MB files at once, and a browser allows
+        about six connections at a time, so everything else on the page --
+        including this app's own requests -- waits behind them. That is the
+        freeze. See videothumb.py for the measurements.
+
+        Decoded here it is ~10 KB and one immutable cached request, which is
+        what an <img> tile already costs. The clip's LENGTH rides back in a
+        header, so the browser never opens the file for that either.
+        """
+        from . import videothumb
+        rel = (request.rel_url.query.get("path") or "").strip()
+        kind = (request.rel_url.query.get("type") or "input").strip()
+        try:
+            edge = max(48, min(512, int(request.rel_url.query.get("edge")
+                                        or videothumb.DEFAULT_EDGE)))
+        except ValueError:
+            edge = videothumb.DEFAULT_EDGE
+        if not rel:
+            return web.json_response({"ok": False, "error": "no path"},
+                                     status=400)
+        try:
+            import folder_paths
+            root = (folder_paths.get_output_directory() if kind == "output"
+                    else folder_paths.get_input_directory())
+            cache_dir = os.path.join(folder_paths.get_temp_directory(),
+                                     "h3_thumbs")
+        except Exception:                                       # noqa: BLE001
+            return web.json_response({"ok": False,
+                                      "error": "no ComfyUI directories"},
+                                     status=503)
+        # THE SAME GUARD CORE USES, spelled out rather than borrowed: the
+        # query string is the one part of this a browser controls, and
+        # `..%2f..%2fid_rsa` is the obvious thing to try.
+        full = os.path.abspath(os.path.join(root, rel))
+        if not full.startswith(os.path.abspath(root) + os.sep):
+            return web.json_response({"ok": False, "error": "path escapes "
+                                      "the media folder"}, status=400)
+        if not os.path.isfile(full):
+            return web.json_response({"ok": False, "error": "no such file"},
+                                     status=404)
+        try:
+            out, frames, seconds = await asyncio.get_running_loop(
+            ).run_in_executor(None, videothumb.cached, full, cache_dir, edge)
+        except videothumb.ThumbError as exc:
+            # A FOLDER OF 371 CLIPS HAS A FEW THAT WILL NOT DECODE. That is
+            # not a server error and must not look like one -- the tile shows
+            # a placeholder and the gallery carries on.
+            return web.json_response({"ok": False, "error": str(exc)},
+                                     status=422)
+        except Exception as exc:                                # noqa: BLE001
+            return web.json_response({"ok": False, "error": str(exc)},
+                                     status=500)
+        return web.FileResponse(out, headers={
+            "Content-Type": "image/webp",
+            # the cache key already carries mtime and size, so this URL can
+            # never mean a different picture
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Clip-Frames": str(int(frames)),
+            "X-Clip-Seconds": f"{float(seconds):.4f}",
+        })
+
     @routes.get(ROUTE_PREFIX + "/clips")
     async def _clips(request):
         """Finished video in the OUTPUT folder, newest first — the bin.
@@ -382,9 +450,10 @@ def _register_routes():
         Core serves /view and /history but lists no directory, so the cutting
         room has nothing to open without this. It returns what a timeline
         needs to place a clip before decoding it: the path /view wants, the
-        size, and the mtime. DURATION IS NOT HERE -- reading it would mean
-        probing thousands of files on every refresh, and the browser gets it
-        free from the <video> element it is already loading for the thumbnail.
+        size, and the mtime. `?durations=1` adds each clip's length, probed
+        from the container and cached against its mtime -- the browser used to
+        get that by opening a <video> per clip, which on a folder of large
+        mp4s is what froze the tab.
 
         `?q=` filters on the path. `?limit=` caps the result; the default is
         generous but finite because this folder grows without bound.
